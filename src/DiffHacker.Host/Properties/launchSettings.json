@@ -1,0 +1,18 @@
+{
+  "profiles": {
+    "DiffHacker": {
+      "commandName": "Project",
+      "workingDirectory": "$(ProjectDir)"
+    },
+    "DiffHacker (verbose logging)": {
+      "commandName": "Project",
+      "commandLineArgs": "--verbose",
+      "workingDirectory": "$(ProjectDir)"
+    },
+    "Bridge self-test": {
+      "commandName": "Project",
+      "commandLineArgs": "--self-test --timeout 60 --verbose",
+      "workingDirectory": "$(ProjectDir)"
+    }
+  }
+}

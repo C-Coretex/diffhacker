@@ -449,14 +449,29 @@ FodyWeavers.xsd
 .vscode/*
 !.vscode/settings.json
 
-**/TimeHacker.Application.UI/.env
-
 # Environment files with secrets (compose / local dev)
 .env
 **/.env
 !**/.env.example
 
+# Claude Code session state. CLAUDE.md itself is the agent contract and IS tracked.
 .claude/
-CLAUDE.md
 
-resources/
+# ---------------------------------------------------------------------------
+# DiffHacker
+# ---------------------------------------------------------------------------
+
+# Generated contracts. The single source of truth is /schema; these are produced
+# by tools/DiffHacker.SchemaGen on every build and are never hand-edited.
+src/DiffHacker.Contracts/Generated/
+src/ui/src/contracts/
+**/*.g.stamp
+
+# UI build output and dependencies
+src/ui/dist/
+src/ui/node_modules/
+src/ui/.vite/
+
+# Local run artifacts
+selftest-result.json
+screenshots/

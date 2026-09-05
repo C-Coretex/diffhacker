@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.0/start-demo-request.schema.json",
+  "title": "StartDemoRequest",
+  "description": "Parameters for the demo.startCountdown method, which exists to demonstrate a typed client-to-server request that then streams server-to-client notifications back.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["steps"],
+  "properties": {
+    "steps": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "How many progress notifications the host should emit."
+    },
+    "delayMilliseconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5000,
+      "default": 150,
+      "description": "Pause between notifications, so the stream is visible rather than instantaneous."
+    }
+  }
+}

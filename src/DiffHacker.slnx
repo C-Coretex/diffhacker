@@ -1,1 +1,34 @@
-<Solution />
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="DiffHacker.Contracts/DiffHacker.Contracts.csproj" />
+    <Project Path="DiffHacker.Core/DiffHacker.Core.csproj" />
+    <Project Path="DiffHacker.Git/DiffHacker.Git.csproj" />
+    <Project Path="DiffHacker.Host/DiffHacker.Host.csproj" />
+    <Project Path="DiffHacker.Llm/DiffHacker.Llm.csproj" />
+    <Project Path="DiffHacker.Storage/DiffHacker.Storage.csproj" />
+    <Project Path="DiffHacker.Tools/DiffHacker.Tools.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="../tests/DiffHacker.Architecture.Tests/DiffHacker.Architecture.Tests.csproj" />
+    <Project Path="../tests/DiffHacker.Contracts.Tests/DiffHacker.Contracts.Tests.csproj" />
+    <Project Path="../tests/DiffHacker.Host.Tests/DiffHacker.Host.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="../tools/DiffHacker.SchemaGen/DiffHacker.SchemaGen.csproj" />
+  </Folder>
+  <Folder Name="/solution items/">
+    <File Path="../CLAUDE.md" />
+    <File Path="../Directory.Build.props" />
+    <File Path="../Directory.Packages.props" />
+    <File Path="../README.md" />
+  </Folder>
+  <Folder Name="/schema/">
+    <File Path="../schema/contract-version.json" />
+    <File Path="../schema/host-info.schema.json" />
+    <File Path="../schema/progress-notification.schema.json" />
+    <File Path="../schema/rpc-error.schema.json" />
+    <File Path="../schema/self-test-result.schema.json" />
+    <File Path="../schema/start-demo-request.schema.json" />
+    <File Path="../schema/start-demo-response.schema.json" />
+  </Folder>
+</Solution>

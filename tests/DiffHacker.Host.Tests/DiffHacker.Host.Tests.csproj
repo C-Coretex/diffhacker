@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DiffHacker.Host.Tests</RootNamespace>
+    <!--
+      The host's UI build target is skipped here: these tests exercise .NET only, and running
+      npm for every test run would make the loop needlessly slow.
+    -->
+    <SkipUiBuild>true</SkipUiBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DiffHacker.Host\DiffHacker.Host.csproj" />
+  </ItemGroup>
+
+</Project>

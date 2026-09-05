@@ -93,7 +93,7 @@ application data directory, with secrets redacted.
 
 | Concern | Choice |
 |---|---|
-| Shell | Photino.NET (WebView2 / WKWebView / WebKitGTK) |
+| Shell | PhotinoX (WebView2 / WKWebView / WebKitGTK) |
 | UI | React 19 + TypeScript, Vite |
 | Graph | React Flow (`@xyflow/react` v12) |
 | Layout | ELK.js `layered`, in a Web Worker |

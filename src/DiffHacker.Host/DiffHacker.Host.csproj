@@ -1,0 +1,133 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>DiffHacker.Host</RootNamespace>
+    <!--
+      Exe rather than WinExe: CI needs the host's stdout to diagnose a failed self-test run.
+      Switching Windows builds to a windowed subsystem belongs with packaging, Iteration 14.
+    -->
+  </PropertyGroup>
+
+  <PropertyGroup Label="Renderer bundle">
+    <UiDistDir>$([MSBuild]::NormalizeDirectory('$(UiDir)', 'dist'))</UiDistDir>
+
+    <!--
+      Spelled out rather than using $(IntermediateOutputPath): that property is not set yet
+      when this group is evaluated, so the stamps would land in the project directory, survive
+      a `rm -rf obj`, and make the UI look permanently up to date.
+    -->
+    <UiStampDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', 'obj'))</UiStampDir>
+    <UiBuildStamp>$(UiStampDir)ui.build.stamp</UiBuildStamp>
+    <UiInstallStamp>$(UiStampDir)ui.install.stamp</UiInstallStamp>
+
+    <!--
+      Release embeds the renderer in the assembly, so a shipped DiffHacker is one binary.
+      Debug serves src/ui/dist from disk instead, so `npm run watch` in src/ui plus a window
+      reload is the inner loop. CLAUDE.md rules out a localhost dev server permanently.
+    -->
+    <EmbedUiAssets Condition="'$(EmbedUiAssets)' == '' AND '$(Configuration)' == 'Release'">true</EmbedUiAssets>
+    <EmbedUiAssets Condition="'$(EmbedUiAssets)' == ''">false</EmbedUiAssets>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DiffHacker.Contracts\DiffHacker.Contracts.csproj" />
+    <ProjectReference Include="..\DiffHacker.Core\DiffHacker.Core.csproj" />
+    <ProjectReference Include="..\DiffHacker.Git\DiffHacker.Git.csproj" />
+    <ProjectReference Include="..\DiffHacker.Llm\DiffHacker.Llm.csproj" />
+    <ProjectReference Include="..\DiffHacker.Storage\DiffHacker.Storage.csproj" />
+    <ProjectReference Include="..\DiffHacker.Tools\DiffHacker.Tools.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PhotinoX" />
+    <PackageReference Include="StreamJsonRpc" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Extensions.Logging" />
+    <PackageReference Include="Serilog.Sinks.File" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DiffHacker.Host.Tests" />
+  </ItemGroup>
+
+  <!-- Everything the renderer bundle is built from. -->
+  <ItemGroup>
+    <UiSource Include="$(UiDir)src\**\*.*" />
+    <UiSource Include="$(UiDir)public\**\*.*" />
+    <UiSource Include="$(UiDir)index.html" />
+    <UiSource Include="$(UiDir)package.json" />
+    <UiSource Include="$(UiDir)package-lock.json" />
+    <UiSource Include="$(UiDir)vite.config.ts" />
+    <UiSource Include="$(UiDir)tsconfig*.json" />
+  </ItemGroup>
+
+  <Target Name="_InstallUiDependencies"
+          Condition="'$(SkipUiBuild)' != 'true'"
+          Inputs="$(UiDir)package-lock.json"
+          Outputs="$(UiInstallStamp)">
+    <MakeDir Directories="$(UiStampDir)" />
+    <Exec Command="npm ci" WorkingDirectory="$(UiDir)" StandardOutputImportance="low" />
+    <Touch Files="$(UiInstallStamp)" AlwaysCreate="true" />
+  </Target>
+
+  <!--
+    ResolveProjectReferences is load-bearing, not decoration: the renderer imports the
+    TypeScript contracts that DiffHacker.Contracts generates, and the resource-collection
+    extension point below runs before references would otherwise resolve. Without it the UI is
+    built against the previous generation of the contracts and only notices one build later.
+  -->
+  <Target Name="BuildUi"
+          Condition="'$(SkipUiBuild)' != 'true'"
+          DependsOnTargets="ResolveProjectReferences;_InstallUiDependencies"
+          Inputs="@(UiSource)"
+          Outputs="$(UiBuildStamp)">
+    <Exec Command="npm run build" WorkingDirectory="$(UiDir)" StandardOutputImportance="high" />
+    <Touch Files="$(UiBuildStamp)" AlwaysCreate="true" />
+  </Target>
+
+  <!--
+    PrepareForBuild, not PrepareResources: by the time PrepareResources runs, AssignTargetPaths
+    and ResGen have already consumed the EmbeddedResource list, so items added there are
+    silently dropped and the app ships with zero assets.
+  -->
+  <Target Name="_EmbedUi"
+          BeforeTargets="PrepareForBuild"
+          DependsOnTargets="BuildUi"
+          Condition="'$(EmbedUiAssets)' == 'true'">
+
+    <Error Condition="!Exists('$(UiDistDir)index.html')"
+           Text="The renderer bundle is missing. Expected $(UiDistDir)index.html. Run `npm run build` in src/ui, or build without SkipUiBuild=true." />
+
+    <ItemGroup>
+      <_UiAsset Include="$(UiDistDir)**\*.*" />
+      <EmbeddedResource Include="@(_UiAsset)">
+        <LogicalName>ui/$([System.String]::Copy('%(_UiAsset.RecursiveDir)%(_UiAsset.Filename)%(_UiAsset.Extension)').Replace('\','/'))</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+
+    <!--
+      Fail loudly here rather than shipping a binary whose window renders the WebView's
+      "this page cannot be reached" screen. Hooking this target too late in the build silently
+      drops every item, and the only symptom is a blank app.
+    -->
+    <Error Condition="'@(_UiAsset)' == ''"
+           Text="No renderer assets were collected from $(UiDistDir). The embed target is running after the resource list has been consumed." />
+
+    <Message Importance="normal" Text="Embedding @(_UiAsset->Count()) renderer asset(s) from $(UiDistDir)" />
+  </Target>
+
+  <!-- Debug builds locate the bundle on disk rather than embedding it. -->
+  <Target Name="_StampUiDistPath" BeforeTargets="PrepareForBuild" DependsOnTargets="BuildUi"
+          Condition="'$(EmbedUiAssets)' != 'true'">
+    <ItemGroup>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>DiffHacker.UiDistPath</_Parameter1>
+        <_Parameter2>$(UiDistDir)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+
+</Project>

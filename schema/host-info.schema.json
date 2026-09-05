@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.0/host-info.schema.json",
+  "title": "HostInfo",
+  "description": "Identity and environment of the .NET host process. Returned by the host.ping JSON-RPC method so the renderer can confirm it was built from the same contract generation as the host.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "appVersion",
+    "platform",
+    "osDescription",
+    "processArchitecture",
+    "startedAtUtc",
+    "selfTest"
+  ],
+  "properties": {
+    "contractVersion": {
+      "type": "string",
+      "description": "Version of the /schema set the host was built against. The renderer compares this with its own generated CONTRACT_VERSION and fails loudly on mismatch."
+    },
+    "appVersion": {
+      "type": "string",
+      "description": "Informational version of the DiffHacker host assembly."
+    },
+    "platform": {
+      "type": "string",
+      "description": "Operating system family the host is running on.",
+      "enum": ["windows", "macos", "linux"]
+    },
+    "osDescription": {
+      "type": "string",
+      "description": "Human-readable OS description, as reported by the runtime."
+    },
+    "processArchitecture": {
+      "type": "string",
+      "description": "Process architecture, for example x64 or arm64."
+    },
+    "startedAtUtc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC instant at which the host process started."
+    },
+    "selfTest": {
+      "type": "boolean",
+      "description": "True when the host was launched with --self-test. The renderer then drives the bridge verification itself and reports back through host.reportSelfTest."
+    }
+  }
+}

@@ -1,0 +1,84 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/*
+  Dark mode is driven by a `dark` class on <html>, which useSystemTheme keeps in step with the
+  OS setting. A class rather than the bare media query, so a user-facing override can be added
+  later without touching every component.
+*/
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* shadcn/ui design tokens. */
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(0.99 0 0);
+  --foreground: oklch(0.21 0.006 285.9);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.006 285.9);
+  --primary: oklch(0.55 0.22 264);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.96 0.002 286);
+  --secondary-foreground: oklch(0.21 0.006 285.9);
+  --muted: oklch(0.96 0.002 286);
+  --muted-foreground: oklch(0.55 0.014 285.9);
+  --destructive: oklch(0.58 0.24 27.3);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.92 0.004 286);
+  --input: oklch(0.92 0.004 286);
+  --ring: oklch(0.55 0.22 264);
+}
+
+.dark {
+  --background: oklch(0.16 0.005 285.9);
+  --foreground: oklch(0.96 0.002 286);
+  --card: oklch(0.21 0.006 285.9);
+  --card-foreground: oklch(0.96 0.002 286);
+  --primary: oklch(0.68 0.17 264);
+  --primary-foreground: oklch(0.16 0.005 285.9);
+  --secondary: oklch(0.27 0.008 286);
+  --secondary-foreground: oklch(0.96 0.002 286);
+  --muted: oklch(0.27 0.008 286);
+  --muted-foreground: oklch(0.71 0.012 286);
+  --destructive: oklch(0.65 0.2 25);
+  --destructive-foreground: oklch(0.16 0.005 285.9);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.68 0.17 264);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    /* The window is the viewport; the app manages its own scrolling regions. */
+    overflow: hidden;
+  }
+}

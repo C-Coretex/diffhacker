@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.0/rpc-error.schema.json",
+  "title": "RpcErrorData",
+  "description": "Payload carried in the `data` member of a JSON-RPC error object. The host never sends user-facing prose across the bridge: it sends a stable code plus arguments, and the renderer resolves them through its string catalogue.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code"],
+  "properties": {
+    "code": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Stable, lower_snake_case error identifier. Part of the contract: renaming one is a breaking change."
+    },
+    "args": {
+      "type": "object",
+      "description": "Named substitution values for the resolved message.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}

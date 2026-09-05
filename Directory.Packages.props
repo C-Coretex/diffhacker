@@ -1,0 +1,61 @@
+<Project>
+
+  <!--
+    Central package management. Every PackageReference in the repository is
+    versioned here and nowhere else.
+
+    CLAUDE.md §0.4 requires asking before adding a dependency not listed in §0.3.
+    The entries marked "beyond §0.3" were approved during Iteration 1 planning.
+  -->
+
+  <ItemGroup Label="Shell — §0.3, with the escape hatch taken">
+    <!--
+      PhotinoX, not Photino.NET.
+
+      §0.3 names Photino.NET, and Iteration 1 planning pre-authorised a switch if the custom
+      scheme handler failed. It does: Photino.Native registers a WebView2
+      `add_WebResourceRequested` filter but never calls
+      `ICoreWebView2EnvironmentOptions4::SetCustomSchemeRegistrations`, so WebView2 treats
+      `diffhacker://` as an unknown protocol and never raises a request. The handler is never
+      invoked and the window stays blank. This is photino.NET issue #209, closed `wontfix`,
+      and upstream has had no code commit since 2025-01-23.
+
+      PhotinoX is the maintained fork. It calls SetCustomSchemeRegistrations with
+      HasAuthorityComponent(true) and TreatAsSecure(true), which is exactly what serving the
+      renderer in-process requires. Same `Photino.NET` namespace, targets net10.0 directly,
+      WebKitGTK 4.1 on Linux.
+    -->
+    <PackageVersion Include="PhotinoX" Version="5.1.1" />
+  </ItemGroup>
+
+  <ItemGroup Label="Host ↔ UI protocol — beyond §0.3, approved">
+    <PackageVersion Include="StreamJsonRpc" Version="2.25.29" />
+  </ItemGroup>
+
+  <ItemGroup Label="Composition root and logging — beyond §0.3, approved">
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.11" />
+    <PackageVersion Include="Serilog" Version="4.4.0" />
+    <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Contract codegen — beyond §0.3, approved (tools only)">
+    <PackageVersion Include="NJsonSchema" Version="11.6.1" />
+    <PackageVersion Include="NJsonSchema.CodeGeneration.CSharp" Version="11.6.1" />
+    <PackageVersion Include="NJsonSchema.CodeGeneration.TypeScript" Version="11.6.1" />
+  </ItemGroup>
+
+  <ItemGroup Label="Tests — §0.3 (xUnit) plus assertion helper">
+    <!--
+      Pinned to 3.2.x, not 4.0.0: xunit.v3 4.0 targets Microsoft.Testing.Platform v2, which the
+      .NET 10 SDK's `dotnet test` does not yet speak — every project reports "Zero tests ran".
+      Revisit when the SDK ships MTP v2 support.
+    -->
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <!-- Test Explorer discovery in Visual Studio. Not used by `dotnet test`. -->
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="Shouldly" Version="4.3.0" />
+  </ItemGroup>
+
+</Project>

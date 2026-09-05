@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DiffHacker.Llm</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DiffHacker.Contracts\DiffHacker.Contracts.csproj" />
+    <ProjectReference Include="..\DiffHacker.Core\DiffHacker.Core.csproj" />
+  </ItemGroup>
+
+</Project>

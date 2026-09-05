@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DiffHacker.Contracts</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Contract codegen">
+    <GeneratedContractsDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', 'Generated'))</GeneratedContractsDir>
+    <UiContractsDir>$([MSBuild]::NormalizeDirectory('$(UiDir)', 'src', 'contracts'))</UiContractsDir>
+    <SchemaGenAssembly>$(RepoRoot)tools\DiffHacker.SchemaGen\bin\$(Configuration)\$(TargetFramework)\DiffHacker.SchemaGen.dll</SchemaGenAssembly>
+    <!--
+      Spelled out rather than using $(IntermediateOutputPath): that property is not set yet
+      when this group is evaluated, so the stamp would land in the project directory, survive
+      a `rm -rf obj`, and make codegen look permanently up to date.
+    -->
+    <ContractsStampDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', 'obj'))</ContractsStampDir>
+    <ContractsStamp>$(ContractsStampDir)contracts.g.stamp</ContractsStamp>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Generated sources are added by _IncludeGeneratedContracts below, not by the default
+      glob: on a clean clone they do not exist yet when MSBuild evaluates item globs.
+    -->
+    <Compile Remove="Generated\**\*.cs" />
+    <SchemaFile Include="$(SchemaDir)*.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Ordering and restore only. The generator is executed, never referenced. -->
+    <ProjectReference Include="$(RepoRoot)tools\DiffHacker.SchemaGen\DiffHacker.SchemaGen.csproj"
+                      ReferenceOutputAssembly="false"
+                      PrivateAssets="all"
+                      Private="false" />
+  </ItemGroup>
+
+  <!--
+    Regenerates C# records and TypeScript interfaces from /schema. Skipped when neither the
+    schemas nor the generator have changed. CLAUDE.md: codegen runs as part of the build,
+    never by hand.
+  -->
+  <Target Name="GenerateContracts"
+          Inputs="@(SchemaFile);$(SchemaGenAssembly)"
+          Outputs="$(ContractsStamp)">
+
+    <Error Condition="!Exists('$(SchemaGenAssembly)')"
+           Text="The contract generator was not built. Expected: $(SchemaGenAssembly). Build the solution (dotnet build src/DiffHacker.slnx) rather than this project alone." />
+
+    <MakeDir Directories="$(GeneratedContractsDir);$(UiContractsDir);$(ContractsStampDir)" />
+
+    <Exec Command="dotnet exec &quot;$(SchemaGenAssembly)&quot; --schema &quot;$(SchemaDir.TrimEnd('\/'))&quot; --csharp &quot;$(GeneratedContractsDir.TrimEnd('\/'))&quot; --typescript &quot;$(UiContractsDir.TrimEnd('\/'))&quot; --namespace $(RootNamespace) --stamp &quot;$(ContractsStamp)&quot;"
+          StandardOutputImportance="high" />
+  </Target>
+
+  <Target Name="_IncludeGeneratedContracts"
+          BeforeTargets="BeforeCompile"
+          DependsOnTargets="GenerateContracts">
+    <ItemGroup>
+      <Compile Include="$(GeneratedContractsDir)**\*.g.cs" />
+    </ItemGroup>
+  </Target>
+
+</Project>

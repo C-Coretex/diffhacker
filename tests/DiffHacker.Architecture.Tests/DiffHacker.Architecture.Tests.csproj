@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DiffHacker.Architecture.Tests</RootNamespace>
+    <!-- Reads source files under /src, so it needs to know where the repository root is. -->
+    <DefineConstants>$(DefineConstants);ARCHITECTURE_TESTS</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DiffHacker.Core\DiffHacker.Core.csproj" />
+    <ProjectReference Include="..\..\src\DiffHacker.Git\DiffHacker.Git.csproj" />
+    <ProjectReference Include="..\..\src\DiffHacker.Llm\DiffHacker.Llm.csproj" />
+    <ProjectReference Include="..\..\src\DiffHacker.Storage\DiffHacker.Storage.csproj" />
+    <ProjectReference Include="..\..\src\DiffHacker.Tools\DiffHacker.Tools.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>DiffHacker.RepoRoot</_Parameter1>
+      <_Parameter2>$(RepoRoot)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

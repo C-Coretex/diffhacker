@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!--
+      Content-Security-Policy for the WebView.
+
+      It lives in a meta tag because Photino's custom scheme handler returns a body and a
+      content type but no response headers. 'self' resolves to the document origin,
+      diffhacker://app, which is served entirely in-process: no remote script, no remote
+      style, no eval.
+
+      'unsafe-inline' for styles and blob: workers are here for what is coming, not for what
+      is here — Monaco injects style elements and ELK.js runs in a worker. Setting the final
+      shape now means it is never loosened later under deadline pressure.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'none';
+        script-src 'self';
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data:;
+        font-src 'self' data:;
+        connect-src 'self';
+        worker-src 'self' blob:;
+        object-src 'none';
+        base-uri 'none';
+        form-action 'none';
+      "
+    />
+
+    <title>DiffHacker</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,50 @@
+<Project>
+
+  <!--
+    Repository-wide MSBuild defaults. Applies to /src, /tests and /tools.
+    See CLAUDE.md §0.3 for the fixed technology decisions this encodes.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!--
+      CA1848 / CA1873 push every log call through a compiled LoggerMessage delegate. That is
+      the right trade for a high-throughput service; DiffHacker is a desktop application whose
+      logging is startup, RPC and analysis lifecycle events. The ceremony would cost far more
+      readability than the allocations it saves. Revisit if a hot path ever logs per item.
+    -->
+    <NoWarn>$(NoWarn);CA1848;CA1873</NoWarn>
+
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <Product>DiffHacker</Product>
+    <Company>DiffHacker</Company>
+    <Copyright>Copyright (c) DiffHacker contributors</Copyright>
+    <VersionPrefix>0.1.0</VersionPrefix>
+
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+
+    <!-- Absolute paths used by the codegen and UI build targets. -->
+    <RepoRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)'))</RepoRoot>
+    <SchemaDir>$([MSBuild]::NormalizeDirectory('$(RepoRoot)', 'schema'))</SchemaDir>
+    <UiDir>$([MSBuild]::NormalizeDirectory('$(RepoRoot)', 'src', 'ui'))</UiDir>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Test projects">
+    <IsTestProject Condition="$(MSBuildProjectName.EndsWith('.Tests'))">true</IsTestProject>
+    <IsPackable Condition="'$(IsTestProject)' == 'true'">false</IsPackable>
+  </PropertyGroup>
+
+</Project>

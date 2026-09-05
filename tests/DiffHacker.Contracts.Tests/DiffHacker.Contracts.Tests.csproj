@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DiffHacker.Contracts.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DiffHacker.Contracts\DiffHacker.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>DiffHacker.SchemaDir</_Parameter1>
+      <_Parameter2>$(SchemaDir)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

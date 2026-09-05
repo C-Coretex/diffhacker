@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>DiffHacker.SchemaGen</RootNamespace>
+    <AssemblyName>DiffHacker.SchemaGen</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!--
+      This tool is executed by the DiffHacker.Contracts build. It must never be
+      referenced for its output assembly, only for build ordering.
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NJsonSchema" />
+    <PackageReference Include="NJsonSchema.CodeGeneration.CSharp" />
+    <PackageReference Include="NJsonSchema.CodeGeneration.TypeScript" />
+  </ItemGroup>
+
+</Project>

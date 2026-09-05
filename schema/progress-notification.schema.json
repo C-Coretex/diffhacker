@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.0/progress-notification.schema.json",
+  "title": "ProgressNotification",
+  "description": "A single step of a long-running host operation, pushed to the renderer as a server-to-client JSON-RPC notification. Iteration 1 uses it for the demo countdown; the analysis pipeline reuses the same shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operationId", "step", "totalSteps", "message", "completed"],
+  "properties": {
+    "operationId": {
+      "type": "string",
+      "description": "Correlates every notification belonging to one operation. Returned by the method that started the operation."
+    },
+    "step": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Zero-based index of the step this notification reports."
+    },
+    "totalSteps": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total number of steps expected, or 0 when the total is not known in advance."
+    },
+    "message": {
+      "type": "string",
+      "description": "Resource key identifying the step, never a user-facing sentence. The renderer resolves it through its string catalogue."
+    },
+    "completed": {
+      "type": "boolean",
+      "description": "True on the final notification of the operation."
+    }
+  }
+}
