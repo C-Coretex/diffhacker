@@ -1,9 +1,16 @@
 using System.Reflection;
+using DiffHacker.Core.Providers;
+using DiffHacker.Core.Repositories;
+using DiffHacker.Core.Settings;
+using DiffHacker.Git;
 using DiffHacker.Host.Assets;
 using DiffHacker.Host.Logging;
 using DiffHacker.Host.Rpc;
 using DiffHacker.Host.SelfTest;
 using DiffHacker.Host.Shell;
+using DiffHacker.Llm;
+using DiffHacker.Storage;
+using DiffHacker.Storage.Secrets;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -26,7 +33,12 @@ internal static class Program
     private static int Main(string[] args)
     {
         var options = HostCommandLine.Parse(args);
-        var paths = new AppPaths();
+
+        // Self-test runs against a throwaway data directory. It writes provider profiles and
+        // secrets as part of the checks, and CI must never touch the developer's real ones.
+        var paths = options.SelfTest
+            ? new AppPaths(Path.Combine(Path.GetTempPath(), "diffhacker-selftest", Guid.NewGuid().ToString("n")))
+            : new AppPaths();
 
         using var serilog = LoggingSetup.Create(paths, options.Verbose);
         using var loggerFactory = new SerilogLoggerFactory(serilog);
@@ -141,16 +153,47 @@ internal static class Program
         services.AddSingleton(CreateAssetSource());
         services.AddSingleton<UiAssetResolver>();
 
+        // Git: an allowlisted process runner, and the two read-only questions Iteration 2 asks
+        // of it. IGitClient itself is Iteration 3's, built on this same runner.
+        services.AddSingleton<GitProcessRunner>();
+        services.AddSingleton<IGitEnvironment, GitEnvironment>();
+        services.AddSingleton<IRepositoryLocator, RepositoryLocator>();
+
+        // Storage: settings in the per-user data directory, keys in the secret store, never
+        // the other way round.
+        services.AddSingleton(sp => new AppDatabase(paths.DatabaseFile, sp.GetRequiredService<ILogger<AppDatabase>>()));
+        services.AddSingleton<IRecentRepositoryStore, SqliteRecentRepositoryStore>();
+        services.AddSingleton<IProviderProfileStore, SqliteProviderProfileStore>();
+        services.AddSingleton(sp => SecretStoreFactory.Create(
+            paths.SecretsFile,
+            paths.MasterKeyFile,
+            paths.SecretSaltFile,
+            sp.GetRequiredService<ILogger<AppPaths>>()));
+
+        // One HttpClient for the lifetime of the process. Connection tests are rare and
+        // user-initiated, so there is nothing here for IHttpClientFactory to solve.
+        services.AddSingleton(_ => new HttpClient());
+        services.AddSingleton<IProviderConnectionTester, HttpProviderConnectionTester>();
+
         services.AddSingleton<SelfTestCoordinator>();
         services.AddSingleton<RpcNotifier>();
         services.AddSingleton<IRpcNotifier>(sp => sp.GetRequiredService<RpcNotifier>());
         services.AddSingleton<HostRpcTarget>();
         services.AddSingleton<DemoRpcTarget>();
+        services.AddSingleton<EnvironmentRpcTarget>();
+        services.AddSingleton<RepositoryRpcTarget>();
+        services.AddSingleton<ProviderRpcTarget>();
 
         services.AddSingleton(sp => new RpcBridge(
             sp.GetRequiredService<IAppShell>(),
             sp.GetRequiredService<RpcNotifier>(),
-            [sp.GetRequiredService<HostRpcTarget>(), sp.GetRequiredService<DemoRpcTarget>()],
+            [
+                sp.GetRequiredService<HostRpcTarget>(),
+                sp.GetRequiredService<DemoRpcTarget>(),
+                sp.GetRequiredService<EnvironmentRpcTarget>(),
+                sp.GetRequiredService<RepositoryRpcTarget>(),
+                sp.GetRequiredService<ProviderRpcTarget>(),
+            ],
             sp.GetRequiredService<ILogger<RpcBridge>>()));
 
         return services;

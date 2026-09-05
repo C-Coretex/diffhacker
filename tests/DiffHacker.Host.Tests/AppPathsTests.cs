@@ -14,6 +14,19 @@ public sealed class AppPathsTests
     }
 
     [Fact]
+    public void State_files_sit_in_the_data_directory_not_in_the_users_repository()
+    {
+        var paths = new AppPaths(Path.Combine(Path.GetTempPath(), "diffhacker-test"));
+
+        // §0.2.12 makes the app read-only towards the repositories it reviews, so everything it
+        // writes belongs here and nowhere else.
+        paths.DatabaseFile.ShouldBe(Path.Combine(paths.DataDirectory, "diffhacker.db"));
+        paths.SecretsFile.ShouldBe(Path.Combine(paths.DataDirectory, "secrets.dat"));
+        paths.MasterKeyFile.ShouldBe(Path.Combine(paths.DataDirectory, "masterkey.dat"));
+        paths.SecretSaltFile.ShouldBe(Path.Combine(paths.DataDirectory, "secrets.salt"));
+    }
+
+    [Fact]
     public void The_default_data_directory_follows_the_platform_convention()
     {
         var paths = new AppPaths();

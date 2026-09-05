@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.1/test-connection-result.schema.json",
+  "title": "TestConnectionResult",
+  "description": "Outcome of providers.testConnection, which makes one real authenticated request to the provider. A failure is a result rather than a JSON-RPC error, because the interface has to show the provider's own wording alongside a translated headline.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["succeeded", "modelVerified", "availableModels"],
+  "properties": {
+    "succeeded": {
+      "type": "boolean",
+      "description": "True when the provider accepted the credentials."
+    },
+    "modelVerified": {
+      "type": "boolean",
+      "description": "True when the configured model identifier was found among the models this key can reach. False with succeeded true means the key works but the model name is probably a typo."
+    },
+    "availableModels": {
+      "type": "array",
+      "description": "Model identifiers the provider reported, used both to verify the configured model and to populate suggestions. Empty when the provider exposes no model listing.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "failureCode": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Stable, lower_snake_case category of the failure, which the renderer resolves to a headline. Present only when succeeded is false."
+    },
+    "providerMessage": {
+      "type": "string",
+      "description": "The provider's own error text, verbatim except that the API key is scrubbed out of it. Shown as diagnostic detail beneath the translated headline, because a generic failure message is useless."
+    },
+    "httpStatus": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "HTTP status code the provider returned, when the request reached it at all."
+    }
+  }
+}

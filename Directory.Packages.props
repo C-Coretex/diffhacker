@@ -35,9 +35,30 @@
   <ItemGroup Label="Composition root and logging — beyond §0.3, approved">
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.11" />
+    <!--
+      The abstractions half of the already-approved logging package. Domain projects take a
+      dependency on ILogger<T> but must not drag the DI container and the logging pipeline in
+      with it, which referencing the full package would do.
+    -->
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
     <PackageVersion Include="Serilog" Version="4.4.0" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Persistence — §0.3">
+    <!--
+      Version-matched to the Microsoft.Extensions 10.0.11 line above so the shared
+      Microsoft.Extensions.* transitive graph resolves to one set of assemblies.
+    -->
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <!--
+      Beyond §0.3, requested by the user during Iteration 2: parameter binding and row mapping
+      rather than hand-written DbDataReader loops. A micro-ORM, not an ORM — it adds no schema
+      management, no change tracking and no query translation, so §0.3's "SQLite, JSON
+      documents + indexed columns" decision is untouched.
+    -->
+    <PackageVersion Include="Dapper" Version="2.1.79" />
   </ItemGroup>
 
   <ItemGroup Label="Contract codegen — beyond §0.3, approved (tools only)">

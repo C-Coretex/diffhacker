@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.1/recent-repository-list.schema.json",
+  "title": "RecentRepositoryList",
+  "description": "Repositories the user has opened before, most recently used first. Returned by repository.listRecent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entries"],
+  "properties": {
+    "entries": {
+      "type": "array",
+      "description": "Remembered repositories, ordered by last use, most recent first.",
+      "items": {
+        "$ref": "#/$defs/recentRepository"
+      }
+    }
+  },
+  "$defs": {
+    "recentRepository": {
+      "title": "RecentRepository",
+      "description": "One remembered repository. The entry survives the directory being deleted or moved, so the interface can offer to forget it rather than failing when the user clicks.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "name", "lastOpenedUtc", "available"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Absolute path to the worktree root, as it was when the repository was last opened."
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name recorded when the repository was last opened."
+        },
+        "lastOpenedUtc": {
+          "type": "string",
+          "format": "date-time",
+          "description": "UTC instant at which the repository was last opened."
+        },
+        "available": {
+          "type": "boolean",
+          "description": "False when the path no longer exists or is no longer a git working tree. The entry is still listed, marked, and can be forgotten."
+        }
+      }
+    }
+  }
+}

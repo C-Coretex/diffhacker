@@ -2,7 +2,29 @@
 
   <PropertyGroup>
     <RootNamespace>DiffHacker.Storage</RootNamespace>
+    <!--
+      The three per-OS master-key protectors bind to crypt32, Security.framework and libsecret
+      through [LibraryImport], whose source generator emits unsafe marshalling code. Scoped to
+      this project deliberately: it is the only one doing native interop, and the repo-wide
+      default stays off.
+    -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The master-key protectors and the encrypted-file format are internal on purpose: they are
+      the implementation of ISecretStore, not a surface anything else should reach for. The
+      tests do need to substitute a protector, so they get access explicitly.
+    -->
+    <InternalsVisibleTo Include="DiffHacker.Storage.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\DiffHacker.Contracts\DiffHacker.Contracts.csproj" />

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.0/self-test-result.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.1/self-test-result.schema.json",
   "title": "SelfTestResult",
   "description": "Verdict the renderer reports through host.reportSelfTest when the host was launched with --self-test. The host writes it to disk and exits 0 or 1, which is what CI gates on.",
   "type": "object",

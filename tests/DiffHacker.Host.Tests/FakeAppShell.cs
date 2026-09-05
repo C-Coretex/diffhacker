@@ -35,6 +35,26 @@ internal sealed class FakeAppShell : IAppShell
     {
     }
 
+    /// <summary>
+    /// What the next <see cref="ShowFolderPickerAsync"/> call returns. Null simulates the user
+    /// dismissing the dialog, which is an ordinary outcome rather than a failure.
+    /// </summary>
+    public string? FolderPickerResult { get; set; }
+
+    /// <summary>Set to have the picker fail, standing in for a broken native dialog.</summary>
+    public Exception? FolderPickerException { get; set; }
+
+    public List<(string Title, string? InitialDirectory)> FolderPickerCalls { get; } = [];
+
+    public Task<string?> ShowFolderPickerAsync(string title, string? initialDirectory, CancellationToken cancellationToken)
+    {
+        FolderPickerCalls.Add((title, initialDirectory));
+
+        return FolderPickerException is not null
+            ? Task.FromException<string?>(FolderPickerException)
+            : Task.FromResult(FolderPickerResult);
+    }
+
     public void Dispose() => _sentSignal.Dispose();
 
     /// <summary>Simulates the renderer posting a message to the host.</summary>

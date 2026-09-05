@@ -26,3 +26,7 @@ export function CardDescription({ className, ...props }: ComponentProps<'div'>) 
 export function CardContent({ className, ...props }: ComponentProps<'div'>) {
   return <div data-slot="card-content" className={cn('px-6', className)} {...props} />;
 }
+
+export function CardFooter({ className, ...props }: ComponentProps<'div'>) {
+  return <div data-slot="card-footer" className={cn('flex items-center gap-2 px-6', className)} {...props} />;
+}

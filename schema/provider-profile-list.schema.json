@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.1/provider-profile-list.schema.json",
+  "title": "ProviderProfileList",
+  "description": "Every configured LLM provider, and which one is active. Returned by providers.list. No API key appears anywhere in this type: keys travel from the renderer to the host on save and never come back (CLAUDE.md §0.2.13).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profiles"],
+  "properties": {
+    "profiles": {
+      "type": "array",
+      "description": "Configured providers, ordered by display name.",
+      "items": {
+        "$ref": "#/$defs/providerProfile"
+      }
+    },
+    "activeProfileId": {
+      "type": "string",
+      "description": "Identifier of the provider analysis runs will use. Absent when nothing is configured yet."
+    }
+  },
+  "$defs": {
+    "providerProfile": {
+      "title": "ProviderProfile",
+      "description": "One configured LLM provider. Carries whether a key is stored, never the key itself.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "providerType", "displayName", "model", "hasApiKey", "isActive", "modelSuggestions"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable identifier assigned by the host when the profile was first saved."
+        },
+        "providerType": {
+          "type": "string",
+          "description": "Which provider family this profile talks to. openai_compatible covers any endpoint speaking the OpenAI wire format, including local runtimes.",
+          "enum": ["openai", "anthropic", "gemini", "grok", "deepseek", "openai_compatible"]
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Name the user gave this profile, so two profiles for the same provider stay distinguishable."
+        },
+        "model": {
+          "type": "string",
+          "description": "Model identifier as free text. Deliberately not constrained to a list: hardcoded model lists rot."
+        },
+        "baseUrl": {
+          "type": "string",
+          "description": "Endpoint override. Required for an OpenAI-compatible endpoint, optional elsewhere."
+        },
+        "hasApiKey": {
+          "type": "boolean",
+          "description": "True when a key for this profile is present in the secret store. The key itself never crosses the bridge."
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "True for the single profile analysis runs will use."
+        },
+        "modelSuggestions": {
+          "type": "array",
+          "description": "Model identifiers this key could reach, captured during the last successful connection test. Empty until a test has succeeded, because the alternative is a hardcoded list that goes stale.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

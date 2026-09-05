@@ -33,4 +33,14 @@ public interface IAppShell : IDisposable
 
     /// <summary>Requests that the window close. Safe to call from any thread.</summary>
     void Close();
+
+    /// <summary>
+    /// Opens the operating system's native folder picker and returns the chosen path, or null
+    /// if the user dismissed it.
+    /// <para>
+    /// <paramref name="title"/> comes from the renderer's string catalogue rather than being
+    /// written here: this is a user-facing string, and the host authors none (§0.6).
+    /// </para>
+    /// </summary>
+    Task<string?> ShowFolderPickerAsync(string title, string? initialDirectory, CancellationToken cancellationToken);
 }

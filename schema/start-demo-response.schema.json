@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.0/start-demo-response.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.1/start-demo-response.schema.json",
   "title": "StartDemoResponse",
   "description": "Result of demo.startCountdown. Carries the operation identifier the subsequent ProgressNotification stream is tagged with.",
   "type": "object",

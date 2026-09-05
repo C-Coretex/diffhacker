@@ -36,7 +36,29 @@ public sealed class AppPaths
     /// </summary>
     public string LogFile => Path.Combine(LogDirectory, "log.txt");
 
-    public void EnsureCreated() => Directory.CreateDirectory(LogDirectory);
+    /// <summary>
+    /// Settings, the recent-repository list and provider configuration. Never inside the
+    /// user's repository: the application is read-only with respect to what it reviews.
+    /// </summary>
+    public string DatabaseFile => Path.Combine(DataDirectory, "diffhacker.db");
+
+    /// <summary>API keys, AES-GCM encrypted under the master key.</summary>
+    public string SecretsFile => Path.Combine(DataDirectory, "secrets.dat");
+
+    /// <summary>
+    /// The master key, wrapped by the platform credential store. Only written by backends that
+    /// wrap rather than store — DPAPI on Windows; Keychain and libsecret hold theirs themselves.
+    /// </summary>
+    public string MasterKeyFile => Path.Combine(DataDirectory, "masterkey.dat");
+
+    /// <summary>Salt for the machine-derived fallback key. Random per install.</summary>
+    public string SecretSaltFile => Path.Combine(DataDirectory, "secrets.salt");
+
+    public void EnsureCreated()
+    {
+        Directory.CreateDirectory(DataDirectory);
+        Directory.CreateDirectory(LogDirectory);
+    }
 
     private static string ResolveDataRoot()
     {

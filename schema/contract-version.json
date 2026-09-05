@@ -1,4 +1,4 @@
 {
   "$comment": "The canonical version of the whole /schema set. CLAUDE.md requires the schema version to be part of the contract: it is generated into ContractVersion.Current (C#) and CONTRACT_VERSION (TypeScript), asserted during the JSON-RPC handshake, and recorded on every persisted analysis. Bump it whenever any schema in this directory changes shape.",
-  "version": "1.0.0"
+  "version": "1.1.0"
 }

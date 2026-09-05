@@ -84,10 +84,13 @@ DiffHacker sends **portions of your source code** to whichever LLM provider you 
 the changed-file list up front, then whatever the model reads through the toolbox. That is
 how it works, and the app states it explicitly before your first analysis.
 
-Your API keys are stored in the OS secret store (Credential Manager, Keychain, libsecret)
-with an encrypted-file fallback, and never cross into the WebView. Crash reporting is
-opt-in only and never includes repository content. Local logs go to `log.txt` in your
-application data directory, with secrets redacted.
+Your API keys are encrypted with AES-GCM in your application data directory, under a master
+key held by your operating system's credential store — DPAPI on Windows, Keychain on macOS,
+libsecret on Linux. On systems with no keyring daemon the master key is derived from the
+machine and your user account instead, and the app says so rather than claiming a keyring it
+does not have. Keys never cross into the WebView. Crash reporting is opt-in only and never
+includes repository content. Local logs go to `log.txt` in your application data directory,
+with secrets redacted.
 
 ## Tech stack
 

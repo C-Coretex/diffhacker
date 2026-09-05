@@ -11,14 +11,16 @@ namespace DiffHacker.Architecture.Tests;
 /// </summary>
 public sealed class LayeringTests
 {
-    private static readonly Assembly Core = typeof(DiffHacker.Core.AssemblyMarker).Assembly;
+    private static readonly Assembly Core = typeof(DiffHacker.Core.Providers.LlmProviderType).Assembly;
 
+    // Anchored on real types now that these projects have content; DiffHacker.Tools is still
+    // empty and keeps its placeholder until Iteration 5 fills it.
     public static TheoryData<Assembly> DomainAssemblies() =>
     [
-        typeof(DiffHacker.Core.AssemblyMarker).Assembly,
-        typeof(DiffHacker.Git.AssemblyMarker).Assembly,
-        typeof(DiffHacker.Llm.AssemblyMarker).Assembly,
-        typeof(DiffHacker.Storage.AssemblyMarker).Assembly,
+        typeof(DiffHacker.Core.Providers.LlmProviderType).Assembly,
+        typeof(DiffHacker.Git.GitProcessRunner).Assembly,
+        typeof(DiffHacker.Llm.HttpProviderConnectionTester).Assembly,
+        typeof(DiffHacker.Storage.AppDatabase).Assembly,
         typeof(DiffHacker.Tools.AssemblyMarker).Assembly,
     ];
 

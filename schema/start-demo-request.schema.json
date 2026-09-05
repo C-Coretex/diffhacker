@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.0/start-demo-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.1/start-demo-request.schema.json",
   "title": "StartDemoRequest",
   "description": "Parameters for the demo.startCountdown method, which exists to demonstrate a typed client-to-server request that then streams server-to-client notifications back.",
   "type": "object",

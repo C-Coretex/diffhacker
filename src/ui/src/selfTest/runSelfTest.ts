@@ -1,6 +1,12 @@
 import { CONTRACT_VERSION, type HostInfo, type SelfTestCheck, type SelfTestResult } from '@/contracts';
 import type { RpcClient } from '@/rpc/client';
-import { onProgress, startCountdown } from '@/rpc/methods';
+import {
+  deleteProvider,
+  describeEnvironment,
+  onProgress,
+  saveProvider,
+  startCountdown,
+} from '@/rpc/methods';
 
 /** How many notifications the stream check expects. The iteration's bar is "at least three". */
 const REQUIRED_NOTIFICATIONS = 3;
@@ -27,8 +33,91 @@ export async function runSelfTest(client: RpcClient, hostInfo: HostInfo): Promis
 
   checks.push(await notificationStreamCheck(client));
   checks.push(await contentSecurityPolicyCheck());
+  checks.push(await environmentProbeCheck(client));
+  checks.push(await settingsRoundTripCheck(client));
 
   return { succeeded: checks.every((check) => check.passed), checks };
+}
+
+/**
+ * Proves the git probe and the secret store both answered.
+ *
+ * Deliberately does not require git to be present: a machine without it is a legitimate state
+ * the application reports rather than a broken build. What is checked is that the host can say
+ * which secret backend is in use, since that call touches the platform credential store.
+ */
+async function environmentProbeCheck(client: RpcClient): Promise<SelfTestCheck> {
+  try {
+    const environment = await describeEnvironment(client);
+    return {
+      name: 'environment_probe',
+      passed: true,
+      detail:
+        `git ${environment.gitAvailable ? environment.gitVersion : 'not found'}; ` +
+        `secrets via ${environment.secretBackend}${environment.secretBackendIsFallback ? ' (fallback)' : ''}`,
+    };
+  } catch (error) {
+    return {
+      name: 'environment_probe',
+      passed: false,
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Writes a provider profile with an API key, reads it back, and deletes it.
+ *
+ * Two things are being proved: SQLite and the secret store round-trip on this platform, and
+ * the key does not come back. The host runs `--self-test` against a temporary data directory,
+ * so this never touches real settings.
+ */
+async function settingsRoundTripCheck(client: RpcClient): Promise<SelfTestCheck> {
+  const marker = 'self-test-' + Date.now().toString(36);
+
+  try {
+    const saved = await saveProvider(client, {
+      providerType: 'openai',
+      displayName: marker,
+      model: 'self-test-model',
+      apiKey: 'sk-selftest-000000000000000000',
+    });
+
+    const profile = saved.profiles.find((candidate) => candidate.displayName === marker);
+    if (!profile) {
+      return { name: 'settings_round_trip', passed: false, detail: 'the saved profile was not returned' };
+    }
+
+    // The whole response is searched, not just the fields we know about: §0.2.13 forbids a key
+    // reaching the WebView by any route, including one added later by accident.
+    const leaked = JSON.stringify(saved).includes('sk-selftest-000000000000000000');
+
+    await deleteProvider(client, { id: profile.id });
+
+    if (leaked) {
+      return {
+        name: 'settings_round_trip',
+        passed: false,
+        detail: 'the API key was present in the providers.save response',
+      };
+    }
+
+    if (!profile.hasApiKey) {
+      return { name: 'settings_round_trip', passed: false, detail: 'hasApiKey was false after storing a key' };
+    }
+
+    return {
+      name: 'settings_round_trip',
+      passed: true,
+      detail: 'profile stored and removed; no key crossed the bridge',
+    };
+  } catch (error) {
+    return {
+      name: 'settings_round_trip',
+      passed: false,
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 /**

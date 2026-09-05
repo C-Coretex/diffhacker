@@ -116,6 +116,44 @@ public sealed class PhotinoAppShell(ILogger<PhotinoAppShell> logger, WindowSetti
         _window.Invoke(_window.Close);
     }
 
+    public Task<string?> ShowFolderPickerAsync(string title, string? initialDirectory, CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_sendGate)
+        {
+            if (!_windowReady)
+            {
+                // The dialog is owned by the native window; there is nothing to parent it to
+                // yet. This only happens if the renderer asks before it has finished loading.
+                return Task.FromResult<string?>(null);
+            }
+        }
+
+        var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // The dialog is modal on the UI thread, and RPC handlers run on a background thread,
+        // so it has to be marshalled across. Invoke is Photino's dispatcher.
+        _window.Invoke(() =>
+        {
+            try
+            {
+                var chosen = _window.ShowOpenFolder(title, initialDirectory, multiSelect: false);
+                completion.TrySetResult(chosen is { Length: > 0 } ? chosen[0] : null);
+            }
+#pragma warning disable CA1031 // Anything escaping here would cross the native boundary and kill the process.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                logger.LogError(ex, "The native folder picker failed");
+                completion.TrySetException(ex);
+            }
+        });
+
+        return completion.Task.WaitAsync(cancellationToken);
+    }
+
     public void Dispose()
     {
         if (_disposed)

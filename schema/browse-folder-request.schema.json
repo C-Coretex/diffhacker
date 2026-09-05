@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.1/browse-folder-request.schema.json",
+  "title": "BrowseFolderRequest",
+  "description": "Parameters for repository.browse, which opens the operating system's native folder picker. The renderer supplies the dialog title from its own string catalogue, because the host never authors user-facing prose.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Caption for the native dialog, already resolved to the user's language by the renderer."
+    },
+    "initialDirectory": {
+      "type": "string",
+      "description": "Directory the picker should start in. Omitted on first use, when there is no previous choice to return to."
+    }
+  }
+}

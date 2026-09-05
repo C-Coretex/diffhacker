@@ -343,6 +343,19 @@ Added during Iteration 1 with the user's approval. §0.4 still applies: ask befo
 | `Microsoft.Extensions.{DependencyInjection,Logging}` | Composition root. |
 | `Shouldly` | Test assertions. |
 
+Added during Iteration 2:
+
+| Package | Why |
+|---|---|
+| `Microsoft.Data.Sqlite` | §0.3's persistence choice, now actually used. Version-matched to the `Microsoft.Extensions` 10.0.11 line. |
+| `Dapper` | Requested by the user: parameter binding and row mapping instead of hand-written `DbDataReader` loops. A micro-ORM — no schema management, no change tracking, no query translation — so §0.3's "SQLite, JSON documents + indexed columns" is untouched. |
+| `Microsoft.Extensions.Logging.Abstractions` | The abstractions half of the already-approved logging package, so domain projects can take `ILogger<T>` without dragging the DI container in. |
+| `@radix-ui/react-label`, `@radix-ui/react-alert-dialog` | shadcn/ui primitives (§0.3). The provider picker uses a styled native `<select>`, so `@radix-ui/react-select` was deliberately **not** added. |
+
+No package was needed for the native folder picker or the secret store. PhotinoX already exposes
+`ShowOpenFolder`; the three credential backends are `[LibraryImport]` bindings, which is why
+`DiffHacker.Storage` — and only that project — sets `AllowUnsafeBlocks`.
+
 ### The shell: PhotinoX, not Photino.NET
 
 §0.3 names Photino.NET. Iteration 1 established that it cannot satisfy the hard constraint of

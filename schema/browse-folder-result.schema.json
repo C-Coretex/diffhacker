@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.1/browse-folder-result.schema.json",
+  "title": "BrowseFolderResult",
+  "description": "Outcome of the native folder picker. Cancelling is an ordinary result rather than an error, so the renderer can distinguish it from a genuine failure.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cancelled"],
+  "properties": {
+    "cancelled": {
+      "type": "boolean",
+      "description": "True when the user dismissed the dialog without choosing a folder."
+    },
+    "path": {
+      "type": "string",
+      "description": "Absolute path of the chosen folder. Present only when cancelled is false. The folder has not been validated as a repository at this point."
+    }
+  }
+}

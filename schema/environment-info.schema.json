@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.1/environment-info.schema.json",
+  "title": "EnvironmentInfo",
+  "description": "State of the two external facilities the application cannot work without: the git command line and a place to keep secrets. Returned by the environment.describe JSON-RPC method so the renderer can block or warn honestly rather than failing later.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["gitAvailable", "secretBackend", "secretBackendIsFallback"],
+  "properties": {
+    "gitAvailable": {
+      "type": "boolean",
+      "description": "True when a usable git executable was found on PATH. The application is non-functional when this is false."
+    },
+    "gitVersion": {
+      "type": "string",
+      "description": "Version string reported by git --version, present only when gitAvailable is true."
+    },
+    "secretBackend": {
+      "type": "string",
+      "description": "Which store is actually protecting the master key that encrypts API keys. Reported so the interface can state the real guarantee rather than an assumed one.",
+      "enum": ["windows_dpapi", "macos_keychain", "linux_libsecret", "machine_derived"]
+    },
+    "secretBackendIsFallback": {
+      "type": "boolean",
+      "description": "True when the platform's credential store was unavailable and the machine-derived fallback engaged. The interface warns when this is set."
+    }
+  }
+}

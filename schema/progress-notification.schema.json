@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.0/progress-notification.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.1/progress-notification.schema.json",
   "title": "ProgressNotification",
   "description": "A single step of a long-running host operation, pushed to the renderer as a server-to-client JSON-RPC notification. Iteration 1 uses it for the demo countdown; the analysis pipeline reuses the same shape.",
   "type": "object",

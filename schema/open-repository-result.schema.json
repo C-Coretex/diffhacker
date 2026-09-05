@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.1/open-repository-result.schema.json",
+  "title": "OpenRepositoryResult",
+  "description": "Result of repository.open. A rejected path surfaces as a JSON-RPC error carrying a stable code, so this type only ever describes success.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repository", "normalizedFromSubdirectory"],
+  "properties": {
+    "repository": {
+      "$ref": "#/$defs/repositoryInfo"
+    },
+    "normalizedFromSubdirectory": {
+      "type": "boolean",
+      "description": "True when the user picked a directory inside the repository and the host resolved upwards to the worktree root. The interface says so rather than silently changing the path underneath them."
+    }
+  },
+  "$defs": {
+    "repositoryInfo": {
+      "title": "RepositoryInfo",
+      "description": "A validated git working tree the application has accepted. The path is always the worktree root, never a subdirectory the user happened to pick.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "name", "hasCommits", "isLinkedWorktree"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Absolute path to the root of the working tree."
+        },
+        "name": {
+          "type": "string",
+          "description": "Leaf directory name of the worktree root, used as the display name."
+        },
+        "hasCommits": {
+          "type": "boolean",
+          "description": "False for a repository with no commits yet, where there is no HEAD to compare the working tree against."
+        },
+        "isLinkedWorktree": {
+          "type": "boolean",
+          "description": "True when this is a linked worktree rather than the repository's main working tree."
+        }
+      }
+    }
+  }
+}
