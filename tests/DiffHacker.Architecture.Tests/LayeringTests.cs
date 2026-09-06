@@ -13,15 +13,17 @@ public sealed class LayeringTests
 {
     private static readonly Assembly Core = typeof(DiffHacker.Core.Providers.LlmProviderType).Assembly;
 
-    // Anchored on real types now that these projects have content; DiffHacker.Tools is still
-    // empty and keeps its placeholder until Iteration 5 fills it.
+    // All anchored on real types. DiffHacker.Mcp is here for a reason of its own: it is an
+    // executable that must stay headless, and the whole argument for it being a separate binary
+    // rather than a mode of the host is that it never loads a window.
     public static TheoryData<Assembly> DomainAssemblies() =>
     [
         typeof(DiffHacker.Core.Providers.LlmProviderType).Assembly,
         typeof(DiffHacker.Git.GitProcessRunner).Assembly,
         typeof(DiffHacker.Llm.HttpProviderConnectionTester).Assembly,
         typeof(DiffHacker.Storage.AppDatabase).Assembly,
-        typeof(DiffHacker.Tools.AssemblyMarker).Assembly,
+        typeof(DiffHacker.Tools.ToolboxCatalog).Assembly,
+        typeof(DiffHacker.Mcp.McpCommandLine).Assembly,
     ];
 
     [Fact]

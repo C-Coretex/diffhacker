@@ -1,5 +1,6 @@
 using DiffHacker.Git;
 using Microsoft.Extensions.Logging.Abstractions;
+using DiffHacker.TestSupport;
 
 namespace DiffHacker.Git.Tests;
 
@@ -57,13 +58,19 @@ public sealed class GitProcessRunnerTests
     public void The_allowlist_contains_only_read_only_subcommands()
     {
         // A denylist would be wrong the moment git grows a subcommand. This asserts the shape
-        // of the rule, so widening it stays a deliberate act.
+        // of the rule, so widening it stays a deliberate act — which is why this test failed
+        // when Iteration 5 added grep, and why it should fail for the next one too.
         //
-        // Iteration 3 added diff, ls-files and cat-file. Note what is still absent: submodule,
-        // whose read-only status query cannot be granted without also granting
-        // `submodule update`, and hash-object, which writes as soon as anyone passes -w.
+        // Iteration 3 added diff, ls-files and cat-file. Iteration 5 added grep, for the
+        // toolbox's repository-wide search: it has no mutating form at all, and the alternatives
+        // were an external search binary — the command execution the toolbox is forbidden — or
+        // reimplementing .gitignore traversal.
+        //
+        // Note what is still absent: submodule, whose read-only status query cannot be granted
+        // without also granting `submodule update`, and hash-object, which writes as soon as
+        // anyone passes -w.
         GitProcessRunner.PermittedSubcommands.ShouldBe(
-            ["version", "rev-parse", "diff", "ls-files", "cat-file"],
+            ["version", "rev-parse", "diff", "ls-files", "cat-file", "grep"],
             ignoreOrder: true);
     }
 

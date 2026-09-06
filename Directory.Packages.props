@@ -34,6 +34,12 @@
 
   <ItemGroup Label="Composition root and logging — beyond §0.3, approved">
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+    <!--
+      The abstractions half, for the same reason as the logging one below: DiffHacker.Tools ships
+      one AddToolbox() registration so the host and the standalone MCP server cannot wire the
+      toolbox differently, and that needs IServiceCollection without the container itself.
+    -->
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.11" />
     <!--
       The abstractions half of the already-approved logging package. Domain projects take a
@@ -100,6 +106,27 @@
       Google's own OpenAI-compatible endpoint on the OpenAI SDK above. See
       ProviderEndpoints.ChatBaseUrl.
     -->
+  </ItemGroup>
+
+  <ItemGroup Label="Toolbox and MCP — §0.3">
+    <!--
+      §0.3 names the main ModelContextProtocol package; this is ModelContextProtocol.Core, the
+      same official SDK one layer down, chosen during Iteration 5 planning and confirmed with the
+      user rather than substituted silently.
+
+      Everything the toolbox and the stdio server need is here: McpServerToolAttribute,
+      McpServerTool.Create, StdioServerTransport and McpServer.Create. The main package adds
+      IServiceCollection builders — AddMcpServer().WithStdioServerTransport() — over exactly those
+      APIs, and drags Microsoft.Extensions.Hosting.Abstractions and Caching.Abstractions along for
+      it. DiffHacker.Host composes with a bare ServiceCollection and no generic host, so those
+      builders would be sugar over a call we make directly, paid for with two more pinned
+      packages. Emphatically not .AspNetCore, which NoLocalServerTests forbids by test.
+
+      2.2.0 targets net10.0. Its floors — Microsoft.Extensions.AI.Abstractions >= 10.8.3 and
+      Microsoft.Extensions.Logging.Abstractions >= 10.0.10 — sit under the versions pinned above,
+      so nothing else moves to accommodate it.
+    -->
+    <PackageVersion Include="ModelContextProtocol.Core" Version="2.2.0" />
   </ItemGroup>
 
   <ItemGroup Label="Contract codegen — beyond §0.3, approved">

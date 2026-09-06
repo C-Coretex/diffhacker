@@ -387,37 +387,28 @@ public sealed partial class GitClient
     }
 
     private static string ToAbsolute(string root, string relativePath) =>
-        Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        RepositoryPaths.ToAbsolute(root, relativePath);
 
     /// <summary>
     /// Rejects anything that is not a plain repository-relative path.
     /// <para>
-    /// Iteration 5 sandboxes the toolbox properly; this is the narrower promise that the Git
-    /// layer itself never reaches outside the repository it was given, so that the seam is
-    /// closed before anything is built on top of it.
+    /// The narrower of the two promises in the codebase: this one says the Git layer never
+    /// reaches outside the repository it was given. Iteration 5's <c>RepositoryScope</c> is the
+    /// wider one, adding symlink resolution, <c>.git/</c> refusal and membership of the visible
+    /// set. Both spell "repository-relative" the same way, via
+    /// <see cref="RepositoryPaths.IsRepositoryRelative"/>, because a sandbox and the layer under
+    /// it disagreeing about what a path is would be a seam worth exploiting.
     /// </para>
     /// </summary>
     private static string RequireRepositoryRelativePath(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
-        var normalised = path.Replace('\\', '/');
-
-        if (Path.IsPathRooted(normalised) || normalised.StartsWith('/'))
+        if (!RepositoryPaths.IsRepositoryRelative(path, out var normalised))
         {
             throw new GitClientException(
                 $"'{path}' is not a repository-relative path.",
                 GitClientFailure.RepositoryUnreadable);
-        }
-
-        foreach (var segment in normalised.Split('/'))
-        {
-            if (segment is ".." or ".")
-            {
-                throw new GitClientException(
-                    $"'{path}' is not a repository-relative path.",
-                    GitClientFailure.RepositoryUnreadable);
-            }
         }
 
         return normalised;

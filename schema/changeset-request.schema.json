@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.4/changeset-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.5/changeset-request.schema.json",
   "title": "ChangesetRequest",
   "description": "Parameters of changeset.load. There is no branch, commit or range here: the application reviews the working tree against HEAD and nothing else.",
   "type": "object",

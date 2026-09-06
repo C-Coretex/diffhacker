@@ -1,4 +1,5 @@
 import type {
+  AnalysisProgress,
   BrowseFolderRequest,
   BrowseFolderResult,
   ChangesetRequest,
@@ -58,10 +59,40 @@ export const RpcMethods = {
 /**
  * Server-to-client notification names.
  *
- * Empty for now. `RpcClient.on` is still the way to subscribe to one; Iteration 5's
- * `report_progress` is the first notification the application will actually receive.
+ * Every name here matches a method the host passes to `IRpcNotifier.NotifyAsync`. Subscribe with
+ * `RpcClient.on`, which returns its own unsubscribe.
+ *
+ * `analysisProgress` carries the toolbox's `report_progress` — what the model says it is doing —
+ * so a long run shows its work instead of a spinner. Nothing produces it until Iteration 7 runs
+ * an analysis; the channel and its subscriber exist so that when something does, there is nothing
+ * left to wire.
  */
-export const RpcNotifications = {} as const;
+export const RpcNotifications = {
+  analysisProgress: 'analysis.progress',
+} as const;
+
+/**
+ * Subscribes to analysis progress. Returns the unsubscribe function.
+ *
+ * Reports are dropped unless their sequence is newer than the last one seen: notifications have
+ * no ordering guarantee worth relying on, and progress that appears to run backwards reads as a
+ * bug in the analysis rather than in the transport.
+ */
+export function onAnalysisProgress(
+  client: RpcClient,
+  handler: (progress: AnalysisProgress) => void,
+): () => void {
+  let latest = 0;
+
+  return client.on<AnalysisProgress>(RpcNotifications.analysisProgress, (progress) => {
+    if (progress.sequence <= latest) {
+      return;
+    }
+
+    latest = progress.sequence;
+    handler(progress);
+  });
+}
 
 export function ping(client: RpcClient): Promise<HostInfo> {
   return client.call<HostInfo>(RpcMethods.ping);

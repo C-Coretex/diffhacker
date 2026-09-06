@@ -60,6 +60,9 @@ user's repository** (§0.2.12), and it is gated accordingly.
 9. Show progress via the `report_progress` mechanism, with cost and cancellation.
 10. Analysis can proceed **without** a profile, but the UI warns clearly that results will be
     weaker (§0.6).
+11. Security: the MCP tools for LLM can look only in the selected repository. They can't get out of this repository, even if Path ../../../.... by the LLM is provided.
+      Also sensitive files are not sent (like .env file, sensitive files can also be configured)
+12. We also want to log in UI what tools with what input, output and execution time were used (in real time, so user would see the progress)
 
 ## Out of scope
 

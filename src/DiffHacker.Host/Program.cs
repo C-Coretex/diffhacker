@@ -4,6 +4,7 @@ using DiffHacker.Core.Llm;
 using DiffHacker.Core.Providers;
 using DiffHacker.Core.Repositories;
 using DiffHacker.Core.Settings;
+using DiffHacker.Core.Tools;
 using DiffHacker.Git;
 using DiffHacker.Host.Assets;
 using DiffHacker.Host.Logging;
@@ -148,10 +149,13 @@ internal static class Program
         services.AddSingleton<ITokenPricing, ModelPricing>();
         services.AddSingleton<ILlmSessionFactory, LlmSessionFactory>();
 
-        // The notifier is the bridge's outbound-notification plumbing. Nothing pushes
-        // notifications yet — Iteration 5's report_progress is the first real caller.
+        // The notifier is the bridge's outbound-notification plumbing, and ToolProgressNotifier
+        // is its first real producer: the toolbox's report_progress arrives here and leaves as an
+        // analysis.progress notification. Nothing in the application starts an analysis yet, so
+        // nothing calls it until Iteration 7 — the pipe is complete and the producer is not.
         services.AddSingleton<RpcNotifier>();
         services.AddSingleton<IRpcNotifier>(sp => sp.GetRequiredService<RpcNotifier>());
+        services.AddSingleton<IToolProgressSink, ToolProgressNotifier>();
         services.AddSingleton<HostRpcTarget>();
         services.AddSingleton<EnvironmentRpcTarget>();
         services.AddSingleton<RepositoryRpcTarget>();

@@ -8,7 +8,17 @@
 |---|---|
 | **Depends on** | [3](iteration-03-git-layer.md), [4](iteration-04-llm-provider-layer.md) |
 | **Blocks** | 6, 7 |
-| **Status** | Not started |
+| **Status** | Complete, with one item explicitly deferred — see below |
+
+> **Deferred to Iteration 7.** Verification step 7 asks for `report_progress` arriving in the UI
+> during a live session. The pipe is built and both halves are tested — `ToolProgressNotifierTests`
+> for the host, `methods.test.ts` for the renderer — but nothing in the application starts an
+> analysis until Iteration 7, so no notification travels the real bridge into the real window yet.
+> That is the E2E test [docs/decisions.md](../decisions.md) asks for; it belongs with the first
+> real producer.
+>
+> Decisions taken here that later iterations should not re-open are recorded under
+> [The toolbox: what the LLM can and cannot see](../decisions.md).
 
 ## Goal
 

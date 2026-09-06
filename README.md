@@ -106,7 +106,7 @@ with secrets redacted.
 | Contracts | JSON Schema in `/schema` → generated C# + TypeScript |
 | Git | `git` CLI behind `IGitClient` |
 | LLM | `Microsoft.Extensions.AI` / `IChatClient` |
-| Tools | `ModelContextProtocol` C# SDK — usable in-process **and** over stdio by other agents |
+| Tools | `ModelContextProtocol.Core` C# SDK — one definition, usable in-process **and** over stdio by other agents |
 | Storage | SQLite |
 | Packaging | Velopack, self-contained per RID |
 
@@ -120,7 +120,8 @@ with secrets redacted.
   DiffHacker.Core        analysis orchestration, validation, domain
   DiffHacker.Git         IGitClient + git CLI implementation
   DiffHacker.Llm         provider registry, sessions, budgets
-  DiffHacker.Tools       the LLM toolbox + MCP server surface
+  DiffHacker.Tools       the LLM toolbox: the ten tools it explores a repository with
+  DiffHacker.Mcp         diffhacker-mcp — the same toolbox over stdio, headless
   DiffHacker.Storage     SQLite, analysis library, settings, secrets
   DiffHacker.Host        Photino, JSON-RPC dispatcher, composition root
   /ui                    Vite + React + TypeScript
@@ -128,6 +129,21 @@ with secrets redacted.
 /docs
   /iterations            the implementation plan, one file per iteration
 ```
+
+## Use the toolbox from your own agent
+
+The tools DiffHacker gives its model are not private to it. `diffhacker-mcp` serves the same ten
+tools over stdio to any MCP client:
+
+```
+dotnet build src/DiffHacker.slnx
+claude mcp add diffhacker -- <repo>/src/DiffHacker.Mcp/bin/Release/net10.0/diffhacker-mcp --repository /path/to/your/repo
+```
+
+It is read-only and offline by construction: no write path, no command execution and no network
+access exist anywhere in the toolbox — an architecture test asserts the absence rather than the
+disuse. It sees only what git sees, so `.git/` and everything `.gitignore` covers are invisible,
+and every result is capped and paged so a single call cannot flood a context window.
 
 ## Roadmap
 

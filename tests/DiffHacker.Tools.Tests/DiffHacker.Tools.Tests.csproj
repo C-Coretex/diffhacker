@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DiffHacker.Tools.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!--
+      For the stdio round trip: the suite starts the real diffhacker-mcp executable and speaks
+      MCP to it as a client would. That is the only test that proves the two consumption paths
+      are actually one toolbox rather than two that happen to agree.
+    -->
+    <PackageReference Include="ModelContextProtocol.Core" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DiffHacker.Tools\DiffHacker.Tools.csproj" />
+    <ProjectReference Include="..\DiffHacker.TestSupport\DiffHacker.TestSupport.csproj" />
+    <!--
+      Referenced so `dotnet test` builds the server before the round-trip test looks for it.
+      ReferenceOutputAssembly is off: the test project needs the executable on disk, not its
+      types linked in.
+    -->
+    <ProjectReference Include="..\..\src\DiffHacker.Mcp\DiffHacker.Mcp.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

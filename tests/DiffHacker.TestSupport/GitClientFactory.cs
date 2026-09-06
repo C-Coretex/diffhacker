@@ -1,10 +1,11 @@
 using DiffHacker.Core.Changes;
+using DiffHacker.Git;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace DiffHacker.Git.Tests;
+namespace DiffHacker.TestSupport;
 
 /// <summary>Builds a <see cref="GitClient"/> wired to a real git, the way the app wires it.</summary>
-internal static class GitClientFactory
+public static class GitClientFactory
 {
     public static GitClient Create()
     {

@@ -1,3 +1,4 @@
+using DiffHacker.Core.Changes;
 using DiffHacker.Core.Repositories;
 using Microsoft.Extensions.Logging;
 
@@ -139,11 +140,7 @@ public sealed partial class RepositoryLocator(
     private static string Resolve(string root, string candidate) =>
         Path.GetFullPath(Path.IsPathRooted(candidate) ? candidate : Path.Combine(root, candidate));
 
-    private static bool PathsEqual(string left, string right) =>
-        string.Equals(
-            left.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-            right.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-            OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
+    private static bool PathsEqual(string left, string right) => RepositoryPaths.PathsEqual(left, right);
 
     /// <summary>Leaf directory name, coping with a path that is a drive or filesystem root.</summary>
     private static string LeafName(string root)

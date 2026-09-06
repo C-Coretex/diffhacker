@@ -231,5 +231,15 @@ public sealed class ChangesetRpcTests : IAsyncLifetime
                 ? Task.FromException<FileContentResult>(Failure)
                 : Task.FromResult(Content!);
         }
+
+        // Iteration 5 added these for the toolbox. The changeset RPC surface does not use them,
+        // and a stub that pretended to would invite a test to depend on a fiction.
+        public Task<IReadOnlyList<string>> ListFilesAsync(
+            FileListQuery query,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("The changeset RPC surface does not list files.");
+
+        public Task<GrepResult> GrepAsync(GrepQuery query, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("The changeset RPC surface does not search.");
     }
 }

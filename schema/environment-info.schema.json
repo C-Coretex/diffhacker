@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.4/environment-info.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.5/environment-info.schema.json",
   "title": "EnvironmentInfo",
   "description": "State of the two external facilities the application cannot work without: the git command line and a place to keep secrets. Returned by the environment.describe JSON-RPC method so the renderer can block or warn honestly rather than failing later.",
   "type": "object",

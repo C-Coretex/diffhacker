@@ -69,6 +69,112 @@ The cost the user accepted:
   window, because after the demo target's removal nothing sends one. Iteration 5's
   `report_progress` is the first real producer — add an end-to-end test for it there.
 
+## The toolbox: what the LLM can and cannot see
+
+Iteration 5 decisions that shape every later prompt, settled with the user before implementing.
+
+### `git grep`, and the allowlist widening it cost
+
+Requirement 4 forbids command execution, and a repository-wide regex search needs an engine. The
+three candidates were an external tool such as ripgrep (an unlisted dependency, and exactly the
+command execution the toolbox is forbidden), .NET's own `Regex` over a streamed file list
+(correct, but reimplementing the `.gitignore` traversal git already does), and `git grep`.
+
+`git grep` won, which meant adding `grep` to `GitProcessRunner.PermittedSubcommands`. CLAUDE.md
+calls that "a change to the product's contract, not a detail", so: `grep` has no mutating form at
+all — unlike `submodule`, there is no sibling command the grant drags along — and it starts no
+external program provided `--no-textconv` is passed, which `GitClient.CommonGrepOptions` does.
+`GitProcessRunnerTests.The_allowlist_contains_only_read_only_subcommands` failed when it was
+added, which is the guard working.
+
+One consequence is worth knowing before touching the search code. `git grep -z` replaces **both**
+field separators with NUL, not just the one after the path, so the record is
+`<path>NUL<line number>NUL<line>`. That erases the `:`-versus-`-` marker distinguishing a matching
+line from a context line, which means `-C` returns lines with no way to tell which of them
+matched. Dropping `-z` to recover the marker would mean parsing quoted, escaped,
+`core.quotePath`-dependent paths, which CLAUDE.md forbids outright. So git supplies match
+positions — which only it can determine — and `SearchTools` reads the lines around them back from
+the file. `GitClientSearchTests` pins the byte format.
+
+Regex dialects are exposed as `fixed`, `extended` and `perl`, because a model writes `\d` by
+habit and POSIX extended has no such thing. `perl` needs a git built with PCRE; where there is
+none, the search runs as `extended` and the result header says so rather than failing.
+
+### The visible set: git-tracked only
+
+Every tool's field of view is one call — `git ls-files --cached --others --exclude-standard -z` —
+taken once per session. Tracked files plus untracked files `.gitignore` does not cover, and
+nothing else. `.git/` is refused by name at any depth.
+
+This is a token-economy decision before it is a security one: on a typical JavaScript repository
+`node_modules` alone would make `find_files` and `get_repository_tree` useless and could burn
+several hundred thousand tokens on a single call. There is deliberately **no** `include_ignored`
+escape hatch, because that is the cheapest possible way to do exactly that by accident.
+
+The cost is that a model can be misled into thinking a directory is empty when it is merely
+expensive. So ignored entries are counted, not concealed: `list_directory` and
+`get_repository_tree` append "N more entries are present but ignored by git", and
+`get_path_info` answers "exists as a file but is ignored by git" rather than "not found" — the
+only tool that draws that distinction, and the reason it exists.
+
+Deriving directories from the flat path list rather than from the filesystem keeps one definition
+of what is visible. Its one visible consequence is that an empty directory never appears, which
+costs nothing: git does not track those either.
+
+### Result caps
+
+`LlmBudget` defaults to 500 tool calls and 2,000,000 tokens for a whole run, so the *average*
+tool result has to land near 4,000 tokens for a long analysis to fit. The numbers in
+`ToolboxLimits` put a typical page at 5–25 KB (roughly 1–6k tokens) and set a hard ceiling of
+48 KiB — about 12k tokens — that no result may cross whatever its own page size says. The ceiling
+is meant to be a rare event rather than a routine spend.
+
+Results are plain text, not JSON: the same information costs roughly twice the tokens once every
+key is quoted and repeated per row, and §0.2.9 makes token economy an invariant. `ToolText` is
+the only thing that enforces a cap or writes a truncation marker, so the marker has one spelling
+and cannot drift between nine tools.
+
+Continuation tokens are opaque and carry a fingerprint of the query that produced them. A cursor
+that read as `offset=40` is a cursor a model will edit, and an edited offset against a different
+query returns the wrong rows silently; pairing one with a different search is refused instead.
+
+### One definition, two consumers
+
+Each tool is one `[McpServerTool]`-attributed method. `ToolboxCatalog` scans those methods once
+and produces both `McpTools`, which the stdio server serves, and `LlmTools`, the provider-agnostic
+`LlmToolDefinition` the analysis pipeline will run.
+
+The two go through different SDK factories, and that is deliberate rather than incidental:
+`McpServerTool.Create` knows a method returning `string` is text and emits it as text, where
+routing the MCP path through an `AIFunction` first JSON-encodes it and hands the model a quoted,
+backslash-escaped wall. That nearly shipped;
+`StdioServerTests.Tool_results_arrive_as_plain_text_not_as_encoded_json` exists because of it.
+What keeps the pair one tool rather than two is the shared `MethodInfo` plus
+`ToolboxCatalogTests`, which asserts they agree on name, description and argument schema for
+every tool.
+
+### The standalone server is its own executable
+
+`src/DiffHacker.Mcp` builds `diffhacker-mcp`, rather than the toolbox being a `--mcp-stdio` mode
+of the host. The host becomes a windowed application in Iteration 14, and a windowed subsystem
+has no usable stdout — which is the entire transport. Keeping them apart also means an external
+agent running the toolbox never loads PhotinoX or a native WebView, and
+`LayeringTests.No_domain_assembly_references_Photino` asserts it.
+
+It logs to stderr, which is where MCP reserves server diagnostics. MCP's own logging channel,
+`notifications/message`, was deprecated in specification version 2026-07-28 (SEP-2577) and the
+SDK errors on it, so `report_progress` over stdio goes to stderr rather than to a deprecated
+notification.
+
+### A subprocess must not inherit the parent's stdin
+
+Found by the stdio server and fixed in the git layer: `GitProcessRunner` now redirects the child's
+stdin and closes it immediately. Without that, git was handed whatever stdin the host process had.
+In the desktop application that is harmless; in the MCP server, stdin is the live protocol pipe,
+and every git invocation blocked for the full 30-second timeout — a `read_file` call took 30s
+instead of 25ms. A read-only subprocess has no business holding its parent's input channel in
+either process, and in the server it could in principle have consumed protocol bytes.
+
 ## Dependencies beyond §0.3
 
 Full rationale for each package added outside the fixed stack. CLAUDE.md keeps a short
@@ -114,6 +220,23 @@ package → reason table; this is the expanded version.
 - **`NJsonSchema`** — not new, but newly runtime: `DiffHacker.Llm` validates the model's
   structured answer against the schema it was asked for. The two `CodeGeneration` packages
   remain tool-only.
+
+### Iteration 5
+
+- **`ModelContextProtocol.Core`** — §0.3 names the main `ModelContextProtocol` package; this is
+  the same official SDK one layer down. Everything the toolbox and the stdio server need is in
+  it: `McpServerToolAttribute`, `McpServerTool.Create`, `StdioServerTransport`,
+  `McpServer.Create`, and the client transport the round-trip test drives. The main package adds
+  `AddMcpServer().WithStdioServerTransport()` builders over exactly those APIs and brings
+  `Microsoft.Extensions.Hosting.Abstractions` and `Caching.Abstractions` with them; both
+  composition roots here use a bare `ServiceCollection` and no generic host, so that would be
+  sugar over a call we make directly, paid for in two more pinned packages. Emphatically not
+  `.AspNetCore`, which `NoLocalServerTests` forbids by test. 2.2.0, `net10.0`; its floors sit
+  under our existing pins, so nothing else moved. Raised with the user rather than substituted.
+- **`Microsoft.Extensions.DependencyInjection.Abstractions`** — declared for the same reason as
+  the logging abstractions already were, then not needed: `Toolbox.OpenAsync` takes its five
+  dependencies as a record instead of a container. The entry stays in
+  `Directory.Packages.props` because transitive pinning wants one version to settle on.
 
 ### No package needed
 

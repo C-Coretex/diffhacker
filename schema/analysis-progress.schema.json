@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.5/analysis-progress.schema.json",
+  "title": "AnalysisProgress",
+  "description": "Payload of the analysis.progress notification: what the model says it is doing, pushed from host to renderer while an analysis runs. Produced by the report_progress tool (Iteration 5) and rendered by the analysis screen (Iteration 7), which is why it is named for the run rather than for the tool.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sequence", "message", "atUtc"],
+  "properties": {
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "One-based and increasing within a run. Notifications carry no ordering guarantee worth relying on, so the renderer drops any report whose sequence is not newer than the one it is showing rather than letting progress appear to run backwards."
+    },
+    "message": {
+      "type": "string",
+      "description": "The model's own words about what it is doing now, shown to the reviewer as written. The one user-facing string the host does not author: it is data produced during the run, not UI copy, so §0.6's resource-layer rule does not apply to it."
+    },
+    "phase": {
+      "type": "string",
+      "description": "Optional coarse stage, as a stable key the renderer can translate. An unrecognised value renders as the message alone rather than as a missing string.",
+      "enum": ["exploring", "analysing", "grouping", "explaining", "finishing"]
+    },
+    "atUtc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC instant the report was made."
+    }
+  }
+}

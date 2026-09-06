@@ -2,6 +2,21 @@
 
   <PropertyGroup>
     <RootNamespace>DiffHacker.Llm.Live.Tests</RootNamespace>
+    <!--
+      Every test here skips unless its DIFFHACKER_LIVE_* key is set, which is the whole design:
+      `dotnet test` stays offline and costs nothing. Microsoft.Testing.Platform otherwise treats
+      a run where nothing executed as an error — it requires at least one test by default — so
+      the solution-wide run reported "Zero tests ran" and failed with zero failing tests.
+
+      Exit code 8 is "the session ran zero tests"; ignoring it says that outcome is expected
+      here. Setting the minimum-expected-tests option to zero would be the more direct spelling,
+      but the platform rejects it: that option demands a non-zero positive integer.
+
+      Scoped to this project alone. Everywhere else the default is worth keeping: a suite that
+      suddenly discovers nothing has usually broken rather than become unnecessary. A real
+      failure here still fails, because only the zero-tests code is ignored.
+    -->
+    <TestingPlatformCommandLineArguments>$(TestingPlatformCommandLineArguments) --ignore-exit-code 8</TestingPlatformCommandLineArguments>
   </PropertyGroup>
 
   <ItemGroup>

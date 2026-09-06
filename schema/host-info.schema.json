@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.4/host-info.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.5/host-info.schema.json",
   "title": "HostInfo",
   "description": "Identity and environment of the .NET host process. Returned by the host.ping JSON-RPC method so the renderer can confirm it was built from the same contract generation as the host.",
   "type": "object",

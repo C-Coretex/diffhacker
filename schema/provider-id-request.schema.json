@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.4/provider-id-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.5/provider-id-request.schema.json",
   "title": "ProviderIdRequest",
   "description": "Parameters for the provider methods that act on one existing profile: providers.delete, providers.setActive and providers.testConnection.",
   "type": "object",

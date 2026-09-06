@@ -87,7 +87,7 @@ Non-negotiable, apply to every iteration.
 | Contract source of truth | **JSON Schema** in `/schema` → generated C# records + TS types |
 | Git access | **git CLI** behind an `IGitClient` abstraction |
 | LLM abstraction | **`Microsoft.Extensions.AI`** / `IChatClient` |
-| MCP | **`ModelContextProtocol`** (official C# SDK, v2.x, main package — not `.AspNetCore`) |
+| MCP | **`ModelContextProtocol.Core`** 2.2.0 (official C# SDK; `.Core`, not the main package — see [docs/decisions.md](docs/decisions.md#dependencies-beyond-§03)) |
 | Persistence | **SQLite** (`Microsoft.Data.Sqlite`), JSON documents + indexed columns |
 | Secrets | `ISecretStore`, per-OS backends + encrypted-file fallback |
 | Logging | Local rolling `log.txt` in the app data directory |
@@ -108,7 +108,8 @@ Indicative; internal structure within each project is Claude Code's call.
   DiffHacker.Core              analysis orchestration, validation, domain
   DiffHacker.Git               IGitClient + git CLI implementation
   DiffHacker.Llm               IChatClient wiring, provider registry, budgets
-  DiffHacker.Tools             the toolbox + MCP server surface
+  DiffHacker.Tools             the toolbox the LLM explores the repository with
+  DiffHacker.Mcp               diffhacker-mcp: the toolbox over stdio, headless
   DiffHacker.Storage           SQLite, analysis library, settings, secrets
   DiffHacker.Host              Photino, JSON-RPC dispatcher, composition root
   /ui                          Vite + React + TypeScript
@@ -251,6 +252,7 @@ Run from the repository root.
 | E2E tests (drives the real window) | `npm test` in `tests/e2e` (`npm install` once; build the solution first) |
 | E2E report/screenshots | `npm run report` in `tests/e2e`; PNGs in `tests/e2e/artifacts/screenshots/` |
 | Run against throwaway state | `dotnet run --project src/DiffHacker.Host -- --data-dir <path>` |
+| Serve the toolbox over MCP | `dotnet run --project src/DiffHacker.Mcp -- --repository <path>` |
 
 > Never pass `--nologo` to `dotnet test`: under Microsoft.Testing.Platform it's forwarded to
 > the test executable, which rejects it ("Zero tests ran").
@@ -288,6 +290,16 @@ Run from the repository root.
 - **Never invoke a git subcommand that mutates the repo.** Allowlisted in
   `GitProcessRunner.PermittedSubcommands`, granted per top-level subcommand — why `submodule`
   is absent (its status query can't be allowed without also allowing `submodule update`).
+  Widening it is a contract change: `grep` was added in Iteration 5 for the toolbox's search,
+  and `GitProcessRunnerTests` fails until the addition is made deliberately.
+- **A git subprocess never inherits our stdin.** `GitProcessRunner` redirects and closes it.
+  In `diffhacker-mcp`, stdin is the live MCP protocol pipe, and a git process holding it blocked
+  every call for the full timeout.
+- **`git grep -z` puts NUL after *both* fields** — `<path>NUL<line>NUL<text>` — so it carries no
+  match-versus-context marker and `-C` is unusable. Match positions come from git, context lines
+  are read back from the file. See [docs/decisions.md](docs/decisions.md).
+- **The toolbox sees only what git sees**: `ls-files --cached --others --exclude-standard`, no
+  `.git/`, no gitignored files, no escape hatch. Ignored entries are counted, never concealed.
 - **Text encodings**, decided once in `DiffHacker.Core.Changes.TextDecoding`: NUL in the first
   8000 bytes → binary, then BOM, then strict UTF-8, then Latin-1 (not Windows-1252, since
   `InvariantGlobalization` is on and code pages would need a package); the result records
@@ -327,8 +339,11 @@ non-redundant checks (CSP enforcement, contract handshake) moved to
 accepted cost (no macOS/Linux E2E coverage; host→renderer notifications only half covered) in
 [docs/decisions.md](docs/decisions.md#the-renderer-self-test--why-it-was-removed).
 
-**Iteration 5's `report_progress` is the first real host→renderer notification producer since
-the removal — add an E2E test for it there.**
+**Iteration 5 built that producer and could not finish the E2E test.** `report_progress` →
+`ToolProgressNotifier` → `analysis.progress` → the renderer's subscriber is complete and tested
+on both sides separately (`ToolProgressNotifierTests`, `methods.test.ts`), but nothing in the
+application starts an analysis, so no notification travels the real bridge into the real window
+yet. **Iteration 7 runs the first analysis — add the E2E test there.**
 
 ### Dependencies beyond §0.3
 
@@ -342,7 +357,9 @@ the removal — add an E2E test for it there.**
 `@radix-ui/react-alert-dialog` (Iteration 2, not `@radix-ui/react-select`) —
 `Microsoft.Extensions.AI` (+ `.Abstractions`, `.OpenAI`) 10.9.0 · `OpenAI` **2.12.0, not
 2.13.0** · `Anthropic` (official `anthropics/anthropic-sdk-csharp` SDK, not community
-`Anthropic.SDK`) · `NJsonSchema` now also at runtime (Iteration 4).
+`Anthropic.SDK`) · `NJsonSchema` now also at runtime (Iteration 4) —
+`ModelContextProtocol.Core` **2.2.0, not the main `ModelContextProtocol` package** ·
+`Microsoft.Extensions.DependencyInjection.Abstractions` (Iteration 5).
 
 No resilience package (retry is ~60 lines in `RetryPolicy`). No package for the folder picker
 or secret store (PhotinoX's `ShowOpenFolder`; `[LibraryImport]` credential bindings — why

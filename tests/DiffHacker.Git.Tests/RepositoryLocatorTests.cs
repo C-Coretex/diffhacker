@@ -1,6 +1,7 @@
 using DiffHacker.Core.Repositories;
 using DiffHacker.Git;
 using Microsoft.Extensions.Logging.Abstractions;
+using DiffHacker.TestSupport;
 
 namespace DiffHacker.Git.Tests;
 

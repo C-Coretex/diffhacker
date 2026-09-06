@@ -37,6 +37,15 @@ public sealed partial class GitProcessRunner(ILogger<GitProcessRunner> logger, s
     /// instead. <c>hash-object</c> is read-only until someone passes <c>-w</c>, which is reason
     /// enough to leave it out.
     /// </para>
+    /// <para>
+    /// <c>grep</c> arrived in Iteration 5, and by the rule above that is a change to the contract
+    /// rather than a detail. It earns the place: unlike <c>submodule</c> there is no mutating
+    /// <c>grep</c> to come along with it, and the alternatives were shelling out to an external
+    /// search tool — exactly the command execution the toolbox is forbidden — or reimplementing
+    /// repository-wide search over <c>.gitignore</c> semantics git already knows. It starts no
+    /// program of its own so long as <c>--no-textconv</c> is passed, which
+    /// <see cref="GitClient"/> does.
+    /// </para>
     /// </summary>
     public static readonly IReadOnlySet<string> PermittedSubcommands =
         new HashSet<string>(StringComparer.Ordinal)
@@ -46,6 +55,7 @@ public sealed partial class GitProcessRunner(ILogger<GitProcessRunner> logger, s
             "diff",
             "ls-files",
             "cat-file",
+            "grep",
         };
 
     /// <summary>Long enough for metadata queries on a large repository, short enough to notice a hang.</summary>
@@ -130,6 +140,10 @@ public sealed partial class GitProcessRunner(ILogger<GitProcessRunner> logger, s
             process = Process.Start(startInfo)
                 ?? throw new InvalidOperationException("git did not start.");
 
+            // Close the child's stdin immediately. Git is never given input, and the pipe exists
+            // only so that it is not handed ours — see RedirectStandardInput in CreateStartInfo.
+            process.StandardInput.Close();
+
             var stderr = ReadStandardErrorAsync(process, limit.Token);
 
             var stdout = process.StandardOutput.BaseStream;
@@ -177,6 +191,15 @@ public sealed partial class GitProcessRunner(ILogger<GitProcessRunner> logger, s
         var startInfo = new ProcessStartInfo(executable)
         {
             UseShellExecute = false,
+
+            // Redirected so the child cannot inherit ours, then closed the moment it starts.
+            //
+            // Without this, git is handed whatever stdin this process has. In the desktop
+            // application that is harmless; in the standalone MCP server, stdin is the live
+            // protocol pipe, and a git process holding it hung for the full timeout on every
+            // single call — and could in principle have consumed protocol bytes. A read-only
+            // subprocess has no business holding its parent's input channel either way.
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true,

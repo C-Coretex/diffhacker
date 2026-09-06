@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Fixtures shared between test projects. Not a test project itself — no xUnit, nothing to
+    discover — which is why the name deliberately does not end in .Tests.
+
+    FixtureRepository lived in DiffHacker.Git.Tests until Iteration 5. It moved here rather than
+    being copied because building real repositories in temp directories, isolated from the
+    developer's own git config, is the only way any layer above git can be tested honestly, and
+    two divergent copies of that isolation would be worse than none.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>DiffHacker.TestSupport</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DiffHacker.Git\DiffHacker.Git.csproj" />
+  </ItemGroup>
+
+</Project>

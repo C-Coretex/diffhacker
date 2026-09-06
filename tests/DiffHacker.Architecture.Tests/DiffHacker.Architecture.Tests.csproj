@@ -12,6 +12,8 @@
     <ProjectReference Include="..\..\src\DiffHacker.Llm\DiffHacker.Llm.csproj" />
     <ProjectReference Include="..\..\src\DiffHacker.Storage\DiffHacker.Storage.csproj" />
     <ProjectReference Include="..\..\src\DiffHacker.Tools\DiffHacker.Tools.csproj" />
+    <!-- Asserted headless: the MCP server must never load a window. -->
+    <ProjectReference Include="..\..\src\DiffHacker.Mcp\DiffHacker.Mcp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

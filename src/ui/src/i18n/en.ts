@@ -182,6 +182,28 @@ export const en = {
     light: 'Light',
     dark: 'Dark',
   },
+
+  /**
+   * What the model is doing during a run.
+   *
+   * Nothing renders these yet — Iteration 5 built the toolbox and the notification channel, but
+   * no screen runs an analysis until Iteration 7. They live here for the same reason `runFailure`
+   * does: the phase names are already the contract (`AnalysisProgressPhase`), and a phase with no
+   * string would reach a reader as `analysing`.
+   *
+   * Note what is deliberately absent: the message itself. That is the model's own words, produced
+   * during the run, and it is shown as written. §0.6 keeps host-authored prose out of the host,
+   * not run data out of the screen.
+   */
+  progress: {
+    phase: {
+      exploring: 'Exploring the repository',
+      analysing: 'Analysing the change',
+      grouping: 'Grouping related changes',
+      explaining: 'Writing explanations',
+      finishing: 'Finishing up',
+    },
+  },
   error: {
     unknown_error: 'Something went wrong. See log.txt for details.',
     rpc_timeout: 'The host did not respond in time.',

@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 
-namespace DiffHacker.Git.Tests;
+namespace DiffHacker.TestSupport;
 
 /// <summary>
 /// Builds real git repositories in temporary directories.
@@ -18,7 +18,7 @@ namespace DiffHacker.Git.Tests;
 /// see in the diff.
 /// </para>
 /// </summary>
-internal sealed class FixtureRepository : IDisposable
+public sealed class FixtureRepository : IDisposable
 {
     private FixtureRepository(string root)
     {
@@ -160,6 +160,54 @@ internal sealed class FixtureRepository : IDisposable
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Points a directory inside the repository at one outside it.
+    /// <para>
+    /// A symlink where the platform allows one; on Windows, a junction, which is the point of
+    /// this method existing separately. Creating a symlink on Windows needs elevation or
+    /// Developer Mode, so <see cref="TryCreateSymlink"/> skips on most machines — but a junction
+    /// needs neither, is an ordinary reparse point that <c>Directory.ResolveLinkTarget</c>
+    /// resolves, and escapes a repository just as effectively. Without it the sandbox's
+    /// directory-escape rule would go untested on the one platform this project is verified on.
+    /// </para>
+    /// </summary>
+    public bool TryCreateDirectoryLink(string relativeLinkPath, string targetDirectory)
+    {
+        var path = Absolute(relativeLinkPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+        try
+        {
+            Directory.CreateSymbolicLink(path, targetDirectory);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return false;
+            }
+        }
+
+        // mklink is a cmd builtin, so it has to be run through cmd rather than started directly.
+        using var process = Process.Start(new ProcessStartInfo("cmd.exe")
+        {
+            ArgumentList = { "/c", "mklink", "/J", path, targetDirectory },
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        });
+
+        if (process is null)
+        {
+            return false;
+        }
+
+        process.WaitForExit();
+        return process.ExitCode == 0 && Directory.Exists(path);
     }
 
     /// <summary>Adds a linked worktree and returns its path.</summary>

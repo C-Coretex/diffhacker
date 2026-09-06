@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.4/browse-folder-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.5/browse-folder-request.schema.json",
   "title": "BrowseFolderRequest",
   "description": "Parameters for repository.browse, which opens the operating system's native folder picker. The renderer supplies the dialog title from its own string catalogue, because the host never authors user-facing prose.",
   "type": "object",

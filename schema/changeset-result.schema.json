@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.4/changeset-result.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.5/changeset-result.schema.json",
   "title": "ChangesetResult",
   "description": "The working tree compared against HEAD: every changed file with its statistics and metadata, and no file content. Content and diffs are fetched one file at a time so that a changeset of any size can be described without loading it.",
   "type": "object",

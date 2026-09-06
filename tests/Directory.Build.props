@@ -6,6 +6,20 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <!--
+      Generated contract types and test fixtures trip analyzers that are worth enforcing in
+      product code but only add noise here.
+    -->
+    <NoWarn>$(NoWarn);CA1707;CA1861;CA2007</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    Everything below is for projects that actually contain tests, which the root props identifies
+    by the .Tests suffix. Not everything under /tests is one: DiffHacker.TestSupport is a plain
+    library of fixtures shared between suites, and making it self-executing would have `dotnet
+    test` run it and fail the solution with "Zero tests ran".
+  -->
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <!--
       xUnit v3 runs on Microsoft.Testing.Platform, where each test project is a self-executing
       program rather than a library loaded by a runner. The .NET 10 SDK dropped the VSTest
       bridge, so global.json also selects the Microsoft.Testing.Platform runner.
@@ -13,14 +27,9 @@
     <OutputType>Exe</OutputType>
     <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
     <UseVSTest>false</UseVSTest>
-    <!--
-      Generated contract types and test fixtures trip analyzers that are worth enforcing in
-      product code but only add noise here.
-    -->
-    <NoWarn>$(NoWarn);CA1707;CA1861;CA2007</NoWarn>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
     <!--
       xunit.v3 test projects are self-executing under Microsoft.Testing.Platform, so
       Microsoft.NET.Test.Sdk (the VSTest host) is deliberately absent. xunit.runner.visualstudio
@@ -31,7 +40,7 @@
     <PackageReference Include="Shouldly" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
     <Using Include="Xunit" />
     <Using Include="Shouldly" />
   </ItemGroup>

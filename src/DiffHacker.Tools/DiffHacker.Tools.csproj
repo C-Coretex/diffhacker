@@ -10,4 +10,23 @@
     <ProjectReference Include="..\DiffHacker.Git\DiffHacker.Git.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      The tools are declared once, with [McpServerTool], and consumed twice: over stdio by
+      DiffHacker.Mcp, and in-process as LlmToolDefinition by whatever runs an analysis. Both
+      projections come out of ToolboxCatalog, off the same MethodInfo set.
+
+      Microsoft.Extensions.AI.Abstractions arrives with this package and is used deliberately:
+      McpServerTool.Create hands back an AIFunction, which is the in-process invoke path. §0.3's
+      rule is that Microsoft.Extensions.AI must not leak into DiffHacker.Core, and it does not —
+      LlmIsolationTests still enforces that.
+    -->
+    <PackageReference Include="ModelContextProtocol.Core" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DiffHacker.Tools.Tests" />
+  </ItemGroup>
+
 </Project>

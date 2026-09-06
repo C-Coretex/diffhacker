@@ -1,4 +1,5 @@
 using DiffHacker.Core.Changes;
+using DiffHacker.TestSupport;
 
 namespace DiffHacker.Git.Tests;
 

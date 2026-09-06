@@ -5,6 +5,7 @@
     <Project Path="DiffHacker.Git/DiffHacker.Git.csproj" />
     <Project Path="DiffHacker.Host/DiffHacker.Host.csproj" />
     <Project Path="DiffHacker.Llm/DiffHacker.Llm.csproj" />
+    <Project Path="DiffHacker.Mcp/DiffHacker.Mcp.csproj" />
     <Project Path="DiffHacker.Storage/DiffHacker.Storage.csproj" />
     <Project Path="DiffHacker.Tools/DiffHacker.Tools.csproj" />
   </Folder>
@@ -17,6 +18,8 @@
     <Project Path="../tests/DiffHacker.Llm.Live.Tests/DiffHacker.Llm.Live.Tests.csproj" />
     <Project Path="../tests/DiffHacker.Llm.Tests/DiffHacker.Llm.Tests.csproj" />
     <Project Path="../tests/DiffHacker.Storage.Tests/DiffHacker.Storage.Tests.csproj" />
+    <Project Path="../tests/DiffHacker.TestSupport/DiffHacker.TestSupport.csproj" />
+    <Project Path="../tests/DiffHacker.Tools.Tests/DiffHacker.Tools.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="../tools/DiffHacker.SchemaGen/DiffHacker.SchemaGen.csproj" />

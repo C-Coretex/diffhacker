@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.4/file-content-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.5/file-content-request.schema.json",
   "title": "FileContentRequest",
   "description": "Parameters of changeset.fileContent. One file, one side of the comparison, on demand.",
   "type": "object",
