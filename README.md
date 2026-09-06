@@ -1,4 +1,7 @@
 # DiffHacker
+***This project is a test - coding fully delegated to the LLM agent.***
+
+
 
 **Review large Git changes as a graph, not an alphabetical file list.**
 
