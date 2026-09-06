@@ -1,5 +1,6 @@
 using System.Reflection;
 using DiffHacker.Core.Changes;
+using DiffHacker.Core.Llm;
 using DiffHacker.Core.Providers;
 using DiffHacker.Core.Repositories;
 using DiffHacker.Core.Settings;
@@ -9,6 +10,7 @@ using DiffHacker.Host.Logging;
 using DiffHacker.Host.Rpc;
 using DiffHacker.Host.Shell;
 using DiffHacker.Llm;
+using DiffHacker.Llm.Pricing;
 using DiffHacker.Storage;
 using DiffHacker.Storage.Secrets;
 using Microsoft.Extensions.DependencyInjection;
@@ -138,6 +140,13 @@ internal static class Program
         // user-initiated, so there is nothing here for IHttpClientFactory to solve.
         services.AddSingleton(_ => new HttpClient());
         services.AddSingleton<IProviderConnectionTester, HttpProviderConnectionTester>();
+
+        // The LLM layer. ILlmSessionFactory reads the API key from the secret store itself, so
+        // nothing above it ever holds one, and it gives each session its own HttpClient rather
+        // than the singleton above — a finished run must not close connections the settings
+        // screen is still using.
+        services.AddSingleton<ITokenPricing, ModelPricing>();
+        services.AddSingleton<ILlmSessionFactory, LlmSessionFactory>();
 
         // The notifier is the bridge's outbound-notification plumbing. Nothing pushes
         // notifications yet — Iteration 5's report_progress is the first real caller.

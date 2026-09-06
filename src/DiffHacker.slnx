@@ -14,6 +14,7 @@
     <Project Path="../tests/DiffHacker.Core.Tests/DiffHacker.Core.Tests.csproj" />
     <Project Path="../tests/DiffHacker.Git.Tests/DiffHacker.Git.Tests.csproj" />
     <Project Path="../tests/DiffHacker.Host.Tests/DiffHacker.Host.Tests.csproj" />
+    <Project Path="../tests/DiffHacker.Llm.Live.Tests/DiffHacker.Llm.Live.Tests.csproj" />
     <Project Path="../tests/DiffHacker.Llm.Tests/DiffHacker.Llm.Tests.csproj" />
     <Project Path="../tests/DiffHacker.Storage.Tests/DiffHacker.Storage.Tests.csproj" />
   </Folder>

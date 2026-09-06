@@ -1,0 +1,62 @@
+{
+  "$comment": [
+    "Bundled price table. US dollars per million tokens.",
+    "",
+    "This file goes stale. That is not a defect to be engineered away — it is why a provider",
+    "profile can carry its own rate, which always wins, and why a model with no entry here",
+    "reports its cost as unknown rather than as zero or as a neighbour's price.",
+    "",
+    "'asOf' is shown next to every estimate the table produces, so a reader can judge how much",
+    "to trust it. Update both together.",
+    "",
+    "Matching is exact first, then longest matching prefix, so 'claude-sonnet-4-5' beats",
+    "'claude-sonnet-4'. Add the specific entry before the general one is wrong for it.",
+    "",
+    "'cachedIn' is the rate for input tokens the provider served from its prompt cache. Omit it",
+    "where the provider does not price them separately; they are then billed as ordinary input."
+  ],
+  "asOf": "2026-05-01",
+  "models": {
+    "openai": {
+      "gpt-5": { "in": 1.25, "out": 10.00, "cachedIn": 0.125 },
+      "gpt-5-mini": { "in": 0.25, "out": 2.00, "cachedIn": 0.025 },
+      "gpt-5-nano": { "in": 0.05, "out": 0.40, "cachedIn": 0.005 },
+      "gpt-4.1": { "in": 2.00, "out": 8.00, "cachedIn": 0.50 },
+      "gpt-4.1-mini": { "in": 0.40, "out": 1.60, "cachedIn": 0.10 },
+      "gpt-4.1-nano": { "in": 0.10, "out": 0.40, "cachedIn": 0.025 },
+      "gpt-4o": { "in": 2.50, "out": 10.00, "cachedIn": 1.25 },
+      "gpt-4o-mini": { "in": 0.15, "out": 0.60, "cachedIn": 0.075 },
+      "o3": { "in": 2.00, "out": 8.00, "cachedIn": 0.50 },
+      "o3-mini": { "in": 1.10, "out": 4.40, "cachedIn": 0.55 },
+      "o4-mini": { "in": 1.10, "out": 4.40, "cachedIn": 0.275 }
+    },
+    "anthropic": {
+      "claude-opus-4": { "in": 15.00, "out": 75.00 },
+      "claude-opus-4-1": { "in": 15.00, "out": 75.00 },
+      "claude-sonnet-4": { "in": 3.00, "out": 15.00 },
+      "claude-sonnet-4-5": { "in": 3.00, "out": 15.00 },
+      "claude-haiku-4-5": { "in": 1.00, "out": 5.00 },
+      "claude-3-7-sonnet": { "in": 3.00, "out": 15.00 },
+      "claude-3-5-sonnet": { "in": 3.00, "out": 15.00 },
+      "claude-3-5-haiku": { "in": 0.80, "out": 4.00 }
+    },
+    "gemini": {
+      "gemini-2.5-pro": { "in": 1.25, "out": 10.00 },
+      "gemini-2.5-flash": { "in": 0.30, "out": 2.50 },
+      "gemini-2.5-flash-lite": { "in": 0.10, "out": 0.40 },
+      "gemini-2.0-flash": { "in": 0.10, "out": 0.40 },
+      "gemini-2.0-flash-lite": { "in": 0.075, "out": 0.30 }
+    },
+    "grok": {
+      "grok-4": { "in": 3.00, "out": 15.00 },
+      "grok-3": { "in": 3.00, "out": 15.00 },
+      "grok-3-mini": { "in": 0.30, "out": 0.50 },
+      "grok-code-fast-1": { "in": 0.20, "out": 1.50 }
+    },
+    "deepseek": {
+      "deepseek-chat": { "in": 0.27, "out": 1.10, "cachedIn": 0.07 },
+      "deepseek-reasoner": { "in": 0.55, "out": 2.19, "cachedIn": 0.14 }
+    },
+    "openai_compatible": {}
+  }
+}

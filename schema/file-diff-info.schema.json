@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.3/file-diff-info.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.4/file-diff-info.schema.json",
   "title": "FileDiffInfo",
   "description": "The unified diff for one file, or an explanation of why there is not one. The kind is always present, so every awkward case — no diff, binary, oversized — is one branch rather than a null check.",
   "type": "object",

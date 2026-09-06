@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.3/rpc-error.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.4/rpc-error.schema.json",
   "title": "RpcErrorData",
   "description": "Payload carried in the `data` member of a JSON-RPC error object. The host never sends user-facing prose across the bridge: it sends a stable code plus arguments, and the renderer resolves them through its string catalogue.",
   "type": "object",

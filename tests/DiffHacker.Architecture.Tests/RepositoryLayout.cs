@@ -5,7 +5,7 @@ namespace DiffHacker.Architecture.Tests;
 /// <summary>
 /// Locates the repository on disk, so the source-level rules can read the files they police.
 /// </summary>
-internal static class RepositoryLayout
+internal static partial class RepositoryLayout
 {
     public static string Root { get; } = ResolveRoot();
 
@@ -19,6 +19,33 @@ internal static class RepositoryLayout
             .Where(static path => !path.EndsWith(".g.cs", StringComparison.Ordinal));
 
     public static string RelativePath(string path) => Path.GetRelativePath(Root, path).Replace('\\', '/');
+
+    /// <summary>
+    /// A file's code with its comments removed.
+    /// <para>
+    /// Source-text rules that police a namespace need this. The comment explaining why a layer
+    /// must not reference something necessarily names the thing it must not reference, and a
+    /// rule that cannot tell the two apart either fails on its own documentation or has to go
+    /// undocumented.
+    /// </para>
+    /// <para>
+    /// Deliberately crude: it does not understand string literals, so a <c>"//"</c> inside one
+    /// truncates that line. For "does this file mention a namespace" that is harmless, and the
+    /// alternative is a parser.
+    /// </para>
+    /// </summary>
+    public static string CodeWithoutComments(string path)
+    {
+        var text = File.ReadAllText(path);
+        text = BlockComment().Replace(text, " ");
+        return LineComment().Replace(text, string.Empty);
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"/\*.*?\*/", System.Text.RegularExpressions.RegexOptions.Singleline)]
+    private static partial System.Text.RegularExpressions.Regex BlockComment();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"//.*$", System.Text.RegularExpressions.RegexOptions.Multiline)]
+    private static partial System.Text.RegularExpressions.Regex LineComment();
 
     private static string ResolveRoot()
     {

@@ -68,6 +68,8 @@ public sealed class ProviderRpcTarget(
             throw RpcErrors.Failure("provider_invalid_base_url", $"'{baseUrl}' is not an absolute URL.");
         }
 
+        var rate = ReadRate(request);
+
         var existing = string.IsNullOrEmpty(request.Id)
             ? null
             : await profiles.FindAsync(request.Id, cancellationToken).ConfigureAwait(false);
@@ -92,6 +94,11 @@ public sealed class ProviderRpcTarget(
             // Preserved across an edit: suggestions come from the last successful test, and
             // renaming a profile should not throw them away.
             ModelSuggestions = existing?.ModelSuggestions ?? [],
+
+            // Only meaningful as a pair: half a rate would bill the other half at zero, which
+            // is a wrong number presented as an authoritative one.
+            InputCostPerMillion = rate?.Input,
+            OutputCostPerMillion = rate?.Output,
         };
 
         await profiles.SaveAsync(profile, cancellationToken).ConfigureAwait(false);
@@ -217,8 +224,35 @@ public sealed class ProviderRpcTarget(
             displayName: profile.DisplayName,
             hasApiKey: hasApiKey,
             id: profile.Id,
+            inputCostPerMillion: (double?)profile.InputCostPerMillion,
             isActive: isActive,
             model: profile.Model,
             modelSuggestions: profile.ModelSuggestions,
+            outputCostPerMillion: (double?)profile.OutputCostPerMillion,
             providerType: ProviderTypeWire.ToWire(profile.ProviderType));
+
+    /// <summary>
+    /// The optional price override, accepted only as a complete pair.
+    /// <para>
+    /// The bundled price table is a snapshot and goes stale, so this is how a user on a model
+    /// it has never heard of still gets a cost estimate. Half of one, though, is worse than
+    /// none: it would bill the missing side at zero and present the result as a real number.
+    /// </para>
+    /// </summary>
+    private static (decimal Input, decimal Output)? ReadRate(SaveProviderRequest request)
+    {
+        if (request.InputCostPerMillion is not { } input || request.OutputCostPerMillion is not { } output)
+        {
+            return null;
+        }
+
+        if (input < 0 || output < 0)
+        {
+            throw RpcErrors.Failure(
+                "provider_invalid_cost",
+                "A token price cannot be negative.");
+        }
+
+        return ((decimal)input, (decimal)output);
+    }
 }

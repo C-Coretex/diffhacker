@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.3/test-connection-result.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.4/test-connection-result.schema.json",
   "title": "TestConnectionResult",
   "description": "Outcome of providers.testConnection, which makes one real authenticated request to the provider. A failure is a result rather than a JSON-RPC error, because the interface has to show the provider's own wording alongside a translated headline.",
   "type": "object",

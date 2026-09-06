@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.3/open-repository-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.4/open-repository-request.schema.json",
   "title": "OpenRepositoryRequest",
   "description": "Parameters for the repository.open method. The path may be any directory inside a working tree; the host resolves it to the worktree root.",
   "type": "object",

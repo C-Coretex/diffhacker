@@ -31,6 +31,22 @@ public sealed class LoggingRedactionTests
     }
 
     [Fact]
+    public void A_provider_error_body_that_echoes_the_key_back_is_stripped()
+    {
+        // Iteration 4, requirement 8: every request and tool call traceable in log.txt,
+        // redacted of secrets. The realistic leak is not our own logging — it is the provider
+        // quoting the key back inside an error, which LlmRunResult.ProviderMessage then carries
+        // to whoever logs it.
+        const string key = "sk-proj-AAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+        var rendered = Render(Event(
+            "Request failed: {\"error\":{\"message\":\"Incorrect API key provided: " + key + "\"}}"));
+
+        rendered.ShouldNotContain(key);
+        rendered.ShouldContain(SecretRedactor.Placeholder);
+    }
+
+    [Fact]
     public void Authorization_headers_are_stripped()
     {
         var rendered = Render(Event("Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"));

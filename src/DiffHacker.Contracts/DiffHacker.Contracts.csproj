@@ -26,6 +26,17 @@
     <SchemaFile Include="$(SchemaDir)*.json" />
   </ItemGroup>
 
+  <ItemGroup Label="Schemas at run time">
+    <!--
+      The same documents the generator reads, embedded so they exist at run time as well as at
+      build time. Iteration 4 asks the model for JSON conforming to a schema from /schema and
+      then validates the answer against it, which needs the schema text, not the generated
+      record. See ContractSchemas.
+    -->
+    <EmbeddedResource Include="$(SchemaDir)*.schema.json"
+                      LogicalName="DiffHacker.Contracts.Schemas.%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Ordering and restore only. The generator is executed, never referenced. -->
     <ProjectReference Include="$(RepoRoot)tools\DiffHacker.SchemaGen\DiffHacker.SchemaGen.csproj"

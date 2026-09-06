@@ -23,7 +23,7 @@ public sealed partial class AppDatabase : IAsyncDisposable
     /// Bumped whenever <see cref="MigrateAsync"/> gains a step. Stored in the file, so an older
     /// build opening a newer database can say so rather than misreading it.
     /// </summary>
-    private const int CurrentSchemaVersion = 1;
+    private const int CurrentSchemaVersion = 2;
 
     private readonly string _connectionString;
     private readonly ILogger<AppDatabase> _logger;
@@ -139,6 +139,20 @@ public sealed partial class AppDatabase : IAsyncDisposable
 
                 CREATE INDEX ix_recent_repositories_last_opened
                     ON recent_repositories (last_opened_utc DESC);
+                """,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+
+        if (version < 2)
+        {
+            // Iteration 4: a per-profile price override. The bundled price table is a snapshot
+            // and goes stale, so a user on a model it has never heard of — or one whose price
+            // moved — can supply the current rate and get a real cost estimate rather than
+            // "unknown". Still no key column; those belong to ISecretStore alone.
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                ALTER TABLE provider_profiles ADD COLUMN input_cost_per_million  TEXT NULL;
+                ALTER TABLE provider_profiles ADD COLUMN output_cost_per_million TEXT NULL;
                 """,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
         }

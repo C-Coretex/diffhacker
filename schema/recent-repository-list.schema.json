@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.3/recent-repository-list.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.4/recent-repository-list.schema.json",
   "title": "RecentRepositoryList",
   "description": "Repositories the user has opened before, most recently used first. Returned by repository.listRecent.",
   "type": "object",

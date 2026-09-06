@@ -102,6 +102,77 @@ describe('RpcClient', () => {
     await expect(pending).resolves.toBe('pong');
   });
 
+  it('tells the host to stop when a request times out', async () => {
+    // Before Iteration 4 the renderer simply stopped waiting while the host kept working: a
+    // git pass kept grinding, and an LLM run would keep spending.
+    vi.useFakeTimers();
+    const transport = new FakeTransport();
+    const client = new RpcClient(transport, { timeoutMs: 1_000, onProtocolError: () => {} });
+
+    const settled = client.call('changeset.load').catch((reason: unknown) => reason);
+    const { id } = transport.lastRequest();
+    await vi.advanceTimersByTimeAsync(1_001);
+    await settled;
+
+    expect(transport.lastRequest()).toMatchObject({
+      jsonrpc: '2.0',
+      method: '$/cancelRequest',
+      params: { id },
+    });
+  });
+
+  it('cancels an abortable request and tells the host', async () => {
+    const transport = new FakeTransport();
+    const client = new RpcClient(transport);
+    const controller = new AbortController();
+
+    const settled = client
+      .callAbortable('changeset.load', controller.signal, 60_000)
+      .catch((reason: unknown) => reason);
+
+    const { id } = transport.lastRequest();
+    controller.abort();
+
+    const error = await settled;
+    expect(error).toBeInstanceOf(RpcError);
+    expect((error as RpcError).code).toBe('rpc_cancelled');
+
+    // The point of the whole exercise: the host is told, so it stops too.
+    expect(transport.lastRequest()).toMatchObject({
+      method: '$/cancelRequest',
+      params: { id },
+    });
+  });
+
+  it('does not send a request that was cancelled before it started', async () => {
+    const transport = new FakeTransport();
+    const client = new RpcClient(transport);
+    const controller = new AbortController();
+    controller.abort();
+
+    const error = await client
+      .callAbortable('changeset.load', controller.signal, 60_000)
+      .catch((reason: unknown) => reason);
+
+    expect((error as RpcError).code).toBe('rpc_cancelled');
+    expect(transport.sent).toHaveLength(0);
+  });
+
+  it('does not cancel a request the host already answered', async () => {
+    const transport = new FakeTransport();
+    const client = new RpcClient(transport);
+    const controller = new AbortController();
+
+    const pending = client.callAbortable<string>('host.ping', controller.signal, 60_000);
+    transport.respond('pong');
+    await expect(pending).resolves.toBe('pong');
+
+    // Aborting afterwards is a no-op: the listener was detached when the answer arrived, so a
+    // stale cancellation cannot reach the host and abort somebody else's request id.
+    controller.abort();
+    expect(transport.sent).toHaveLength(1);
+  });
+
   it('rejects outstanding requests when disposed', async () => {
     const transport = new FakeTransport();
     const client = new RpcClient(transport);

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.3/file-diff-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.4/file-diff-request.schema.json",
   "title": "FileDiffRequest",
   "description": "Parameters of changeset.fileDiff. One file at a time, on demand: the changeset itself carries no diffs.",
   "type": "object",

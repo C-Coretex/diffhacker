@@ -47,7 +47,9 @@ public sealed class PersistenceAcrossRestartTests : IDisposable
                     baseUrl: null,
                     displayName: "Work account",
                     id: null,
+                    inputCostPerMillion: null,
                     model: "gpt-4o",
+                    outputCostPerMillion: null,
                     providerType: Contracts.SaveProviderRequestProviderType.Openai),
                 TestContext.Current.CancellationToken);
 
@@ -60,7 +62,9 @@ public sealed class PersistenceAcrossRestartTests : IDisposable
                     baseUrl: null,
                     displayName: "Personal",
                     id: null,
+                    inputCostPerMillion: null,
                     model: "claude-sonnet-4",
+                    outputCostPerMillion: null,
                     providerType: Contracts.SaveProviderRequestProviderType.Anthropic),
                 TestContext.Current.CancellationToken);
 

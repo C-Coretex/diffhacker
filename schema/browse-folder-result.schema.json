@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.3/browse-folder-result.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.4/browse-folder-result.schema.json",
   "title": "BrowseFolderResult",
   "description": "Outcome of the native folder picker. Cancelling is an ordinary result rather than an error, so the renderer can distinguish it from a genuine failure.",
   "type": "object",

@@ -32,6 +32,29 @@ public sealed record LlmProviderProfile
     /// </summary>
     public IReadOnlyList<string> ModelSuggestions { get; init; } = [];
 
+    /// <summary>
+    /// US dollars per million input tokens, overriding the bundled price table.
+    /// <para>
+    /// The table ships with the application and therefore goes stale between releases, exactly
+    /// the way a hardcoded model list would. This is the escape hatch: a user on a model the
+    /// table has never heard of, or one whose price moved, types the current rate and gets a
+    /// real cost estimate instead of "unknown".
+    /// </para>
+    /// </summary>
+    public decimal? InputCostPerMillion { get; init; }
+
+    /// <summary>US dollars per million output tokens. See <see cref="InputCostPerMillion"/>.</summary>
+    public decimal? OutputCostPerMillion { get; init; }
+
+    /// <summary>
+    /// The override as a rate, or null unless <b>both</b> halves are set — a price with only
+    /// one side would silently bill output at zero.
+    /// </summary>
+    public Llm.LlmModelRate? CostOverride =>
+        InputCostPerMillion is { } input && OutputCostPerMillion is { } output
+            ? new Llm.LlmModelRate { InputPerMillion = input, OutputPerMillion = output }
+            : null;
+
     /// <summary>Name this profile's API key is stored under in the secret store.</summary>
     public static string SecretName(string profileId) => "provider:" + profileId;
 }

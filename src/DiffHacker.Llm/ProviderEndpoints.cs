@@ -3,10 +3,11 @@ using DiffHacker.Core.Providers;
 namespace DiffHacker.Llm;
 
 /// <summary>
-/// Where each provider's model listing lives, and how it wants to be authenticated.
+/// Where each provider lives, and how it wants to be authenticated.
 /// <para>
-/// This is the whole of the per-provider knowledge Iteration 2 needs. Iteration 4 replaces it
-/// with <c>Microsoft.Extensions.AI</c> clients; nothing here tries to anticipate that.
+/// Iteration 2 needed only the model-listing endpoint. Iteration 4 added
+/// <see cref="ChatBaseUrl"/> for conversations, which for every provider but one is the same
+/// address — see the note there for why Gemini differs.
 /// </para>
 /// <para>
 /// Note there are no model names here. Requirement 4 is explicit that hardcoded model lists
@@ -15,7 +16,7 @@ namespace DiffHacker.Llm;
 /// </summary>
 internal static class ProviderEndpoints
 {
-    /// <summary>Default base URL, or null when the user must supply one.</summary>
+    /// <summary>Default base URL for the model listing, or null when the user must supply one.</summary>
     public static string? DefaultBaseUrl(LlmProviderType type) => type switch
     {
         LlmProviderType.OpenAi => "https://api.openai.com/v1",
@@ -36,6 +37,63 @@ internal static class ProviderEndpoints
     /// way; the differences are all in the base URL and the authentication header.
     /// </summary>
     public const string ModelsPath = "models";
+
+    /// <summary>
+    /// Base URL for chat completions. A base URL configured on the profile always wins; this
+    /// supplies the default.
+    /// <para>
+    /// Gemini is the only provider where this differs from <see cref="DefaultBaseUrl"/>. Its
+    /// native API is not OpenAI-shaped, but Google publishes an OpenAI-compatible surface at
+    /// <c>/v1beta/openai/</c> which supports tool calling, <c>json_schema</c> response formats
+    /// and usage reporting. Using it means Gemini shares the OpenAI SDK path with Grok,
+    /// DeepSeek and every user-supplied endpoint, and no third-party Gemini package enters the
+    /// dependency graph. Google labels that surface beta, and a handful of Gemini-only
+    /// controls are not reachable through it; neither is needed here.
+    /// </para>
+    /// <para>
+    /// The model listing stays on the native base URL, because the compatible surface does not
+    /// answer <c>GET /models</c> in the shape <c>ModelListParser</c> expects.
+    /// </para>
+    /// </summary>
+    /// <para>
+    /// Anthropic differs the other way: its SDK appends its own <c>/v1/messages</c>, so the
+    /// base URL it wants is the host on its own, without the <c>/v1</c> the listing endpoint
+    /// needs.
+    /// </para>
+    public static string? ChatBaseUrl(LlmProviderType type) => type switch
+    {
+        LlmProviderType.Gemini => GeminiCompatibleSuffix(DefaultBaseUrl(type)!),
+        LlmProviderType.Anthropic => WithoutApiVersion(DefaultBaseUrl(type)!),
+        _ => DefaultBaseUrl(type),
+    };
+
+    /// <summary>
+    /// Points a Gemini base URL at Google's OpenAI-compatible surface, leaving one that
+    /// already does alone. Applied to a user-supplied override too, because someone who typed
+    /// the native endpoint into the settings form meant "talk to Gemini here", not "talk to
+    /// Gemini in a dialect it does not speak".
+    /// </summary>
+    public static string GeminiCompatibleSuffix(string baseUrl)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(baseUrl);
+
+        return baseUrl.Contains("/openai", StringComparison.OrdinalIgnoreCase)
+            ? baseUrl
+            : baseUrl.TrimEnd('/') + "/openai/";
+    }
+
+    /// <summary>
+    /// Strips a trailing <c>/v1</c>, which the Anthropic SDK adds for itself.
+    /// </summary>
+    public static string WithoutApiVersion(string baseUrl)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(baseUrl);
+
+        var trimmed = baseUrl.TrimEnd('/');
+        return trimmed.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
+            ? trimmed[..^3]
+            : trimmed;
+    }
 
     /// <summary>
     /// Applies the provider's authentication scheme. The three shapes in use are a bearer

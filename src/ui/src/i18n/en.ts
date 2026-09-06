@@ -160,6 +160,12 @@ export const en = {
     testSucceededNoModels: 'Connected. This provider did not return a model list.',
     testModelMissing:
       'Connected, but “{model}” is not among the {count} models this key can reach. Check the spelling.',
+    pricingLegend: 'Token prices (optional)',
+    pricingHint:
+      'DiffHacker ships a price table, but it is a snapshot and goes stale. Fill both boxes in to price this model yourself. Leave them blank and DiffHacker uses the table, or reports the cost as unknown.',
+    inputCostLabel: 'Input, $ per million tokens',
+    outputCostLabel: 'Output, $ per million tokens',
+    costPlaceholder: '0.00',
     testFailed: 'The connection failed.',
     providerSaid: 'The provider said:',
     httpStatus: 'HTTP {status}',
@@ -179,6 +185,7 @@ export const en = {
   error: {
     unknown_error: 'Something went wrong. See log.txt for details.',
     rpc_timeout: 'The host did not respond in time.',
+    rpc_cancelled: 'That was cancelled.',
 
     git_not_found:
       'Git was not found on your PATH. DiffHacker cannot read a repository without it.',
@@ -199,6 +206,7 @@ export const en = {
     provider_model_required: 'Enter a model identifier.',
     provider_base_url_required: 'An OpenAI-compatible endpoint needs a base URL.',
     provider_invalid_base_url: 'That base URL is not a valid absolute URL.',
+    provider_invalid_cost: 'A token price cannot be negative.',
 
     secret_store_unavailable: 'Your API keys could not be read. See log.txt for details.',
     settings_store_unavailable: 'Your settings could not be read. See log.txt for details.',
@@ -212,6 +220,33 @@ export const en = {
     provider_unreachable: 'The provider could not be reached. Check the URL and your connection.',
     provider_timed_out: 'The provider did not answer in time.',
     provider_unexpected_response: 'The provider returned an unexpected response.',
+  },
+
+  /**
+   * Why an analysis run stopped.
+   *
+   * Nothing renders these yet — Iteration 4 built the provider layer but no screen that runs
+   * a conversation. They live here rather than arriving with Iteration 7 because the codes
+   * they translate are already the contract (`LlmFailures`), and a code with no message would
+   * reach a reader as `llm_context_overflow`.
+   */
+  runFailure: {
+    llm_invalid_key: 'The provider rejected the API key. Check it in settings.',
+    llm_forbidden: 'The key is valid but not allowed to use this model.',
+    llm_model_not_found:
+      'The provider does not recognise “{model}”. Test the connection to see which models this key can reach.',
+    llm_context_overflow:
+      'The change was too large for this model’s context window. Try a model with a larger one.',
+    llm_content_filter: 'The provider’s safety system refused this request.',
+    llm_quota_exhausted: 'This account has no credit or quota left. Waiting will not help.',
+    llm_rate_limited:
+      'The provider is rate-limiting this key. DiffHacker retried and gave up; try again shortly.',
+    llm_unreachable: 'The provider could not be reached. Check your connection.',
+    llm_timed_out: 'The provider did not answer in time.',
+    llm_invalid_response:
+      'The model did not answer in the shape DiffHacker asked for, twice. Try a more capable model.',
+    llm_budget_exceeded: 'The run hit a limit and stopped. Nothing here is a complete result.',
+    llm_unexpected_response: 'The provider returned an unexpected response. See log.txt for details.',
   },
 } as const;
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Dapper;
 using DiffHacker.Core.Providers;
@@ -25,7 +26,9 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
                base_url          AS BaseUrl,
                created_at_utc    AS CreatedAtUtc,
                updated_at_utc    AS UpdatedAtUtc,
-               model_suggestions AS ModelSuggestions
+               model_suggestions AS ModelSuggestions,
+               input_cost_per_million  AS InputCostPerMillion,
+               output_cost_per_million AS OutputCostPerMillion
         FROM provider_profiles
         """;
 
@@ -62,16 +65,20 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
             """
             INSERT INTO provider_profiles
                 (id, provider_type, display_name, model, base_url,
-                 created_at_utc, updated_at_utc, model_suggestions)
+                 created_at_utc, updated_at_utc, model_suggestions,
+                 input_cost_per_million, output_cost_per_million)
             VALUES (@Id, @ProviderType, @DisplayName, @Model, @BaseUrl,
-                    @CreatedAtUtc, @UpdatedAtUtc, @ModelSuggestions)
+                    @CreatedAtUtc, @UpdatedAtUtc, @ModelSuggestions,
+                    @InputCostPerMillion, @OutputCostPerMillion)
             ON CONFLICT(id) DO UPDATE SET
-                provider_type     = @ProviderType,
-                display_name      = @DisplayName,
-                model             = @Model,
-                base_url          = @BaseUrl,
-                updated_at_utc    = @UpdatedAtUtc,
-                model_suggestions = @ModelSuggestions;
+                provider_type           = @ProviderType,
+                display_name            = @DisplayName,
+                model                   = @Model,
+                base_url                = @BaseUrl,
+                updated_at_utc          = @UpdatedAtUtc,
+                model_suggestions       = @ModelSuggestions,
+                input_cost_per_million  = @InputCostPerMillion,
+                output_cost_per_million = @OutputCostPerMillion;
             """,
             ProviderProfileRow.From(profile),
             cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -139,6 +146,14 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
         /// <summary>A JSON array. §0.3 chose SQLite with JSON documents plus indexed columns.</summary>
         public string? ModelSuggestions { get; init; }
 
+        /// <summary>
+        /// Stored as invariant text rather than as REAL. SQLite has no decimal type, and a
+        /// price round-tripped through a double is a price that can come back as 2.9999999.
+        /// </summary>
+        public string? InputCostPerMillion { get; init; }
+
+        public string? OutputCostPerMillion { get; init; }
+
         public static ProviderProfileRow From(LlmProviderProfile profile) => new()
         {
             Id = profile.Id,
@@ -151,6 +166,8 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
             ModelSuggestions = profile.ModelSuggestions.Count == 0
                 ? null
                 : JsonSerializer.Serialize(profile.ModelSuggestions, StorageJson.Options),
+            InputCostPerMillion = FormatMoney(profile.InputCostPerMillion),
+            OutputCostPerMillion = FormatMoney(profile.OutputCostPerMillion),
         };
 
         public LlmProviderProfile ToProfile() => new()
@@ -165,7 +182,17 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
             ModelSuggestions = ModelSuggestions is null
                 ? []
                 : JsonSerializer.Deserialize<List<string>>(ModelSuggestions, StorageJson.Options) ?? [],
+            InputCostPerMillion = ParseMoney(InputCostPerMillion),
+            OutputCostPerMillion = ParseMoney(OutputCostPerMillion),
         };
+
+        private static string? FormatMoney(decimal? value) =>
+            value?.ToString(CultureInfo.InvariantCulture);
+
+        private static decimal? ParseMoney(string? value) =>
+            decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : null;
     }
 }
 

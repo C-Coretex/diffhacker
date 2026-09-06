@@ -5,12 +5,38 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      This project is the only place Microsoft.Extensions.AI is allowed to exist. §0.3 and an
+      architecture test both say so; ILlmSession in DiffHacker.Core is the boundary.
+    -->
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
+    <PackageReference Include="OpenAI" />
+    <PackageReference Include="Anthropic" />
+    <!-- Validates the model's structured answer against the schema it was asked for. -->
+    <PackageReference Include="NJsonSchema" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\DiffHacker.Contracts\DiffHacker.Contracts.csproj" />
     <ProjectReference Include="..\DiffHacker.Core\DiffHacker.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The bundled price table. See ModelPricing. -->
+    <EmbeddedResource Include="Pricing\model-prices.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The session's turn loop, retry policy and error mapping are internal: they are one
+      implementation of ILlmSession, not a second public surface. Testing them through the
+      interface alone would mean driving a retry policy by timing, which is the kind of test
+      that fails on a slow machine.
+    -->
+    <InternalsVisibleTo Include="DiffHacker.Llm.Tests" />
+    <InternalsVisibleTo Include="DiffHacker.Llm.Live.Tests" />
   </ItemGroup>
 
 </Project>

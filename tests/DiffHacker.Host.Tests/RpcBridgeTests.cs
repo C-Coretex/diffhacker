@@ -128,13 +128,60 @@ public sealed class RpcBridgeTests : IAsyncLifetime
         response.RootElement.GetProperty("error").GetProperty("code").GetInt32().ShouldBe(-32601);
     }
 
+    [Fact]
+    public async Task A_cancel_request_stops_work_the_renderer_has_given_up_on()
+    {
+        // Iteration 4, requirement 4. Before this, the renderer's only escape from a slow call
+        // was its own timeout: it stopped waiting while the host kept working, so a `git diff`
+        // over a cold tree kept grinding and an LLM run kept spending. StreamJsonRpc answers
+        // `$/cancelRequest` itself; what needed proving is that the token really does reach the
+        // method, and that the call comes back as cancelled rather than as a result.
+        _shell.Receive("""{"jsonrpc":"2.0","id":13,"method":"test.waitForever","params":[]}""");
+
+        await _notifying.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        _shell.Receive("""{"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":13}}""");
+
+        using var response = JsonDocument.Parse(await _shell.NextSentAsync(TestContext.Current.CancellationToken));
+
+        response.RootElement.GetProperty("id").GetInt32().ShouldBe(13);
+        response.RootElement.TryGetProperty("error", out var error).ShouldBeTrue(
+            "a cancelled call must not come back as a result.");
+
+        // -32800 is the JSON-RPC reserved code for a request cancelled at the client's request.
+        error.GetProperty("code").GetInt32().ShouldBe(-32800);
+
+        _notifying.WasCancelled.ShouldBeTrue("the token has to reach the method, not just the dispatcher.");
+    }
+
     /// <summary>
-    /// A target that exists only for these tests: one method that pushes notifications and one
-    /// that refuses, so the bridge's two outbound shapes are both exercised without the product
-    /// carrying an RPC surface for the benefit of a test.
+    /// A target that exists only for these tests: one method that pushes notifications, one that
+    /// refuses, and one that waits to be cancelled — so the bridge's outbound shapes are all
+    /// exercised without the product carrying an RPC surface for the benefit of a test.
     /// </summary>
     private sealed class NotifyingTarget(IRpcNotifier notifier)
     {
+        /// <summary>Completes once <c>test.waitForever</c> is genuinely in flight.</summary>
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool WasCancelled { get; private set; }
+
+        [JsonRpcMethod("test.waitForever")]
+        public async Task WaitForeverAsync(CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+
+            try
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                WasCancelled = true;
+                throw;
+            }
+        }
+
         [JsonRpcMethod("test.notifyTwice")]
         public async Task NotifyTwiceAsync(CancellationToken cancellationToken)
         {

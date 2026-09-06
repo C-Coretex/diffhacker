@@ -61,7 +61,54 @@
     <PackageVersion Include="Dapper" Version="2.1.79" />
   </ItemGroup>
 
-  <ItemGroup Label="Contract codegen — beyond §0.3, approved (tools only)">
+  <ItemGroup Label="LLM providers — §0.3">
+    <!--
+      Microsoft.Extensions.AI is §0.3's LLM abstraction. The 10.9.0 line is current and stable;
+      it is versioned independently of the Microsoft.Extensions 10.0.11 line above, which is
+      why the numbers differ.
+
+      Abstractions is declared explicitly rather than left transitive: three packages here
+      depend on it at three different versions, and CentralPackageTransitivePinningEnabled
+      needs a declared version to settle on.
+    -->
+    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.9.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.9.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.9.0" />
+
+    <!--
+      2.12.0, not 2.13.0. Microsoft.Extensions.AI.OpenAI 10.9.0 declares OpenAI [2.12.0, 2.13.0),
+      so a newer SDK does not resolve. Raise both together or neither.
+
+      This one package serves five of the six provider types: OpenAI itself, Grok, DeepSeek,
+      Gemini and any user-supplied OpenAI-compatible endpoint. Only the base URL differs.
+    -->
+    <PackageVersion Include="OpenAI" Version="2.12.0" />
+
+    <!--
+      The official Anthropic .NET SDK (anthropics/anthropic-sdk-csharp, MIT), not the
+      community Anthropic.SDK. It already depends on Microsoft.Extensions.AI.Abstractions and
+      ships AsIChatClient(model) with tool calling, streaming, structured output and usage
+      reporting, so it needs no adapter of ours.
+    -->
+    <PackageVersion Include="Anthropic" Version="12.46.0" />
+
+    <!--
+      Not used, recorded so it is not proposed again: §0.3 and the Iteration 4 plan named
+      Google.Cloud.VertexAI.Extensions for Gemini. It is prerelease-only (1.0.0-beta08) and it
+      targets Vertex AI, which needs a GCP project and application-default credentials — not
+      the plain Gemini API key the provider form collects. Gemini therefore goes through
+      Google's own OpenAI-compatible endpoint on the OpenAI SDK above. See
+      ProviderEndpoints.ChatBaseUrl.
+    -->
+  </ItemGroup>
+
+  <ItemGroup Label="Contract codegen — beyond §0.3, approved">
+    <!--
+      NJsonSchema is the contract generator's parser (tools only). From Iteration 4 the base
+      package is also referenced at runtime by DiffHacker.Llm, which validates model output
+      against the same JSON Schema documents rather than trusting the provider's
+      structured-output mode. The two CodeGeneration packages remain tool-only.
+    -->
     <PackageVersion Include="NJsonSchema" Version="11.6.1" />
     <PackageVersion Include="NJsonSchema.CodeGeneration.CSharp" Version="11.6.1" />
     <PackageVersion Include="NJsonSchema.CodeGeneration.TypeScript" Version="11.6.1" />

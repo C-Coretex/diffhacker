@@ -30,6 +30,28 @@ const typeLabels = {
   openai_compatible: 'providers.type.openai_compatible',
 } as const satisfies Record<SaveProviderRequestProviderType, string>;
 
+/** Renders a stored rate for editing. Absent stays absent rather than becoming "0". */
+function format(value: number | undefined): string {
+  return value === undefined ? '' : String(value);
+}
+
+/**
+ * Reads the two price boxes, and only accepts them together.
+ *
+ * A rate with one half filled in would bill the other half at zero and present the result as a
+ * real number, which is worse than the honest "cost unknown" the price table already reports.
+ */
+function parseRate(input: string, output: string): { input: number; output: number } | undefined {
+  const parsedInput = Number.parseFloat(input);
+  const parsedOutput = Number.parseFloat(output);
+
+  if (!Number.isFinite(parsedInput) || !Number.isFinite(parsedOutput)) {
+    return undefined;
+  }
+
+  return { input: parsedInput, output: parsedOutput };
+}
+
 interface ProviderFormProps {
   /** The profile being edited, or undefined when adding a new one. */
   profile?: ProviderProfile;
@@ -50,11 +72,14 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
   const [model, setModel] = useState(profile?.model ?? '');
   const [baseUrl, setBaseUrl] = useState(profile?.baseUrl ?? '');
   const [apiKey, setApiKey] = useState('');
+  const [inputCost, setInputCost] = useState(format(profile?.inputCostPerMillion));
+  const [outputCost, setOutputCost] = useState(format(profile?.outputCostPerMillion));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
 
   const baseUrlRequired = providerType === 'openai_compatible';
   const suggestionsId = `${fieldId}-models`;
+  const rate = parseRate(inputCost, outputCost);
 
   const submit = useCallback(
     async (event: FormEvent) => {
@@ -74,6 +99,9 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
           // Omitted when blank: on an edit that means "keep the key already stored", which is
           // what lets the form work without the key ever being sent back to it.
           ...(apiKey ? { apiKey } : {}),
+          // Sent only as a complete pair. Half a rate would bill the other half at zero, so
+          // the host ignores a lone value and this does not send one.
+          ...(rate ? { inputCostPerMillion: rate.input, outputCostPerMillion: rate.output } : {}),
         });
 
         setProviders([...result.profiles], result.activeProfileId);
@@ -84,7 +112,7 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
         setSaving(false);
       }
     },
-    [client, profile, providerType, displayName, model, baseUrl, apiKey, t, setProviders, onDone],
+    [client, profile, providerType, displayName, model, baseUrl, apiKey, rate, t, setProviders, onDone],
   );
 
   return (
@@ -181,6 +209,41 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
             />
             {profile && <p className="text-muted-foreground text-xs">{t('providers.apiKeyUnchanged')}</p>}
           </div>
+
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-sm font-medium">{t('providers.pricingLegend')}</legend>
+            <p className="text-muted-foreground text-xs">{t('providers.pricingHint')}</p>
+            <div className="flex gap-3">
+              <div className="flex flex-1 flex-col gap-2">
+                <Label htmlFor={`${fieldId}-in-cost`}>{t('providers.inputCostLabel')}</Label>
+                <Input
+                  id={`${fieldId}-in-cost`}
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  value={inputCost}
+                  autoComplete="off"
+                  placeholder={t('providers.costPlaceholder')}
+                  onChange={(event) => setInputCost(event.target.value)}
+                />
+              </div>
+              <div className="flex flex-1 flex-col gap-2">
+                <Label htmlFor={`${fieldId}-out-cost`}>{t('providers.outputCostLabel')}</Label>
+                <Input
+                  id={`${fieldId}-out-cost`}
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  value={outputCost}
+                  autoComplete="off"
+                  placeholder={t('providers.costPlaceholder')}
+                  onChange={(event) => setOutputCost(event.target.value)}
+                />
+              </div>
+            </div>
+          </fieldset>
 
           {error && (
             <p role="alert" className="text-destructive text-sm">

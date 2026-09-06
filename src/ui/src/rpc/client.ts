@@ -10,10 +10,18 @@ import type { RpcTransport } from './transport';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+/**
+ * The standard JSON-RPC cancellation notification. StreamJsonRpc answers it out of the box on
+ * the host side, cancelling the `CancellationToken` of the in-flight call.
+ */
+const CANCEL_METHOD = '$/cancelRequest';
+
 interface Pending {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
   timer: ReturnType<typeof setTimeout>;
+  /** Removes the entry and detaches any abort listener. */
+  onSettled: () => void;
 }
 
 export interface RpcClientOptions {
@@ -60,6 +68,22 @@ export class RpcClient {
   }
 
   /**
+   * Invokes a host method that the caller can abort.
+   *
+   * Aborting sends `$/cancelRequest`, so the host stops the work rather than finishing it for
+   * an answer nobody is waiting for. That matters for anything long: a `git diff` over a cold
+   * working tree, or an LLM run that costs money for every second it keeps going.
+   */
+  callAbortable<TResult>(
+    method: string,
+    signal: AbortSignal,
+    timeoutMs: number,
+    ...params: unknown[]
+  ): Promise<TResult> {
+    return this.invoke<TResult>(method, timeoutMs, signal, params);
+  }
+
+  /**
    * Invokes a host method with a deadline of its own.
    *
    * Most calls answer in milliseconds and the default is generous. Loading the changeset of a
@@ -68,25 +92,83 @@ export class RpcClient {
    * going to succeed.
    */
   callWithTimeout<TResult>(method: string, timeoutMs: number, ...params: unknown[]): Promise<TResult> {
+    return this.invoke<TResult>(method, timeoutMs, undefined, params);
+  }
+
+  private invoke<TResult>(
+    method: string,
+    timeoutMs: number,
+    signal: AbortSignal | undefined,
+    params: unknown[],
+  ): Promise<TResult> {
     if (this.disposed) {
       return Promise.reject(new Error('The RPC client has been disposed.'));
+    }
+
+    if (signal?.aborted) {
+      return Promise.reject(new RpcError(0, `'${method}' was cancelled before it was sent.`, {
+        code: 'rpc_cancelled',
+        args: { method },
+      }));
     }
 
     const id = this.nextId++;
     const request: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
 
     return new Promise<TResult>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      let onAbort: (() => void) | undefined;
+
+      const settle = (): void => {
         this.pending.delete(id);
+        if (onAbort) {
+          signal?.removeEventListener('abort', onAbort);
+        }
+      };
+
+      const timer = setTimeout(() => {
+        settle();
+
+        // Tell the host to stop as well. Without this the renderer gives up while the work
+        // grinds on: a git pass keeps running, an LLM run keeps spending.
+        this.cancel(id);
+
         reject(new RpcError(0, `The host did not answer '${method}' within ${timeoutMs}ms.`, {
           code: 'rpc_timeout',
           args: { method },
         }));
       }, timeoutMs);
 
-      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
+      if (signal) {
+        onAbort = () => {
+          clearTimeout(timer);
+          settle();
+          this.cancel(id);
+
+          reject(new RpcError(0, `'${method}' was cancelled.`, {
+            code: 'rpc_cancelled',
+            args: { method },
+          }));
+        };
+
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+
+      this.pending.set(id, {
+        resolve: resolve as (value: unknown) => void,
+        reject,
+        timer,
+        onSettled: settle,
+      });
+
       this.transport.send(JSON.stringify(request));
     });
+  }
+
+  /** Asks the host to abandon a request that is still in flight. */
+  private cancel(id: JsonRpcId): void {
+    this.transport.send(
+      JSON.stringify({ jsonrpc: '2.0', method: CANCEL_METHOD, params: { id } }),
+    );
   }
 
   /** Subscribes to a server-to-client notification. Returns an unsubscribe function. */
@@ -113,6 +195,7 @@ export class RpcClient {
 
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
+      pending.onSettled();
       pending.reject(new Error('The RPC client was disposed before the host answered.'));
     }
 
@@ -145,8 +228,8 @@ export class RpcClient {
       return;
     }
 
-    this.pending.delete(message.id);
     clearTimeout(pending.timer);
+    pending.onSettled();
 
     if (message.error) {
       pending.reject(

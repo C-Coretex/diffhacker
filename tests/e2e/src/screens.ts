@@ -202,11 +202,31 @@ export class SettingsScreen {
       .filter({ has: this.page.getByText(name, { exact: true }) });
   }
 
-  async addProvider(details: { name: string; model: string; apiKey: string }): Promise<void> {
+  get inputCostField(): Locator {
+    return this.page.getByLabel(en.providers.inputCostLabel);
+  }
+
+  get outputCostField(): Locator {
+    return this.page.getByLabel(en.providers.outputCostLabel);
+  }
+
+  async addProvider(details: {
+    name: string;
+    model: string;
+    apiKey: string;
+    /** The optional price override. Only takes effect as a pair. */
+    cost?: { input: string; output: string };
+  }): Promise<void> {
     await this.addButton.click();
     await this.nameField.fill(details.name);
     await this.modelField.fill(details.model);
     await this.apiKeyField.fill(details.apiKey);
+
+    if (details.cost) {
+      await this.inputCostField.fill(details.cost.input);
+      await this.outputCostField.fill(details.cost.output);
+    }
+
     await this.saveButton.click();
   }
 }
