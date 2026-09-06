@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.1/save-provider-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.3/save-provider-request.schema.json",
   "title": "SaveProviderRequest",
   "description": "Parameters for providers.save, which creates a profile when id is absent and updates it otherwise. This is the only contract in the whole set that carries an API key, and it travels in one direction only: renderer to host. Nothing ever sends a key back (CLAUDE.md §0.2.13).",
   "type": "object",

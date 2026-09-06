@@ -9,11 +9,13 @@ describe('translate', () => {
   });
 
   it('substitutes named arguments', () => {
-    expect(translate('demo.step', { step: 2, total: 5 })).toBe('Processing step 2 of 5');
+    expect(translate('changeset.summary', { files: 6, added: 4, removed: 2 })).toBe(
+      '6 files · +4 −2',
+    );
   });
 
   it('leaves a placeholder alone when no argument is supplied', () => {
-    expect(translate('demo.step', { step: 2 })).toContain('{total}');
+    expect(translate('changeset.summary', { files: 6 })).toContain('{added}');
   });
 
   it('returns the key and reports when a key is missing', () => {
@@ -30,11 +32,11 @@ describe('translate', () => {
 describe('describeError', () => {
   it('renders a known host error code with its arguments', () => {
     const error = new RpcError(-32000, 'developer detail', {
-      code: 'demo_steps_out_of_range',
-      args: { steps: '0' },
+      code: 'repository_not_found',
+      args: { path: '/repos/gone' },
     });
 
-    expect(describeError(error)).toBe('The host rejected a step count of 0.');
+    expect(describeError(error)).toBe('There is no folder at /repos/gone.');
   });
 
   it('never leaks the developer message for an unknown code', () => {

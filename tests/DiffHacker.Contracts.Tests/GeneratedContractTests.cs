@@ -47,7 +47,6 @@ public sealed class GeneratedContractTests
             osDescription: "Test OS 1.0",
             platform: HostInfoPlatform.Linux,
             processArchitecture: "arm64",
-            selfTest: true,
             startedAtUtc: new DateTimeOffset(2026, 9, 5, 12, 0, 0, TimeSpan.Zero));
 
         var json = JsonSerializer.Serialize(original, Options);
@@ -55,7 +54,6 @@ public sealed class GeneratedContractTests
 
         restored.AppVersion.ShouldBe(original.AppVersion);
         restored.Platform.ShouldBe(HostInfoPlatform.Linux);
-        restored.SelfTest.ShouldBeTrue();
         restored.StartedAtUtc.ShouldBe(original.StartedAtUtc);
     }
 
@@ -63,12 +61,18 @@ public sealed class GeneratedContractTests
     public void Wire_names_come_from_the_schema_not_from_CSharp_naming()
     {
         var json = JsonSerializer.Serialize(
-            new StartDemoResponse(operationId: "abc", totalSteps: 3),
+            new FileDiffInfo(
+                kind: FileDiffInfoKind.Text,
+                path: "src/app.ts",
+                previousPath: "src/old.ts",
+                sizeBytes: 120,
+                unifiedDiff: "@@ -1 +1 @@"),
             Options);
 
         // camelCase as declared in the schema, regardless of serializer naming policy.
-        json.ShouldContain("\"operationId\"");
-        json.ShouldContain("\"totalSteps\"");
+        json.ShouldContain("\"previousPath\"");
+        json.ShouldContain("\"sizeBytes\"");
+        json.ShouldContain("\"unifiedDiff\"");
     }
 
     [Theory]
@@ -79,7 +83,7 @@ public sealed class GeneratedContractTests
     {
         // The C# member is Macos; the schema says "macos". The schema wins.
         var json = JsonSerializer.Serialize(
-            new HostInfo("0.1.0", ContractVersion.Current, "os", platform, "x64", false, DateTimeOffset.UnixEpoch),
+            new HostInfo("0.1.0", ContractVersion.Current, "os", platform, "x64", DateTimeOffset.UnixEpoch),
             Options);
 
         json.ShouldContain($"\"platform\":\"{expected}\"");
@@ -92,7 +96,7 @@ public sealed class GeneratedContractTests
         var json = """
             {"contractVersion":"1.0.0","appVersion":"0.1.0","platform":"Windows",
              "osDescription":"os","processArchitecture":"x64",
-             "startedAtUtc":"2026-09-05T00:00:00+00:00","selfTest":false}
+             "startedAtUtc":"2026-09-05T00:00:00+00:00"}
             """;
 
         // "Windows" is the C# member name, not a schema value. Accepting it would let the two
@@ -103,13 +107,55 @@ public sealed class GeneratedContractTests
     [Fact]
     public void Nested_definitions_keep_the_name_from_their_title()
     {
-        // Guards TitleFirstTypeNameGenerator: without it this type is named after the
-        // referencing property and becomes "Checks".
-        var result = new SelfTestResult([new SelfTestCheck("detail", "rpc_round_trip", true)], true);
+        // Guards TitleFirstTypeNameGenerator: without it a $def reached through an array
+        // property is named after the property, and this type becomes "Files".
+        var result = new ChangesetResult(
+            files: [ChangedFile("src/app.ts")],
+            hasCommits: true,
+            hunkCountsAvailable: true,
+            isClean: false,
+            repositoryPath: "/repo",
+            statistics: Stats(),
+            untrackedIncluded: true);
 
-        result.Checks[0].ShouldBeOfType<SelfTestCheck>();
-        result.Checks[0].Name.ShouldBe("rpc_round_trip");
+        result.Files[0].ShouldBeOfType<ChangedFileInfo>();
+        result.Files[0].Path.ShouldBe("src/app.ts");
     }
+
+    private static ChangedFileInfo ChangedFile(string path) =>
+        new(
+            hunkCount: 1,
+            isBinary: false,
+            isNestedRepository: false,
+            isSubmodule: false,
+            isSymlink: false,
+            isUntracked: false,
+            language: "TypeScript",
+            linesAdded: 2,
+            linesRemoved: 1,
+            path: path,
+            previousPath: null,
+            project: "app",
+            projectManifest: null,
+            status: ChangedFileInfoStatus.Modified,
+            submoduleFromCommit: null,
+            submoduleToCommit: null);
+
+    private static ChangesetStats Stats() =>
+        new(
+            addedFiles: 0,
+            binaryFiles: 0,
+            copiedFiles: 0,
+            deletedFiles: 0,
+            languages: ["TypeScript"],
+            modifiedFiles: 1,
+            projects: ["app"],
+            renamedFiles: 0,
+            submoduleFiles: 0,
+            totalFiles: 1,
+            totalLinesAdded: 2,
+            totalLinesRemoved: 1,
+            untrackedFiles: 0);
 
     [Fact]
     public void Optional_properties_are_nullable()

@@ -3,7 +3,7 @@
     Launches DiffHacker, captures the screen, and closes it. Windows only.
 
 .DESCRIPTION
-    Evidence, not a gate. The self-test run is what proves the bridge works; this exists so a
+    Evidence, not a gate. `tests/e2e` is what proves the application works; this exists so a
     human can see how WebView2, WKWebView and WebKitGTK each render the same bundle. A failure
     here must never fail the build.
 #>

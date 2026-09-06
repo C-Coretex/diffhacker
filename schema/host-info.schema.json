@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.1/host-info.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.3/host-info.schema.json",
   "title": "HostInfo",
   "description": "Identity and environment of the .NET host process. Returned by the host.ping JSON-RPC method so the renderer can confirm it was built from the same contract generation as the host.",
   "type": "object",
@@ -11,8 +11,7 @@
     "platform",
     "osDescription",
     "processArchitecture",
-    "startedAtUtc",
-    "selfTest"
+    "startedAtUtc"
   ],
   "properties": {
     "contractVersion": {
@@ -40,10 +39,6 @@
       "type": "string",
       "format": "date-time",
       "description": "UTC instant at which the host process started."
-    },
-    "selfTest": {
-      "type": "boolean",
-      "description": "True when the host was launched with --self-test. The renderer then drives the bridge verification itself and reports back through host.reportSelfTest."
     }
   }
 }

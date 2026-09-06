@@ -31,16 +31,6 @@ export const en = {
     contractMismatch:
       'The host was built against contract {host} but this interface expects {ui}. Rebuild the solution.',
   },
-  demo: {
-    heading: 'Bridge demonstration',
-    description:
-      'Calls a .NET method over JSON-RPC, then receives a stream of notifications pushed back from the host.',
-    run: 'Run the round trip',
-    running: 'Running…',
-    step: 'Processing step {step} of {total}',
-    done: 'Stream complete: {count} notification(s) received.',
-    idle: 'Not started.',
-  },
   environment: {
     checking: 'Checking your environment…',
     gitMissingHeading: 'Git was not found',
@@ -84,8 +74,49 @@ export const en = {
     noCommits:
       'This repository has no commits yet, so there is no HEAD to compare your working tree against.',
     linkedWorktree: 'This is a linked worktree.',
-    nextIteration:
-      'Reading the changeset arrives in the next iteration. For now, DiffHacker has confirmed this is a repository it can work with.',
+  },
+  changeset: {
+    heading: 'Uncommitted changes',
+    description: 'Your working tree compared against HEAD — staged and unstaged together.',
+    loading: 'Reading your working tree…',
+    refresh: 'Refresh',
+    includeUntracked: 'Include new files git does not track yet',
+    cleanHeading: 'Nothing to review',
+    cleanBody: 'Your working tree matches HEAD. Make a change and refresh.',
+    cleanBodyUntrackedExcluded:
+      'Your working tree matches HEAD, apart from any new files. Turn on untracked files to see those.',
+    noCommitsNotice:
+      'This repository has no commits, so everything in your working tree reads as newly added.',
+    summary: '{files} files · +{added} −{removed}',
+    summaryDetail: '{languages} · {projects}',
+    hunkCountsUnavailable:
+      'Hunk counts could not be attributed to files on this run, so they are not shown.',
+    showMore: 'Show {count} more',
+    showingCount: 'Showing {shown} of {total}',
+    columnFile: 'File',
+    columnChange: 'Change',
+    renamedFrom: 'was {path}',
+    binary: 'Binary',
+    submodule: 'Submodule',
+    symlink: 'Symlink',
+    untracked: 'New',
+    nestedRepository: 'Nested repository',
+    noLineCounts: 'not counted',
+    status: {
+      added: 'Added',
+      modified: 'Modified',
+      deleted: 'Deleted',
+      renamed: 'Renamed',
+      copied: 'Copied',
+    },
+    diff: {
+      show: 'Show diff',
+      hide: 'Hide diff',
+      loading: 'Loading the diff…',
+      binary: 'This file is binary, so there is no text diff to show.',
+      absent: 'There is no diff to show for this file.',
+      tooLarge: 'This diff is {size} and is too large to display here.',
+    },
   },
   providers: {
     heading: 'LLM providers',
@@ -148,8 +179,6 @@ export const en = {
   error: {
     unknown_error: 'Something went wrong. See log.txt for details.',
     rpc_timeout: 'The host did not respond in time.',
-    demo_steps_out_of_range: 'The host rejected a step count of {steps}.',
-    self_test_not_requested: 'The host was not started in self-test mode.',
 
     git_not_found:
       'Git was not found on your PATH. DiffHacker cannot read a repository without it.',
@@ -160,6 +189,10 @@ export const en = {
     repository_access_denied: '{path} could not be read. Check the folder’s permissions.',
     folder_picker_unavailable:
       'The folder picker could not be opened. Type the path instead.',
+
+    changeset_repository_unreadable:
+      '{path} could not be read as a git working tree. It may have been moved or deleted.',
+    changeset_git_failed: 'Git could not read the changes in {path}. See log.txt for details.',
 
     provider_not_found: 'That provider is no longer configured.',
     provider_key_missing: 'No API key is stored for this provider. Add one and try again.',

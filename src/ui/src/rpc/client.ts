@@ -56,6 +56,18 @@ export class RpcClient {
 
   /** Invokes a host method and resolves with its typed result. */
   call<TResult>(method: string, ...params: unknown[]): Promise<TResult> {
+    return this.callWithTimeout<TResult>(method, this.timeoutMs, ...params);
+  }
+
+  /**
+   * Invokes a host method with a deadline of its own.
+   *
+   * Most calls answer in milliseconds and the default is generous. Loading the changeset of a
+   * very large repository is genuinely slow — several full `git diff` passes over a cold
+   * working tree — and abandoning it at thirty seconds would report a timeout for work that was
+   * going to succeed.
+   */
+  callWithTimeout<TResult>(method: string, timeoutMs: number, ...params: unknown[]): Promise<TResult> {
     if (this.disposed) {
       return Promise.reject(new Error('The RPC client has been disposed.'));
     }
@@ -66,11 +78,11 @@ export class RpcClient {
     return new Promise<TResult>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new RpcError(0, `The host did not answer '${method}' within ${this.timeoutMs}ms.`, {
+        reject(new RpcError(0, `The host did not answer '${method}' within ${timeoutMs}ms.`, {
           code: 'rpc_timeout',
           args: { method },
         }));
-      }, this.timeoutMs);
+      }, timeoutMs);
 
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
       this.transport.send(JSON.stringify(request));

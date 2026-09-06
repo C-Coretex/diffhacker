@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.1/open-repository-result.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.3/open-repository-result.schema.json",
   "title": "OpenRepositoryResult",
   "description": "Result of repository.open. A rejected path surfaces as a JSON-RPC error carrying a stable code, so this type only ever describes success.",
   "type": "object",

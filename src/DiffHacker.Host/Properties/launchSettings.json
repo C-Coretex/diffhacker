@@ -9,9 +9,9 @@
       "commandLineArgs": "--verbose",
       "workingDirectory": "$(ProjectDir)"
     },
-    "Bridge self-test": {
+    "DiffHacker (throwaway state)": {
       "commandName": "Project",
-      "commandLineArgs": "--self-test --timeout 60 --verbose",
+      "commandLineArgs": "--data-dir $(TEMP)\\diffhacker-scratch --verbose",
       "workingDirectory": "$(ProjectDir)"
     }
   }

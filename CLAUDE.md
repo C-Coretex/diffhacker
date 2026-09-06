@@ -274,7 +274,9 @@ Run from the repository root.
 | UI type check | `npm run typecheck` in `src/ui` |
 | Renderer inner loop | `npm run watch` in `src/ui`, then reload the window |
 | Regenerate contracts from `/schema` | Automatic on build. Standalone: `npm run contracts` in `src/ui` |
-| Verify the host↔renderer bridge headlessly | `dotnet run --project src/DiffHacker.Host -- --self-test --timeout 60` |
+| End-to-end tests (drives the real window) | `npm test` in `tests/e2e` (`npm install` once; build the solution first) |
+| E2E report and screenshots | `npm run report` in `tests/e2e`; PNGs in `tests/e2e/artifacts/screenshots/` |
+| Run the app against throwaway state | `dotnet run --project src/DiffHacker.Host -- --data-dir <path>` |
 
 > `dotnet test` must not be passed `--nologo`: under Microsoft.Testing.Platform the flag is
 > forwarded to the test executable, which rejects it and reports "Zero tests ran".
@@ -290,8 +292,11 @@ Run from the repository root.
   `diffhacker://app/` scheme handler — never over HTTP.
 - **Strings.** The host sends error codes and resource keys, never prose. `src/ui/src/i18n/en.ts`
   is the single resource layer; keys are compile-time checked.
-- **Self-test.** `--self-test` makes the renderer run the bridge checks itself, report back,
-  and the host exit 0 or 1. This is what CI gates on; screenshots are evidence only.
+- **End-to-end.** `tests/e2e` attaches Playwright to the live WebView2 window over the Chrome
+  DevTools Protocol — WebView2 honours `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`, which
+  `PhotinoAppShell` never overrides, so no production code knows the suite exists. Windows only:
+  WKWebView and WebKitGTK expose no equivalent, and the suite skips there rather than reporting a
+  pass it did not earn. This is the whole-application gate; screenshots are evidence only.
 
 ### Conventions
 
@@ -299,18 +304,46 @@ Run from the repository root.
   the JSON Schema in `/schema` and rebuild. Generated files are not edited and not reviewed
   as source.
 - **Schema files are versioned**, and the version is part of the contract. A persisted
-  analysis records the schema version it was written with.
+  analysis records the schema version it was written with. Bumping it means editing
+  `schema/contract-version.json` **and** the `/<major>.<minor>/` segment in every schema's
+  `$id`, which is what the 1.0 → 1.1 → 1.2 bumps did.
+- **A `$def` must not reference another `$def`.** NJsonSchema's C# record template throws
+  ("Error while rendering Liquid template CSharp/Class.Constructor.Record") on a nested
+  reference, so one level — root → `$def` — is all the generator supports. Flatten the inner
+  object into its parent instead; `schema/changeset-result.schema.json` carries the per-status
+  counts as flat properties for exactly this reason. Cross-*file* `$ref` is likewise unused:
+  shared shapes are duplicated per file and reconciled with an agreement test.
 - **No hardcoded user-facing strings.** Everything goes through the resource layer, even
   though the app ships English only.
-- **Never parse human-facing git output.** Always use explicit machine-readable flags.
+- **Never parse human-facing git output.** Always use explicit machine-readable flags. In
+  practice that means `-z` everywhere, `--raw` for statuses and file modes, and `--numstat` for
+  line counts. The one place a patch stream is read at all — hunk counting — deliberately never
+  reads a path out of it.
 - **Never invoke a git subcommand that mutates the repository.** The Git layer enforces an
-  allowlist.
+  allowlist in `GitProcessRunner.PermittedSubcommands`, granted per top-level subcommand. That
+  granularity is why `submodule` is absent: its status query cannot be allowed without also
+  allowing `submodule update`.
+- **Text encodings** are decided once, in `DiffHacker.Core.Changes.TextDecoding`: a NUL in the
+  first 8000 bytes means binary, then BOM, then strict UTF-8, then Latin-1 — and the result says
+  which was used. Latin-1 rather than Windows-1252 because `InvariantGlobalization` is on and
+  the Windows code pages would need a package.
 - **Logging:** structured entries to a rolling `log.txt` in the per-user application data
   directory. Redact secrets at the sink, not at each call site.
 - **Tests:** xUnit for .NET, Vitest + React Testing Library for the UI, Playwright for E2E.
   Git-layer and toolbox tests run against fixture repositories built in temp directories by
   a test helper — real commits, real renames, real untracked files. No test hits a real LLM
   provider.
+- **The end-to-end suite is part of the change, not an afterthought.** Any iteration that adds a
+  screen, an RPC method, a user-visible state or a new failure mode **extends `tests/e2e`** to
+  cover it, and **runs the suite before reporting the work done**. It is the only thing in the
+  repository that proves the layers are actually wired together — the unit suites all pass
+  happily with a bridge that answers nothing. See [tests/e2e/README.md](tests/e2e/README.md) for
+  the conventions; the short version is one test per journey, no fixed sleeps, assertions taken
+  from `en.ts` rather than pasted, and screenshots at every meaningful step.
+- **E2E runs against throwaway state, never yours.** The host is launched with `--data-dir`,
+  because .NET resolves the per-user data directory through the Win32 known-folder API and no
+  environment variable can redirect it. Anything that bypasses that switch will write test
+  providers and API keys into the developer's real secret store.
 
 ### Continuous integration is deferred
 
@@ -321,15 +354,43 @@ they ask for it.
 
 Consequences to keep in mind, since nothing else covers them:
 
-- **macOS and Linux are unverified.** Everything in this repository has only ever been built
-  and run on Windows. WebKitGTK and WKWebView are expected to differ from WebView2, especially
-  around the custom scheme handler and `prefers-color-scheme`.
-- The verification that CI *would* have run is still available locally, and is the fastest way
-  to check a change end to end:
-  `dotnet run --project src/DiffHacker.Host -- --self-test --timeout 60`
+- **macOS and Linux are unverified, and now have no automated end-to-end coverage at all.**
+  Everything in this repository has only ever been built and run on Windows. WebKitGTK and
+  WKWebView are expected to differ from WebView2, especially around the custom scheme handler
+  and `prefers-color-scheme`. The user has accepted this deliberately — see the note on the
+  self-test below.
+- The full local gate is `dotnet test src/DiffHacker.slnx`, `npm run test:run` in `src/ui`, and
+  `npm test` in `tests/e2e`. Only the first two run anywhere but Windows.
 - `tools/ci/screenshot.ps1` and `tools/ci/screenshot.sh` launch the app, capture the screen and
   close it. They were written for CI but work standalone, and are how the renderer gets a
   visual check on a given platform.
+
+### The renderer self-test has been removed
+
+Iteration 1 built a `--self-test` mode: the host launched, the renderer verified the bridge from
+inside the page, reported a verdict through `host.reportSelfTest`, and the process exited 0 or 1.
+**It is gone, deliberately, and should not be rebuilt.** So is the demo RPC surface that existed
+to feed it — `DemoRpcTarget`, `DemoPanel.tsx`, and the `start-demo-*` and `progress-notification`
+schemas.
+
+Why: `tests/e2e` covers everything it covered except two checks, and both moved to
+[04-shell-guarantees.spec.ts](tests/e2e/specs/04-shell-guarantees.spec.ts) — Content-Security-Policy
+enforcement and the contract handshake. Driving them from a test rather than from app code is
+strictly better, because the self-test was **test code compiled into the shipped renderer
+bundle**, plus an RPC surface and a CLI mode that existed only for it.
+
+The cost the user accepted:
+
+- **macOS and Linux have no automated end-to-end coverage.** The self-test was the only thing
+  that could ever have run there, since Playwright needs CDP and so needs WebView2. Its
+  "redundant" checks were the ones that would have caught a broken Keychain or libsecret
+  backend. The user does not want cross-platform verification, so this is settled.
+- **Host→renderer notifications are only half covered.** The host side stays proven by
+  `RpcBridgeTests.A_target_can_push_notifications_back_to_the_renderer`, which uses a target
+  local to the test; the renderer side is proven only by `client.test.ts` against a fake
+  transport. Nothing exercises a real notification travelling the real bridge into the real
+  window, because after the demo target's removal nothing sends one. **Iteration 5's
+  `report_progress` is the first real producer — add an end-to-end test for it there.**
 
 ### Dependencies beyond §0.3
 

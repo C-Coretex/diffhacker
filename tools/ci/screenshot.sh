@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Launches DiffHacker, captures the screen, and closes it. macOS and Linux.
 #
-# Evidence, not a gate. The self-test run is what proves the bridge works; this exists so a
+# Evidence, not a gate. `tests/e2e` is what proves the application works; this exists so a
 # human can see how WKWebView and WebKitGTK each render the same bundle. A failure here must
 # never fail the build.
 set -uo pipefail

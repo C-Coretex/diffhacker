@@ -1,0 +1,18 @@
+{
+  "name": "diffhacker-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end tests. Drives the real Photino window over CDP against real git repositories.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report artifacts/playwright-report",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@types/node": "^26.4.1",
+    "typescript": "^5.9.3"
+  }
+}

@@ -78,27 +78,60 @@ public sealed class HostCommandLineTests
     {
         var options = HostCommandLine.Parse([]);
 
-        options.SelfTest.ShouldBeFalse();
         options.Verbose.ShouldBeFalse();
+        options.DataDirectory.ShouldBeNull();
     }
 
     [Fact]
-    public void Parses_the_self_test_switches_CI_uses()
+    public void Parses_verbose_logging()
     {
-        var options = HostCommandLine.Parse(["--self-test", "--timeout", "45", "--out", "result.json", "--verbose"]);
-
-        options.SelfTest.ShouldBeTrue();
-        options.SelfTestTimeout.ShouldBe(TimeSpan.FromSeconds(45));
-        options.SelfTestOutputPath.ShouldBe("result.json");
-        options.Verbose.ShouldBeTrue();
+        HostCommandLine.Parse(["--verbose"]).Verbose.ShouldBeTrue();
     }
 
     [Fact]
     public void Ignores_arguments_it_does_not_recognise()
     {
         // Some OS shells append their own arguments when launching a bundled application.
-        var options = HostCommandLine.Parse(["-psn_0_12345", "--self-test"]);
+        var options = HostCommandLine.Parse(["-psn_0_12345", "--verbose"]);
 
-        options.SelfTest.ShouldBeTrue();
+        options.Verbose.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_data_directory_switch_with_no_value_is_ignored_rather_than_fatal()
+    {
+        // Trailing switch with nothing after it. Crashing the application on start-up over a
+        // malformed argument would be a worse outcome than falling back to the real directory.
+        HostCommandLine.Parse(["--data-dir"]).DataDirectory.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Parses_an_explicit_data_directory()
+    {
+        var options = HostCommandLine.Parse(["--data-dir", "/tmp/somewhere"]);
+
+        options.DataDirectory.ShouldBe("/tmp/somewhere");
+    }
+
+    [Fact]
+    public void An_explicit_data_directory_is_where_state_goes()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "diffhacker-datadir-" + Guid.NewGuid().ToString("n"));
+
+        var paths = Program.ResolvePaths(HostCommandLine.Parse(["--data-dir", root]));
+
+        // The end-to-end suite writes throwaway providers and API keys. Without this switch it
+        // would write them into the developer's real secret store, because .NET resolves the
+        // per-user directory through the Win32 known-folder API and no environment variable can
+        // redirect it.
+        paths.DataDirectory.ShouldBe(Path.GetFullPath(root));
+    }
+
+    [Fact]
+    public void Without_the_switch_state_goes_to_the_per_user_directory()
+    {
+        var paths = Program.ResolvePaths(HostCommandLine.Parse([]));
+
+        paths.DataDirectory.ShouldBe(new AppPaths().DataDirectory);
     }
 }

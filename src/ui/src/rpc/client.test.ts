@@ -47,26 +47,28 @@ describe('RpcClient', () => {
     const transport = new FakeTransport();
     const client = new RpcClient(transport);
 
-    const pending = client.call('demo.startCountdown', { steps: 0 });
-    transport.respondWithError('demo_steps_out_of_range', { steps: '0' });
+    const pending = client.call('repository.open', { path: '/repos/gone' });
+    transport.respondWithError('repository_not_found', { path: '/repos/gone' });
 
     const error = await pending.catch((reason: unknown) => reason);
     expect(error).toBeInstanceOf(RpcError);
-    expect((error as RpcError).code).toBe('demo_steps_out_of_range');
-    expect((error as RpcError).args).toEqual({ steps: '0' });
+    expect((error as RpcError).code).toBe('repository_not_found');
+    expect((error as RpcError).args).toEqual({ path: '/repos/gone' });
   });
 
   it('delivers notifications to subscribers in order and stops after unsubscribe', () => {
+    // Nothing in the application pushes notifications yet; the client's half of that channel is
+    // still worth keeping tested, because Iteration 5's report_progress arrives through it.
     const transport = new FakeTransport();
     const client = new RpcClient(transport);
     const seen: number[] = [];
 
-    const unsubscribe = client.on<{ step: number }>('demo/progress', (params) => seen.push(params.step));
+    const unsubscribe = client.on<{ step: number }>('test/progress', (params) => seen.push(params.step));
 
-    transport.notify('demo/progress', { step: 0 });
-    transport.notify('demo/progress', { step: 1 });
+    transport.notify('test/progress', { step: 0 });
+    transport.notify('test/progress', { step: 1 });
     unsubscribe();
-    transport.notify('demo/progress', { step: 2 });
+    transport.notify('test/progress', { step: 2 });
 
     expect(seen).toEqual([0, 1]);
   });

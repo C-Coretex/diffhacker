@@ -472,6 +472,9 @@ src/ui/dist/
 src/ui/node_modules/
 src/ui/.vite/
 
+# End-to-end suite: dependencies, screenshots, traces and the HTML report.
+tests/e2e/node_modules/
+tests/e2e/artifacts/
+
 # Local run artifacts
-selftest-result.json
 screenshots/

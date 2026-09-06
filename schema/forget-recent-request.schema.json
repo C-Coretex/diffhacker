@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.1/forget-recent-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.3/forget-recent-request.schema.json",
   "title": "ForgetRecentRequest",
   "description": "Parameters for repository.forgetRecent, which removes one entry from the recent-repository list. Nothing on disk is touched.",
   "type": "object",

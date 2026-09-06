@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.1/provider-profile-list.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.3/provider-profile-list.schema.json",
   "title": "ProviderProfileList",
   "description": "Every configured LLM provider, and which one is active. Returned by providers.list. No API key appears anywhere in this type: keys travel from the renderer to the host on save and never come back (CLAUDE.md §0.2.13).",
   "type": "object",

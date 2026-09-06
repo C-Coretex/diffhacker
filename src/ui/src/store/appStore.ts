@@ -1,19 +1,19 @@
 import { create } from 'zustand';
 import type {
+  ChangesetResult,
   EnvironmentInfo,
   HostInfo,
-  ProgressNotification,
   ProviderProfile,
   RecentRepository,
   RepositoryInfo,
 } from '@/contracts';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'detached' | 'error';
-export type DemoStatus = 'idle' | 'running' | 'done' | 'error';
 export type EnvironmentStatus = 'checking' | 'ready' | 'error';
 export type RecentsStatus = 'loading' | 'ready' | 'error';
 export type RepositoryStatus = 'none' | 'opening' | 'open' | 'error';
 export type ProvidersStatus = 'loading' | 'ready' | 'error';
+export type ChangesetStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 /**
  * Which screen is showing.
@@ -28,10 +28,6 @@ interface AppState {
   connection: ConnectionStatus;
   hostInfo?: HostInfo;
   connectionError?: string;
-
-  demo: DemoStatus;
-  demoError?: string;
-  progress: ProgressNotification[];
 
   screen: Screen;
 
@@ -54,13 +50,20 @@ interface AppState {
   activeProviderId?: string;
   providersError?: string;
 
+  changeset: ChangesetStatus;
+  changesetResult?: ChangesetResult;
+  changesetError?: string;
+  /**
+   * Requirement 2's toggle, on by default.
+   *
+   * Session state rather than a setting: excluding untracked files is a momentary "let me see
+   * only what I edited", not a standing preference, and it belongs next to the list it changes.
+   */
+  includeUntracked: boolean;
+
   setConnected(hostInfo: HostInfo): void;
   setDetached(): void;
   setConnectionError(message: string): void;
-
-  startDemo(): void;
-  recordProgress(notification: ProgressNotification): void;
-  failDemo(message: string): void;
 
   showScreen(screen: Screen): void;
 
@@ -79,12 +82,15 @@ interface AppState {
   startLoadingProviders(): void;
   setProviders(profiles: ProviderProfile[], activeId?: string): void;
   failProviders(message: string): void;
+
+  startLoadingChangeset(): void;
+  setChangeset(result: ChangesetResult): void;
+  failChangeset(message: string): void;
+  setIncludeUntracked(include: boolean): void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   connection: 'connecting',
-  demo: 'idle',
-  progress: [],
 
   screen: 'welcome',
 
@@ -98,19 +104,12 @@ export const useAppStore = create<AppState>((set) => ({
   providers: 'loading',
   providerProfiles: [],
 
+  changeset: 'idle',
+  includeUntracked: true,
+
   setConnected: (hostInfo) => set({ connection: 'connected', hostInfo, connectionError: undefined }),
   setDetached: () => set({ connection: 'detached' }),
   setConnectionError: (message) => set({ connection: 'error', connectionError: message }),
-
-  startDemo: () => set({ demo: 'running', demoError: undefined, progress: [] }),
-
-  recordProgress: (notification) =>
-    set((state) => ({
-      progress: [...state.progress, notification],
-      demo: notification.completed ? 'done' : state.demo,
-    })),
-
-  failDemo: (message) => set({ demo: 'error', demoError: message }),
 
   showScreen: (screen) => set({ screen }),
 
@@ -127,6 +126,11 @@ export const useAppStore = create<AppState>((set) => ({
       repositoryError: undefined,
       repositoryNormalizedFrom: normalizedFrom,
       screen: 'repository',
+      // A changeset belongs to the repository it came from. Leaving the previous one visible
+      // while the new one loads would show a reviewer another project's files.
+      changeset: 'idle',
+      changesetResult: undefined,
+      changesetError: undefined,
     }),
 
   failRepository: (message) => set({ repository: 'none', repositoryError: message }),
@@ -141,4 +145,10 @@ export const useAppStore = create<AppState>((set) => ({
   setProviders: (providerProfiles, activeProviderId) =>
     set({ providers: 'ready', providerProfiles, activeProviderId, providersError: undefined }),
   failProviders: (message) => set({ providers: 'error', providersError: message }),
+
+  startLoadingChangeset: () => set({ changeset: 'loading', changesetError: undefined }),
+  setChangeset: (changesetResult) =>
+    set({ changeset: 'ready', changesetResult, changesetError: undefined }),
+  failChangeset: (message) => set({ changeset: 'error', changesetError: message }),
+  setIncludeUntracked: (includeUntracked) => set({ includeUntracked }),
 }));

@@ -5,13 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ChangesetPanel } from '@/components/ChangesetPanel';
 
 /**
- * What the application knows about the open repository.
+ * The open repository and its current change.
  *
- * Iteration 3 fills this with the changeset. For now it confirms the repository was accepted
- * and surfaces the two conditions that change what a diff will mean — no commits, and a linked
- * worktree.
+ * The header confirms which working tree this is and surfaces the two conditions that change
+ * what a diff means — no commits, and a linked worktree. Below it, the changeset.
  */
 export function RepositoryScreen() {
   const t = useT();
@@ -60,13 +60,13 @@ export function RepositoryScreen() {
             </Alert>
           )}
 
-          <p className="text-muted-foreground text-sm">{t('repository.nextIteration')}</p>
-
           <Button variant="outline" className="w-fit" onClick={() => showScreen('welcome')}>
             {t('repository.change')}
           </Button>
         </CardContent>
       </Card>
+
+      <ChangesetPanel />
     </div>
   );
 }

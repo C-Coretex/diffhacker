@@ -3,8 +3,7 @@ import { SettingsIcon } from 'lucide-react';
 import { describeError } from '@/i18n/errors';
 import { useT } from '@/i18n/useT';
 import { useRpc } from '@/rpc/RpcProvider';
-import { describeEnvironment, ping, reportSelfTest } from '@/rpc/methods';
-import { runSelfTest } from '@/selfTest/runSelfTest';
+import { describeEnvironment, ping } from '@/rpc/methods';
 import { useAppStore } from '@/store/appStore';
 import { useSystemTheme } from '@/theme/useSystemTheme';
 import { Button } from '@/components/ui/button';
@@ -57,15 +56,6 @@ export function App() {
             failEnvironment(describeError(error));
           }
         }
-
-        // CI launches the host with --self-test. The renderer proves the bridge works and
-        // reports back; the host turns that verdict into a process exit code.
-        if (hostInfo.selfTest) {
-          const result = await runSelfTest(client, hostInfo);
-          if (!cancelled) {
-            await reportSelfTest(client, result);
-          }
-        }
       } catch (error) {
         if (!cancelled) {
           setConnectionError(describeError(error));
@@ -105,7 +95,19 @@ export function App() {
       </header>
 
       <main className="flex-1 overflow-auto px-8 py-6">
-        <div className="mx-auto flex max-w-3xl flex-col gap-6">
+        {/*
+          The repository screen gets the whole window; welcome and settings stay in a reading
+          column. A changed-file list wants room for its path, status, line counts, language and
+          project on one row, and Iteration 8's graph will want more than that. Forms read badly
+          stretched, so they keep the narrow measure.
+        */}
+        <div
+          className={
+            screen === 'repository'
+              ? 'flex flex-col gap-6'
+              : 'mx-auto flex max-w-3xl flex-col gap-6'
+          }
+        >
           <GitMissingBanner />
 
           {connection !== 'connected' && <HostPanel />}

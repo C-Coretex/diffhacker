@@ -1,0 +1,35 @@
+{
+  "succeeded": true,
+  "checks": [
+    {
+      "name": "rpc_round_trip",
+      "passed": true,
+      "detail": "host.ping returned windows/x64"
+    },
+    {
+      "name": "contract_version_match",
+      "passed": true,
+      "detail": "both sides are on contract 1.2.0"
+    },
+    {
+      "name": "notification_stream",
+      "passed": true,
+      "detail": "received 3 notification(s) for a3cb5b0804254419b2fd4c2e0c1db6f7"
+    },
+    {
+      "name": "csp_blocks_remote_script",
+      "passed": true,
+      "detail": "the WebView reported a script-src violation for a remote script"
+    },
+    {
+      "name": "environment_probe",
+      "passed": true,
+      "detail": "git git version 2.52.0.windows.1; secrets via windows_dpapi"
+    },
+    {
+      "name": "settings_round_trip",
+      "passed": true,
+      "detail": "profile stored and removed; no key crossed the bridge"
+    }
+  ]
+}

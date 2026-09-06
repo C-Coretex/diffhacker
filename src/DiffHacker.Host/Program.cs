@@ -1,4 +1,5 @@
 using System.Reflection;
+using DiffHacker.Core.Changes;
 using DiffHacker.Core.Providers;
 using DiffHacker.Core.Repositories;
 using DiffHacker.Core.Settings;
@@ -6,7 +7,6 @@ using DiffHacker.Git;
 using DiffHacker.Host.Assets;
 using DiffHacker.Host.Logging;
 using DiffHacker.Host.Rpc;
-using DiffHacker.Host.SelfTest;
 using DiffHacker.Host.Shell;
 using DiffHacker.Llm;
 using DiffHacker.Storage;
@@ -34,11 +34,9 @@ internal static class Program
     {
         var options = HostCommandLine.Parse(args);
 
-        // Self-test runs against a throwaway data directory. It writes provider profiles and
-        // secrets as part of the checks, and CI must never touch the developer's real ones.
-        var paths = options.SelfTest
-            ? new AppPaths(Path.Combine(Path.GetTempPath(), "diffhacker-selftest", Guid.NewGuid().ToString("n")))
-            : new AppPaths();
+        // --data-dir exists so the end-to-end suite can run against throwaway state: it writes
+        // provider profiles and API keys, and must never touch the developer's real ones.
+        var paths = ResolvePaths(options);
 
         using var serilog = LoggingSetup.Create(paths, options.Verbose);
         using var loggerFactory = new SerilogLoggerFactory(serilog);
@@ -91,48 +89,13 @@ internal static class Program
         var bridge = provider.GetRequiredService<RpcBridge>();
         bridge.Start();
 
-        var exitCode = 0;
-        using var shutdown = new CancellationTokenSource();
-
-        if (options.SelfTest)
-        {
-            _ = Task.Run(async () =>
-            {
-                exitCode = await RunSelfTestAsync(provider, options, logger, shutdown.Token).ConfigureAwait(false);
-                shell.Close();
-            }, shutdown.Token);
-        }
-
         // Blocks on the native message loop until the window closes.
         shell.Run(UiAssetResolver.StartUrl);
 
-        shutdown.Cancel();
         provider.DisposeAsync().AsTask().GetAwaiter().GetResult();
 
-        logger.LogInformation("DiffHacker exiting with code {ExitCode}", exitCode);
-        return exitCode;
-    }
-
-    private static async Task<int> RunSelfTestAsync(
-        IServiceProvider provider,
-        HostCommandLine options,
-        ILogger logger,
-        CancellationToken cancellationToken)
-    {
-        var coordinator = provider.GetRequiredService<SelfTestCoordinator>();
-
-        var result = await coordinator.WaitAsync(options.SelfTestTimeout, cancellationToken).ConfigureAwait(false);
-        await SelfTestCoordinator
-            .WriteResultAsync(options.SelfTestOutputPath, result, CancellationToken.None)
-            .ConfigureAwait(false);
-
-        var succeeded = result?.Succeeded == true;
-        logger.LogInformation(
-            "Self-test {Outcome}; result written to {Path}",
-            succeeded ? "passed" : "FAILED",
-            Path.GetFullPath(options.SelfTestOutputPath));
-
-        return succeeded ? 0 : 1;
+        logger.LogInformation("DiffHacker exiting");
+        return 0;
     }
 
     private static ServiceCollection BuildServices(
@@ -146,18 +109,19 @@ internal static class Program
         services.AddLogging();
         services.AddSingleton(paths);
         services.AddSingleton(options);
-        services.AddSingleton(new HostRuntimeInfo { SelfTest = options.SelfTest });
+        services.AddSingleton(new HostRuntimeInfo());
 
         services.AddSingleton(CreateWindowSettings());
         services.AddSingleton<IAppShell, PhotinoAppShell>();
         services.AddSingleton(CreateAssetSource());
         services.AddSingleton<UiAssetResolver>();
 
-        // Git: an allowlisted process runner, and the two read-only questions Iteration 2 asks
-        // of it. IGitClient itself is Iteration 3's, built on this same runner.
+        // Git: an allowlisted process runner, the two read-only questions Iteration 2 asks of it,
+        // and the changeset everything downstream is built from.
         services.AddSingleton<GitProcessRunner>();
         services.AddSingleton<IGitEnvironment, GitEnvironment>();
         services.AddSingleton<IRepositoryLocator, RepositoryLocator>();
+        services.AddSingleton<IGitClient, GitClient>();
 
         // Storage: settings in the per-user data directory, keys in the secret store, never
         // the other way round.
@@ -175,28 +139,42 @@ internal static class Program
         services.AddSingleton(_ => new HttpClient());
         services.AddSingleton<IProviderConnectionTester, HttpProviderConnectionTester>();
 
-        services.AddSingleton<SelfTestCoordinator>();
+        // The notifier is the bridge's outbound-notification plumbing. Nothing pushes
+        // notifications yet — Iteration 5's report_progress is the first real caller.
         services.AddSingleton<RpcNotifier>();
         services.AddSingleton<IRpcNotifier>(sp => sp.GetRequiredService<RpcNotifier>());
         services.AddSingleton<HostRpcTarget>();
-        services.AddSingleton<DemoRpcTarget>();
         services.AddSingleton<EnvironmentRpcTarget>();
         services.AddSingleton<RepositoryRpcTarget>();
         services.AddSingleton<ProviderRpcTarget>();
+        services.AddSingleton<ChangesetRpcTarget>();
 
         services.AddSingleton(sp => new RpcBridge(
             sp.GetRequiredService<IAppShell>(),
             sp.GetRequiredService<RpcNotifier>(),
             [
                 sp.GetRequiredService<HostRpcTarget>(),
-                sp.GetRequiredService<DemoRpcTarget>(),
                 sp.GetRequiredService<EnvironmentRpcTarget>(),
                 sp.GetRequiredService<RepositoryRpcTarget>(),
                 sp.GetRequiredService<ProviderRpcTarget>(),
+                sp.GetRequiredService<ChangesetRpcTarget>(),
             ],
             sp.GetRequiredService<ILogger<RpcBridge>>()));
 
         return services;
+    }
+
+    /// <summary>
+    /// Where this run keeps its state: an explicit <c>--data-dir</c>, or the per-user
+    /// application data directory.
+    /// </summary>
+    internal static AppPaths ResolvePaths(HostCommandLine options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        return string.IsNullOrWhiteSpace(options.DataDirectory)
+            ? new AppPaths()
+            : new AppPaths(options.DataDirectory);
     }
 
     private static WindowSettings CreateWindowSettings() => new()

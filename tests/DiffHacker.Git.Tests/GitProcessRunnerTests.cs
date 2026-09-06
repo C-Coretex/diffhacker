@@ -22,6 +22,12 @@ public sealed class GitProcessRunnerTests
     [InlineData("merge")]
     [InlineData("rebase")]
     [InlineData("gc")]
+    [InlineData("mv")]
+    [InlineData("rm")]
+    [InlineData("apply")]
+    [InlineData("submodule")]
+    [InlineData("hash-object")]
+    [InlineData("update-index")]
     public async Task A_mutating_subcommand_is_rejected_before_a_process_starts(string subcommand)
     {
         var thrown = await Should.ThrowAsync<ArgumentException>(
@@ -32,11 +38,51 @@ public sealed class GitProcessRunnerTests
     }
 
     [Fact]
+    public async Task The_streaming_entry_point_enforces_the_same_allowlist()
+    {
+        // Iteration 3 added a second way into the runner. A door that skipped the check would
+        // make the whole allowlist decorative.
+        var thrown = await Should.ThrowAsync<ArgumentException>(
+            () => _runner.RunStreamingAsync(
+                "commit",
+                [],
+                null,
+                static (_, _) => Task.CompletedTask,
+                TestContext.Current.CancellationToken));
+
+        thrown.Message.ShouldContain("read-only git allowlist");
+    }
+
+    [Fact]
     public void The_allowlist_contains_only_read_only_subcommands()
     {
         // A denylist would be wrong the moment git grows a subcommand. This asserts the shape
         // of the rule, so widening it stays a deliberate act.
-        GitProcessRunner.PermittedSubcommands.ShouldBe(["rev-parse", "version"], ignoreOrder: true);
+        //
+        // Iteration 3 added diff, ls-files and cat-file. Note what is still absent: submodule,
+        // whose read-only status query cannot be granted without also granting
+        // `submodule update`, and hash-object, which writes as soon as anyone passes -w.
+        GitProcessRunner.PermittedSubcommands.ShouldBe(
+            ["version", "rev-parse", "diff", "ls-files", "cat-file"],
+            ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task The_streaming_entry_point_hands_over_raw_bytes()
+    {
+        // Everything downstream reads NUL-delimited records and blob content, both of which a
+        // UTF-8 StreamReader would corrupt. This asserts the stream is the process's own.
+        var captured = new MemoryStream();
+
+        var outcome = await _runner.RunStreamingAsync(
+            "version",
+            [],
+            null,
+            async (stream, token) => await stream.CopyToAsync(captured, token),
+            TestContext.Current.CancellationToken);
+
+        outcome.Succeeded.ShouldBeTrue();
+        System.Text.Encoding.UTF8.GetString(captured.ToArray()).ShouldContain("git version");
     }
 
     [Fact]

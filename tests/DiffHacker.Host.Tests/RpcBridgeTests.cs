@@ -1,32 +1,37 @@
 using System.Text.Json;
 using DiffHacker.Contracts;
 using DiffHacker.Host.Rpc;
-using DiffHacker.Host.SelfTest;
 using Microsoft.Extensions.Logging.Abstractions;
+using StreamJsonRpc;
 
 namespace DiffHacker.Host.Tests;
 
 /// <summary>
-/// End-to-end coverage of the host half of the bridge: a request in, a typed result out,
-/// notifications pushed back, and failures carrying a contract error code.
+/// The host half of the bridge: a request in, a typed result out, notifications pushed back,
+/// and failures carrying a contract error code.
+/// <para>
+/// The end-to-end suite covers these paths through the real window as well. This is still worth
+/// keeping because it is where a bridge fault is *diagnosable* — a failure here names the frame
+/// that went wrong, where the same fault in the window only shows a screen that never filled in.
+/// </para>
 /// </summary>
 public sealed class RpcBridgeTests : IAsyncLifetime
 {
     private readonly FakeAppShell _shell = new();
     private readonly RpcNotifier _notifier = new(NullLogger<RpcNotifier>.Instance);
-    private readonly SelfTestCoordinator _selfTest = new(NullLogger<SelfTestCoordinator>.Instance);
+    private readonly NotifyingTarget _notifying;
     private RpcBridge _bridge = null!;
+
+    public RpcBridgeTests() => _notifying = new NotifyingTarget(_notifier);
 
     public ValueTask InitializeAsync()
     {
-        var runtime = new HostRuntimeInfo { SelfTest = true };
-
         _bridge = new RpcBridge(
             _shell,
             _notifier,
             [
-                new HostRpcTarget(runtime, _selfTest, NullLogger<HostRpcTarget>.Instance),
-                new DemoRpcTarget(_notifier, NullLogger<DemoRpcTarget>.Instance),
+                new HostRpcTarget(new HostRuntimeInfo(), NullLogger<HostRpcTarget>.Instance),
+                _notifying,
             ],
             NullLogger<RpcBridge>.Instance);
 
@@ -50,52 +55,66 @@ public sealed class RpcBridgeTests : IAsyncLifetime
 
         response.RootElement.GetProperty("id").GetInt32().ShouldBe(1);
         result.GetProperty("contractVersion").GetString().ShouldBe(ContractVersion.Current);
-        result.GetProperty("selfTest").GetBoolean().ShouldBeTrue();
         result.GetProperty("platform").GetString().ShouldBeOneOf("windows", "macos", "linux");
     }
 
     [Fact]
-    public async Task StartCountdown_answers_then_streams_progress_notifications()
+    public async Task A_target_can_push_notifications_back_to_the_renderer()
     {
-        _shell.Receive(
-            """{"jsonrpc":"2.0","id":7,"method":"demo.startCountdown","params":[{"steps":3,"delayMilliseconds":0}]}""");
+        // Nothing in the application pushes notifications yet — the demo target that used to was
+        // scaffolding and has been removed. Iteration 5's `report_progress` and Iteration 7's
+        // live analysis progress both depend on this channel, so it stays proven with a local
+        // target rather than left untested until then.
+        _shell.Receive("""{"jsonrpc":"2.0","id":3,"method":"test.notifyTwice","params":[]}""");
 
-        using var response = JsonDocument.Parse(await _shell.NextSentAsync(TestContext.Current.CancellationToken));
-        var operationId = response.RootElement.GetProperty("result").GetProperty("operationId").GetString();
-
-        response.RootElement.GetProperty("result").GetProperty("totalSteps").GetInt32().ShouldBe(3);
-        operationId.ShouldNotBeNullOrWhiteSpace();
-
-        for (var expectedStep = 0; expectedStep < 3; expectedStep++)
+        // Three frames, and deliberately no assumption about their order: whether the response
+        // precedes the notifications depends on whether the target awaits them or fires and
+        // forgets, which is the target's business rather than the bridge's.
+        var documents = new List<JsonDocument>();
+        try
         {
-            using var notification = JsonDocument.Parse(await _shell.NextSentAsync(TestContext.Current.CancellationToken));
-            var root = notification.RootElement;
+            for (var i = 0; i < 3; i++)
+            {
+                documents.Add(JsonDocument.Parse(await _shell.NextSentAsync(TestContext.Current.CancellationToken)));
+            }
 
-            root.TryGetProperty("id", out _).ShouldBeFalse("a notification must not carry an id");
-            root.GetProperty("method").GetString().ShouldBe("demo/progress");
+            var frames = documents.Select(document => document.RootElement).ToArray();
 
-            var parameters = root.GetProperty("params");
-            parameters.GetProperty("operationId").GetString().ShouldBe(operationId);
-            parameters.GetProperty("step").GetInt32().ShouldBe(expectedStep);
-            parameters.GetProperty("totalSteps").GetInt32().ShouldBe(3);
-            parameters.GetProperty("completed").GetBoolean().ShouldBe(expectedStep == 2);
-            // A resource key, never a sentence: the renderer owns the wording.
-            parameters.GetProperty("message").GetString().ShouldBe("demo.step");
+            var responses = frames.Where(frame => frame.TryGetProperty("id", out _)).ToArray();
+            responses.ShouldHaveSingleItem().GetProperty("id").GetInt32().ShouldBe(3);
+
+            var notifications = frames.Where(frame => !frame.TryGetProperty("id", out _)).ToArray();
+            notifications.Length.ShouldBe(2);
+
+            for (var step = 0; step < notifications.Length; step++)
+            {
+                notifications[step].GetProperty("method").GetString().ShouldBe("test/progress");
+
+                // Notification parameters go out as a JSON object, unlike requests, which are
+                // positional. A renderer that assumed an array would silently see nothing.
+                notifications[step].GetProperty("params").GetProperty("step").GetInt32().ShouldBe(step);
+            }
+        }
+        finally
+        {
+            foreach (var document in documents)
+            {
+                document.Dispose();
+            }
         }
     }
 
     [Fact]
     public async Task A_rejected_request_carries_a_stable_error_code_not_prose()
     {
-        _shell.Receive(
-            """{"jsonrpc":"2.0","id":9,"method":"demo.startCountdown","params":[{"steps":0}]}""");
+        _shell.Receive("""{"jsonrpc":"2.0","id":9,"method":"test.refuse","params":[]}""");
 
         using var response = JsonDocument.Parse(await _shell.NextSentAsync(TestContext.Current.CancellationToken));
         var error = response.RootElement.GetProperty("error");
 
         error.GetProperty("code").GetInt32().ShouldBe(RpcErrors.ApplicationErrorCode);
-        error.GetProperty("data").GetProperty("code").GetString().ShouldBe("demo_steps_out_of_range");
-        error.GetProperty("data").GetProperty("args").GetProperty("steps").GetString().ShouldBe("0");
+        error.GetProperty("data").GetProperty("code").GetString().ShouldBe("rpc_timeout");
+        error.GetProperty("data").GetProperty("args").GetProperty("method").GetString().ShouldBe("test.refuse");
     }
 
     [Fact]
@@ -109,21 +128,29 @@ public sealed class RpcBridgeTests : IAsyncLifetime
         response.RootElement.GetProperty("error").GetProperty("code").GetInt32().ShouldBe(-32601);
     }
 
-    [Fact]
-    public async Task ReportSelfTest_hands_the_verdict_to_the_coordinator()
+    /// <summary>
+    /// A target that exists only for these tests: one method that pushes notifications and one
+    /// that refuses, so the bridge's two outbound shapes are both exercised without the product
+    /// carrying an RPC surface for the benefit of a test.
+    /// </summary>
+    private sealed class NotifyingTarget(IRpcNotifier notifier)
     {
-        _shell.Receive(
-            """
-            {"jsonrpc":"2.0","id":13,"method":"host.reportSelfTest","params":[
-              {"succeeded":true,"checks":[{"name":"rpc_round_trip","passed":true}]}]}
-            """);
+        [JsonRpcMethod("test.notifyTwice")]
+        public async Task NotifyTwiceAsync(CancellationToken cancellationToken)
+        {
+            for (var step = 0; step < 2; step++)
+            {
+                await notifier
+                    .NotifyAsync("test/progress", new { step }, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
 
-        await _shell.NextSentAsync(TestContext.Current.CancellationToken);
-
-        var result = await _selfTest.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-
-        result.ShouldNotBeNull();
-        result.Succeeded.ShouldBeTrue();
-        result.Checks.ShouldHaveSingleItem().Name.ShouldBe("rpc_round_trip");
+        [JsonRpcMethod("test.refuse")]
+        public static void Refuse() =>
+            throw RpcErrors.Failure(
+                "rpc_timeout",
+                "a developer-facing message that must never reach the interface",
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["method"] = "test.refuse" });
     }
 }

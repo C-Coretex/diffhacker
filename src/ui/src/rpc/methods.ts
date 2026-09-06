@@ -1,22 +1,31 @@
 import type {
   BrowseFolderRequest,
   BrowseFolderResult,
+  ChangesetRequest,
+  ChangesetResult,
   EnvironmentInfo,
+  FileContentInfo,
+  FileContentRequest,
+  FileDiffInfo,
+  FileDiffRequest,
   ForgetRecentRequest,
   HostInfo,
   OpenRepositoryRequest,
   OpenRepositoryResult,
-  ProgressNotification,
   ProviderIdRequest,
   ProviderProfileList,
   RecentRepositoryList,
   SaveProviderRequest,
-  SelfTestResult,
-  StartDemoRequest,
-  StartDemoResponse,
   TestConnectionResult,
 } from '@/contracts';
 import type { RpcClient } from './client';
+
+/**
+ * Loading a changeset runs several full `git diff` passes. On a cold, very large working tree
+ * that is minutes, not milliseconds, and the default request deadline would report a timeout
+ * for work that was going to finish.
+ */
+const CHANGESET_TIMEOUT_MS = 5 * 60_000;
 
 /**
  * The host's method surface, typed from the generated contracts.
@@ -27,8 +36,6 @@ import type { RpcClient } from './client';
  */
 export const RpcMethods = {
   ping: 'host.ping',
-  reportSelfTest: 'host.reportSelfTest',
-  startCountdown: 'demo.startCountdown',
 
   describeEnvironment: 'environment.describe',
 
@@ -42,26 +49,22 @@ export const RpcMethods = {
   deleteProvider: 'providers.delete',
   setActiveProvider: 'providers.setActive',
   testProviderConnection: 'providers.testConnection',
+
+  loadChangeset: 'changeset.load',
+  fileDiff: 'changeset.fileDiff',
+  fileContent: 'changeset.fileContent',
 } as const;
 
-export const RpcNotifications = {
-  progress: 'demo/progress',
-} as const;
+/**
+ * Server-to-client notification names.
+ *
+ * Empty for now. `RpcClient.on` is still the way to subscribe to one; Iteration 5's
+ * `report_progress` is the first notification the application will actually receive.
+ */
+export const RpcNotifications = {} as const;
 
 export function ping(client: RpcClient): Promise<HostInfo> {
   return client.call<HostInfo>(RpcMethods.ping);
-}
-
-export function startCountdown(client: RpcClient, request: StartDemoRequest): Promise<StartDemoResponse> {
-  return client.call<StartDemoResponse>(RpcMethods.startCountdown, request);
-}
-
-export function reportSelfTest(client: RpcClient, result: SelfTestResult): Promise<void> {
-  return client.call<void>(RpcMethods.reportSelfTest, result);
-}
-
-export function onProgress(client: RpcClient, handler: (notification: ProgressNotification) => void): () => void {
-  return client.on<ProgressNotification>(RpcNotifications.progress, handler);
 }
 
 export function describeEnvironment(client: RpcClient): Promise<EnvironmentInfo> {
@@ -127,4 +130,24 @@ export function testProviderConnection(
   request: ProviderIdRequest,
 ): Promise<TestConnectionResult> {
   return client.call<TestConnectionResult>(RpcMethods.testProviderConnection, request);
+}
+
+/**
+ * The working tree against HEAD. Metadata for every changed file and no content at all, so the
+ * payload stays bounded whether the change is ten files or fifteen hundred.
+ */
+export function loadChangeset(client: RpcClient, request: ChangesetRequest): Promise<ChangesetResult> {
+  return client.callWithTimeout<ChangesetResult>(
+    RpcMethods.loadChangeset,
+    CHANGESET_TIMEOUT_MS,
+    request,
+  );
+}
+
+export function fileDiff(client: RpcClient, request: FileDiffRequest): Promise<FileDiffInfo> {
+  return client.call<FileDiffInfo>(RpcMethods.fileDiff, request);
+}
+
+export function fileContent(client: RpcClient, request: FileContentRequest): Promise<FileContentInfo> {
+  return client.call<FileContentInfo>(RpcMethods.fileContent, request);
 }

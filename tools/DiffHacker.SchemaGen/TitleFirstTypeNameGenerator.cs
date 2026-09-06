@@ -6,8 +6,8 @@ namespace DiffHacker.SchemaGen;
 /// Makes a schema's <c>title</c> authoritative for the generated type name.
 /// <para>
 /// NJsonSchema's default generator names a type after the property that references it, so a
-/// <c>$defs</c> entry titled <c>SelfTestCheck</c> reached through a <c>checks</c> array would be
-/// generated as <c>Checks</c>. Contract type names are part of the contract, so they must come
+/// <c>$defs</c> entry titled <c>ChangedFileInfo</c> reached through a <c>files</c> array would be
+/// generated as <c>Files</c>. Contract type names are part of the contract, so they must come
 /// from the schema, not from whichever property happens to point at it first.
 /// </para>
 /// </summary>
