@@ -42,6 +42,12 @@ public sealed record LlmRunEvent
     /// <summary>Set on <see cref="LlmRunEventKind.ToolCallFinished"/>.</summary>
     public int? ResultBytes { get; init; }
 
+    /// <summary>
+    /// Set on <see cref="LlmRunEventKind.ToolCallFinished"/>: the start of what came back,
+    /// truncated to <see cref="LlmToolCallRecord.ResultPreviewLength"/>.
+    /// </summary>
+    public string? ResultPreview { get; init; }
+
     /// <summary>Set on <see cref="LlmRunEventKind.ToolCallFinished"/>.</summary>
     public TimeSpan? Duration { get; init; }
 

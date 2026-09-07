@@ -10,12 +10,12 @@
 | **Blocks** | 6, 7 |
 | **Status** | Complete, with one item explicitly deferred — see below |
 
-> **Deferred to Iteration 7.** Verification step 7 asks for `report_progress` arriving in the UI
-> during a live session. The pipe is built and both halves are tested — `ToolProgressNotifierTests`
-> for the host, `methods.test.ts` for the renderer — but nothing in the application starts an
-> analysis until Iteration 7, so no notification travels the real bridge into the real window yet.
-> That is the E2E test [docs/decisions.md](../decisions.md) asks for; it belongs with the first
-> real producer.
+> **Deferred, and since closed in Iteration 6.** Verification step 7 asks for `report_progress`
+> arriving in the UI during a live session. The pipe was built here and both halves tested —
+> `ToolProgressNotifierTests` for the host, `methods.test.ts` for the renderer — but nothing in the
+> application started a run, so no notification travelled the real bridge into the real window.
+> Iteration 6's profile run is the first producer, and
+> [05-repository-profile.spec.ts](../../tests/e2e/specs/05-repository-profile.spec.ts) is the test.
 >
 > Decisions taken here that later iterations should not re-open are recorded under
 > [The toolbox: what the LLM can and cannot see](../decisions.md).

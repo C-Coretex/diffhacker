@@ -50,7 +50,10 @@ internal sealed class TemporaryRepository : IDisposable
         Git("commit", "--no-gpg-sign", "-m", message);
     }
 
-    public void Git(params string[] arguments)
+    /// <summary>The commit HEAD points at. Iteration 6 records it on every stored profile.</summary>
+    public string HeadSha() => Git("rev-parse", "HEAD").Trim();
+
+    public string Git(params string[] arguments)
     {
         var startInfo = new ProcessStartInfo("git")
         {
@@ -85,7 +88,7 @@ internal sealed class TemporaryRepository : IDisposable
                 $"git {string.Join(' ', arguments)} failed: {stderr.GetAwaiter().GetResult()}");
         }
 
-        _ = stdout.GetAwaiter().GetResult();
+        return stdout.GetAwaiter().GetResult();
     }
 
     public void Dispose()

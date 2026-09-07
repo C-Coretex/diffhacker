@@ -55,10 +55,43 @@ public interface IGitClient
     /// </summary>
     /// <exception cref="GitClientException">Git could not be run, or the repository is unreadable.</exception>
     Task<GrepResult> GrepAsync(GrepQuery query, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The commit <c>HEAD</c> currently points at, or null in a repository with no commits.
+    /// <para>
+    /// Added in Iteration 6: a stored project profile records the commit it was generated from,
+    /// which is the entire basis of deciding later that the repository has drifted away from it.
+    /// </para>
+    /// </summary>
+    /// <exception cref="GitClientException">Git could not be run, or the repository is unreadable.</exception>
+    Task<string?> GetHeadCommitAsync(string repositoryPath, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// How many files differ between <paramref name="commitSha"/> and <c>HEAD</c>.
+    /// <para>
+    /// A commit that is no longer in the repository — rebased away, rewritten, never fetched into a
+    /// shallow clone — is a result rather than an error: the answer "we cannot tell how old this
+    /// profile is" is exactly as actionable as a number, and it comes back as
+    /// <see cref="CommitComparison.CommitReachable"/> being false.
+    /// </para>
+    /// </summary>
+    /// <exception cref="GitClientException">Git could not be run, or the repository is unreadable.</exception>
+    Task<CommitComparison> CompareWithHeadAsync(
+        string repositoryPath,
+        string commitSha,
+        CancellationToken cancellationToken);
 }
 
 /// <param name="RepositoryPath">Absolute path of the worktree root.</param>
 public readonly record struct FileListQuery(string RepositoryPath);
+
+/// <summary>How far <c>HEAD</c> has moved from some earlier commit.</summary>
+/// <param name="CommitReachable">False when the commit is not in this repository at all.</param>
+/// <param name="FilesChanged">
+/// Files differing between the two commits. Zero when the commit is <c>HEAD</c> itself, and
+/// meaningless when <paramref name="CommitReachable"/> is false.
+/// </param>
+public readonly record struct CommitComparison(bool CommitReachable, int FilesChanged);
 
 /// <summary>Which regular-expression dialect the caller wrote the pattern in.</summary>
 public enum GrepSyntax
@@ -92,6 +125,17 @@ public sealed record GrepQuery
 
     /// <summary>A git pathspec glob such as <c>src/**/*.ts</c>, or null for the whole repository.</summary>
     public string? PathGlob { get; init; }
+
+    /// <summary>
+    /// Globs never to search, whatever <see cref="PathGlob"/> says.
+    /// <para>
+    /// Iteration 6 uses this for files whose content is withheld. Excluding them in git rather than
+    /// filtering the results afterwards is what keeps the match count honest — a filtered page
+    /// would report a total that included matches it then refused to show, and the offsets behind
+    /// pagination would no longer line up.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<string> ExcludeGlobs { get; init; } = [];
 
     /// <summary>How many matches to skip before keeping any. How pagination is served.</summary>
     public int Skip { get; init; }

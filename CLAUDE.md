@@ -65,6 +65,9 @@ Non-negotiable, apply to every iteration.
     commit ranges, no GitHub/GitLab integration anywhere in this plan.
 12. **Read-only, one exception.** Never commits/stages/checks out/modifies source files,
     except the opt-in doc generator in Iteration 6 (explicit confirmation + preview first).
+    Generated documentation lives **in DiffHacker**, not in the repository; writing it out is a
+    separate, explicitly confirmed export, and `RepositoryWriteTests` asserts that one file is the
+    only write path in `src/`.
 13. **The WebView is a pure renderer.** No network/filesystem access; API keys never reach
     it. All I/O in .NET.
 14. **Production quality from iteration one** — real error handling, tests, logging,
@@ -339,11 +342,12 @@ non-redundant checks (CSP enforcement, contract handshake) moved to
 accepted cost (no macOS/Linux E2E coverage; host→renderer notifications only half covered) in
 [docs/decisions.md](docs/decisions.md#the-renderer-self-test--why-it-was-removed).
 
-**Iteration 5 built that producer and could not finish the E2E test.** `report_progress` →
-`ToolProgressNotifier` → `analysis.progress` → the renderer's subscriber is complete and tested
-on both sides separately (`ToolProgressNotifierTests`, `methods.test.ts`), but nothing in the
-application starts an analysis, so no notification travels the real bridge into the real window
-yet. **Iteration 7 runs the first analysis — add the E2E test there.**
+**Iteration 6 closed that gap.** `profile.generate` is the first thing in the application that
+starts an LLM conversation, so `report_progress` → `ToolProgressNotifier` → `analysis.progress` —
+and the tool log on `analysis.toolCall` beside it — now travel the real bridge into the real window
+in [05-repository-profile.spec.ts](tests/e2e/specs/05-repository-profile.spec.ts). It drives a
+scripted OpenAI-compatible endpoint on localhost (`tests/e2e/src/stubProvider.ts`); no test reaches
+a real provider. Iteration 7's analysis run reuses the same stub.
 
 ### Dependencies beyond §0.3
 
@@ -359,7 +363,10 @@ yet. **Iteration 7 runs the first analysis — add the E2E test there.**
 2.13.0** · `Anthropic` (official `anthropics/anthropic-sdk-csharp` SDK, not community
 `Anthropic.SDK`) · `NJsonSchema` now also at runtime (Iteration 4) —
 `ModelContextProtocol.Core` **2.2.0, not the main `ModelContextProtocol` package** ·
-`Microsoft.Extensions.DependencyInjection.Abstractions` (Iteration 5).
+`Microsoft.Extensions.DependencyInjection.Abstractions` (Iteration 5) — **Iteration 6 added none.**
+`DiffHacker.Core` gained the already-approved `Microsoft.Extensions.Logging.Abstractions` when the
+profile orchestrator landed there; the unified diff behind the export preview is sixty lines rather
+than a package, and Monaco stays in Iteration 10.
 
 No resilience package (retry is ~60 lines in `RetryPolicy`). No package for the folder picker
 or secret store (PhotinoX's `ShowOpenFolder`; `[LibraryImport]` credential bindings — why

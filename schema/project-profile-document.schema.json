@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.6/project-profile-document.schema.json",
+  "title": "ProjectProfileDocument",
+  "description": "Standing knowledge about one repository, as the model produces it. This document is the shape asked of the provider through LlmResponseFormat and validated against on the way back, so the thing the model is told to write and the thing the host deserialises are one artifact rather than two that drift. It carries no timestamps, no commit and no user-authored text: those belong to the stored profile around it, not to the model's answer. Everything is required so that providers offering strict json_schema enforcement can be given it verbatim; a field the model has nothing to say about comes back as an empty string or an empty array, which is a claim it can make honestly.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "purpose",
+    "architecture",
+    "modules",
+    "layering",
+    "patterns",
+    "entryPoints",
+    "testLayout",
+    "documentationSources"
+  ],
+  "properties": {
+    "purpose": {
+      "type": "string",
+      "description": "What this project is and what problem it solves, in a few sentences. Specific to this repository: prose that would fit any codebase is a failed profile, not a cautious one."
+    },
+    "architecture": {
+      "type": "string",
+      "description": "How the system is put together at a high level and how a change tends to travel through it. Markdown, and the longest field in the document."
+    },
+    "modules": {
+      "type": "array",
+      "description": "The projects or modules the repository is divided into, and how they relate. Ordered with the ones a reviewer should understand first at the top.",
+      "items": {
+        "$ref": "#/$defs/projectModuleInfo"
+      }
+    },
+    "layering": {
+      "type": "string",
+      "description": "The layering and dependency conventions the repository holds itself to, including the ones it enforces mechanically. Markdown."
+    },
+    "patterns": {
+      "type": "string",
+      "description": "Notable patterns, idioms and conventions worth knowing before reading a diff — error handling, naming, configuration, code generation, anything a newcomer would otherwise misread. Markdown, usually a bullet list."
+    },
+    "entryPoints": {
+      "type": "array",
+      "description": "The places a reader starts from: executables, hosts, main functions, request entry points, job schedulers.",
+      "items": {
+        "$ref": "#/$defs/projectEntryPointInfo"
+      }
+    },
+    "testLayout": {
+      "type": "string",
+      "description": "Where the tests live, how they are organised, what they are run with, and any convention a change is expected to follow. Markdown."
+    },
+    "documentationSources": {
+      "type": "array",
+      "description": "Repository-relative paths of the documentation actually read while building this profile — README, ARCHITECTURE, CONTRIBUTING, agent instructions, decision records. Recorded because reading the documentation before exploring code is the cheapest good context available, and because it is the only way to check afterwards that it happened.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "projectModuleInfo": {
+      "title": "ProjectModuleInfo",
+      "description": "One project or module, and what it is for. Related modules are named as plain strings rather than as references so that the shape stays one level deep: the contract generator cannot render a definition that refers to another definition.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "path", "summary", "relatedModules"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The module's name as the repository spells it."
+        },
+        "path": {
+          "type": "string",
+          "description": "Repository-relative path of the module's root directory."
+        },
+        "summary": {
+          "type": "string",
+          "description": "What this module is responsible for, in one or two sentences."
+        },
+        "relatedModules": {
+          "type": "array",
+          "description": "Names of the modules this one depends on or is most closely coupled to, matching the name field of other entries.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "projectEntryPointInfo": {
+      "title": "ProjectEntryPointInfo",
+      "description": "One place a reader can start from.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "purpose"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Repository-relative path of the file that is the entry point."
+        },
+        "purpose": {
+          "type": "string",
+          "description": "What starts here and what it does, in one sentence."
+        }
+      }
+    }
+  }
+}

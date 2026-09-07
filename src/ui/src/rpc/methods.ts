@@ -4,6 +4,10 @@ import type {
   BrowseFolderResult,
   ChangesetRequest,
   ChangesetResult,
+  DocumentationExportRequest,
+  DocumentationExportResult,
+  DocumentationPreview,
+  DocumentationRequest,
   EnvironmentInfo,
   FileContentInfo,
   FileContentRequest,
@@ -13,11 +17,16 @@ import type {
   HostInfo,
   OpenRepositoryRequest,
   OpenRepositoryResult,
+  ProfileRequest,
+  ProfileState,
   ProviderIdRequest,
   ProviderProfileList,
   RecentRepositoryList,
+  SaveProfileNotesRequest,
+  SaveProfileRequest,
   SaveProviderRequest,
   TestConnectionResult,
+  ToolCallEvent,
 } from '@/contracts';
 import type { RpcClient } from './client';
 
@@ -27,6 +36,14 @@ import type { RpcClient } from './client';
  * for work that was going to finish.
  */
 const CHANGESET_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * Profiling a repository is an LLM run: hundreds of tool calls, several minutes on a large
+ * codebase, and real money. The deadline is generous because giving up on a run that is still
+ * working wastes everything it has spent so far; the user cancels when they want it stopped,
+ * which is what the abort signal is for.
+ */
+const PROFILE_TIMEOUT_MS = 30 * 60_000;
 
 /**
  * The host's method surface, typed from the generated contracts.
@@ -54,6 +71,14 @@ export const RpcMethods = {
   loadChangeset: 'changeset.load',
   fileDiff: 'changeset.fileDiff',
   fileContent: 'changeset.fileContent',
+
+  getProfile: 'profile.get',
+  generateProfile: 'profile.generate',
+  saveProfileDocument: 'profile.saveDocument',
+  saveProfileNotes: 'profile.saveNotes',
+  deleteProfile: 'profile.delete',
+  previewDocumentation: 'profile.previewDocumentation',
+  exportDocumentation: 'profile.exportDocumentation',
 } as const;
 
 /**
@@ -63,12 +88,16 @@ export const RpcMethods = {
  * `RpcClient.on`, which returns its own unsubscribe.
  *
  * `analysisProgress` carries the toolbox's `report_progress` — what the model says it is doing —
- * so a long run shows its work instead of a spinner. Nothing produces it until Iteration 7 runs
- * an analysis; the channel and its subscriber exist so that when something does, there is nothing
- * left to wire.
+ * so a long run shows its work instead of a spinner. `analysisToolCall` carries the mechanical
+ * traffic underneath it: which tool, with what arguments, for how long, and what came back.
+ *
+ * Two channels rather than one stream with more event kinds, because they are read differently: a
+ * reviewer reads the progress sentences, and consults the tool log. Interleaving them would put a
+ * hundred `read_file` rows between two sentences someone was reading.
  */
 export const RpcNotifications = {
   analysisProgress: 'analysis.progress',
+  analysisToolCall: 'analysis.toolCall',
 } as const;
 
 /**
@@ -181,4 +210,79 @@ export function fileDiff(client: RpcClient, request: FileDiffRequest): Promise<F
 
 export function fileContent(client: RpcClient, request: FileContentRequest): Promise<FileContentInfo> {
   return client.call<FileContentInfo>(RpcMethods.fileContent, request);
+}
+
+/**
+ * Subscribes to the live tool log. Returns the unsubscribe function.
+ *
+ * Unlike progress, these are not deduplicated by sequence: every event is a distinct moment in the
+ * run, and the sequence exists so the view can order them, not so it can drop them.
+ */
+export function onToolCallEvent(
+  client: RpcClient,
+  handler: (event: ToolCallEvent) => void,
+): () => void {
+  return client.on<ToolCallEvent>(RpcNotifications.analysisToolCall, handler);
+}
+
+export function getProfile(client: RpcClient, request: ProfileRequest): Promise<ProfileState> {
+  return client.call<ProfileState>(RpcMethods.getProfile, request);
+}
+
+/**
+ * Profiles a repository. The one call in the application that spends money and runs for minutes,
+ * so it takes an abort signal: cancelling sends `$/cancelRequest`, the host unwinds the run, and
+ * what it spent is still reported.
+ */
+export function generateProfile(
+  client: RpcClient,
+  request: ProfileRequest,
+  signal: AbortSignal,
+): Promise<ProfileState> {
+  return client.callAbortable<ProfileState>(
+    RpcMethods.generateProfile,
+    signal,
+    PROFILE_TIMEOUT_MS,
+    request,
+  );
+}
+
+/** Saves the generated sections after the user has edited them. Regeneration replaces these. */
+export function saveProfileDocument(
+  client: RpcClient,
+  request: SaveProfileRequest,
+): Promise<ProfileState> {
+  return client.call<ProfileState>(RpcMethods.saveProfileDocument, request);
+}
+
+/** Saves everything the user authored. Regeneration never touches any of it. */
+export function saveProfileNotes(
+  client: RpcClient,
+  request: SaveProfileNotesRequest,
+): Promise<ProfileState> {
+  return client.call<ProfileState>(RpcMethods.saveProfileNotes, request);
+}
+
+export function deleteProfile(client: RpcClient, request: ProfileRequest): Promise<ProfileState> {
+  return client.call<ProfileState>(RpcMethods.deleteProfile, request);
+}
+
+/** Every file the generator would write, with full content. Nothing is written by this call. */
+export function previewDocumentation(
+  client: RpcClient,
+  request: DocumentationRequest,
+): Promise<DocumentationPreview> {
+  return client.call<DocumentationPreview>(RpcMethods.previewDocumentation, request);
+}
+
+/**
+ * Writes the previewed documentation into the repository. The only call in the application that
+ * writes to the user's files, and it carries the token from the preview they approved — the host
+ * recomputes it and refuses anything that does not match.
+ */
+export function exportDocumentation(
+  client: RpcClient,
+  request: DocumentationExportRequest,
+): Promise<DocumentationExportResult> {
+  return client.call<DocumentationExportResult>(RpcMethods.exportDocumentation, request);
 }

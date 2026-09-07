@@ -241,5 +241,15 @@ public sealed class ChangesetRpcTests : IAsyncLifetime
 
         public Task<GrepResult> GrepAsync(GrepQuery query, CancellationToken cancellationToken) =>
             throw new NotSupportedException("The changeset RPC surface does not search.");
+
+        // Iteration 6 added these for the project profile's drift check. Same reasoning again.
+        public Task<string?> GetHeadCommitAsync(string repositoryPath, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("The changeset RPC surface does not read history.");
+
+        public Task<CommitComparison> CompareWithHeadAsync(
+            string repositoryPath,
+            string commitSha,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("The changeset RPC surface does not compare commits.");
     }
 }

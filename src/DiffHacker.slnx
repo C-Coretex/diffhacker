@@ -31,11 +31,16 @@
     <File Path="../README.md" />
   </Folder>
   <Folder Name="/schema/">
+    <File Path="../schema/analysis-progress.schema.json" />
     <File Path="../schema/browse-folder-request.schema.json" />
     <File Path="../schema/browse-folder-result.schema.json" />
     <File Path="../schema/changeset-request.schema.json" />
     <File Path="../schema/changeset-result.schema.json" />
     <File Path="../schema/contract-version.json" />
+    <File Path="../schema/documentation-export-request.schema.json" />
+    <File Path="../schema/documentation-export-result.schema.json" />
+    <File Path="../schema/documentation-preview.schema.json" />
+    <File Path="../schema/documentation-request.schema.json" />
     <File Path="../schema/environment-info.schema.json" />
     <File Path="../schema/file-content-info.schema.json" />
     <File Path="../schema/file-content-request.schema.json" />
@@ -45,11 +50,17 @@
     <File Path="../schema/host-info.schema.json" />
     <File Path="../schema/open-repository-request.schema.json" />
     <File Path="../schema/open-repository-result.schema.json" />
+    <File Path="../schema/profile-request.schema.json" />
+    <File Path="../schema/profile-state.schema.json" />
+    <File Path="../schema/project-profile-document.schema.json" />
     <File Path="../schema/provider-id-request.schema.json" />
     <File Path="../schema/provider-profile-list.schema.json" />
     <File Path="../schema/recent-repository-list.schema.json" />
     <File Path="../schema/rpc-error.schema.json" />
+    <File Path="../schema/save-profile-notes-request.schema.json" />
+    <File Path="../schema/save-profile-request.schema.json" />
     <File Path="../schema/save-provider-request.schema.json" />
     <File Path="../schema/test-connection-result.schema.json" />
+    <File Path="../schema/tool-call-event.schema.json" />
   </Folder>
 </Solution>

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { SettingsIcon } from 'lucide-react';
+import { BookOpenIcon, SettingsIcon } from 'lucide-react';
 import { describeError } from '@/i18n/errors';
 import { useT } from '@/i18n/useT';
 import { useRpc } from '@/rpc/RpcProvider';
@@ -11,6 +11,7 @@ import { GitMissingBanner } from '@/components/EnvironmentBanner';
 import { WelcomeScreen } from '@/components/WelcomeScreen';
 import { RepositoryScreen } from '@/components/RepositoryScreen';
 import { SettingsScreen } from '@/components/SettingsScreen';
+import { ProfileScreen } from '@/components/ProfileScreen';
 import { HostPanel } from '@/components/HostPanel';
 
 export function App() {
@@ -77,7 +78,7 @@ export function App() {
         </div>
 
         <nav className="flex items-center gap-2">
-          {screen === 'settings' ? (
+          {screen === 'settings' || screen === 'profile' ? (
             <Button
               variant="ghost"
               size="sm"
@@ -86,10 +87,18 @@ export function App() {
               {t('app.nav.back')}
             </Button>
           ) : (
-            <Button variant="ghost" size="sm" onClick={() => showScreen('settings')}>
-              <SettingsIcon aria-hidden />
-              {t('app.nav.settings')}
-            </Button>
+            <>
+              {screen === 'repository' && (
+                <Button variant="ghost" size="sm" onClick={() => showScreen('profile')}>
+                  <BookOpenIcon aria-hidden />
+                  {t('app.nav.profile')}
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => showScreen('settings')}>
+                <SettingsIcon aria-hidden />
+                {t('app.nav.settings')}
+              </Button>
+            </>
           )}
         </nav>
       </header>
@@ -115,6 +124,7 @@ export function App() {
           {screen === 'welcome' && <WelcomeScreen />}
           {screen === 'repository' && <RepositoryScreen />}
           {screen === 'settings' && <SettingsScreen />}
+          {screen === 'profile' && <ProfileScreen />}
         </div>
       </main>
     </div>

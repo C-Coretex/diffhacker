@@ -5,6 +5,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      The abstractions half only, as DiffHacker.Git and DiffHacker.Storage already take it: from
+      Iteration 6 this project holds the profile orchestrator, which is the first thing here with
+      anything worth logging. The DI container and the logging pipeline stay out.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\DiffHacker.Contracts\DiffHacker.Contracts.csproj" />
   </ItemGroup>
 

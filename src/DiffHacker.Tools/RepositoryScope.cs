@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using DiffHacker.Core.Changes;
 
 namespace DiffHacker.Tools;
@@ -20,18 +21,39 @@ namespace DiffHacker.Tools;
 public sealed class RepositoryScope
 {
     private readonly IReadOnlySet<string> _visible;
+    private readonly Regex[] _withheld;
 
-    public RepositoryScope(string repositoryRoot, IReadOnlySet<string> visiblePaths)
+    public RepositoryScope(
+        string repositoryRoot,
+        IReadOnlySet<string> visiblePaths,
+        IReadOnlyList<string>? withheldGlobs = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(repositoryRoot);
         ArgumentNullException.ThrowIfNull(visiblePaths);
 
         Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(repositoryRoot));
         _visible = visiblePaths;
+
+        // Compiled once per session. A glob that will not compile is dropped rather than throwing:
+        // the list can come from something a user typed, and one bad entry must not take the
+        // toolbox down — the built-in entries still apply.
+        WithheldGlobs = withheldGlobs ?? [];
+
+        _withheld = [.. WithheldGlobs
+            .Select(Glob.TryCompile)
+            .Where(compiled => compiled is not null)
+            .Select(compiled => compiled!)];
     }
 
     /// <summary>The worktree root, absolute and normalised.</summary>
     public string Root { get; }
+
+    /// <summary>
+    /// The withheld globs as written, for the one caller that has to hand them to git rather than
+    /// match them here: a search excludes these files in git so that the match count it reports is
+    /// a count of matches it is willing to show.
+    /// </summary>
+    public IReadOnlyList<string> WithheldGlobs { get; }
 
     /// <summary>
     /// Resolves a caller-supplied path to a file the tools may read.
@@ -51,7 +73,36 @@ public sealed class RepositoryScope
             return PathResolution.Rejected(PathRejection.NotVisible, shape.RelativePath);
         }
 
+        // Checked after visibility, so a withheld path that does not exist is reported as absent
+        // rather than as withheld — otherwise the refusal would confirm the file is there.
+        if (IsWithheld(shape.RelativePath))
+        {
+            return PathResolution.Rejected(PathRejection.Withheld, shape.RelativePath);
+        }
+
         return shape;
+    }
+
+    /// <summary>
+    /// Whether this path's <i>content</i> is withheld from the model — credentials, key material,
+    /// anything matching the excluded globs.
+    /// <para>
+    /// Withheld is not hidden. The path still appears in every listing, flagged, because a changed
+    /// <c>.env</c> is a real part of a change and §0.2.5 says every changed file appears in the
+    /// graph. What is refused is reading it, diffing it, and returning search hits from it.
+    /// </para>
+    /// </summary>
+    public bool IsWithheld(string relativePath)
+    {
+        foreach (var pattern in _withheld)
+        {
+            if (Glob.Matches(pattern, relativePath))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -194,6 +245,12 @@ public enum PathRejection
 
     /// <summary>Well-formed and inside the repository, but not a file git can see.</summary>
     NotVisible,
+
+    /// <summary>
+    /// A real, visible file whose content is withheld: credentials, key material, anything the
+    /// excluded globs cover. The file is not concealed — only its contents are refused.
+    /// </summary>
+    Withheld,
 }
 
 /// <summary>The outcome of putting one path through <see cref="RepositoryScope"/>.</summary>
@@ -245,6 +302,11 @@ public readonly record struct PathResolution
             $"'{RelativePath}' is not a file git can see. It may not exist, or it may be covered "
             + "by .gitignore — call get_path_info to find out which, or find_files to locate the "
             + "path you meant.",
+        PathRejection.Withheld =>
+            $"'{RelativePath}' exists, but its contents are withheld: it matches the list of files "
+            + "that may hold credentials or key material. This is deliberate and there is no way "
+            + "around it. Note that the file exists and moved on — its name and its place in the "
+            + "repository are often all you needed from it.",
         _ => $"'{RelativePath}' cannot be read.",
     };
 }

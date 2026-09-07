@@ -246,3 +246,118 @@ package → reason table; this is the expanded version.
 - **Native folder picker / secret store**: PhotinoX already exposes `ShowOpenFolder`; the
   three credential backends are `[LibraryImport]` bindings, which is why `DiffHacker.Storage`
   — and only that project — sets `AllowUnsafeBlocks`.
+
+## The repository knowledge base
+
+Iteration 6 decisions, settled with the user before implementing.
+
+### Documentation is generated into DiffHacker, not into the repository
+
+Requirement 3 and §0.2.12 both describe the documentation generator as writing into the user's
+repository behind a preview-and-confirm gate. The user's decision changed the default: the three
+documents live in DiffHacker, and writing them out is a **separate, explicitly confirmed export**.
+
+The gate survived that change and got stronger for it. `profile.previewDocumentation` returns a
+`previewToken` — a hash over the target and the exact bytes of every file — and
+`profile.exportDocumentation` recomputes it from what it is about to write and refuses anything
+that does not match. So "nothing is written that was not previewed" holds against a bug in the
+interface, a stale renderer, or a direct call to the RPC method; it is not a rule the screen is
+trusted to keep. Editing the profile between a preview and a write invalidates the token, which is
+the point: the user approved bytes that are no longer these bytes.
+
+The documents are rendered deterministically from the stored profile rather than by a second model
+run. A second run would cost another few minutes and a few dollars, would be non-deterministic, and
+could disagree with the profile that every analysis actually uses. A template cannot say anything
+the profile does not — and the export gate needs the rendering to be stable, because a renderer
+whose output varied would refuse every write.
+
+`RepositoryWriteTests` is the audit turned into an assertion: it enumerates every file under `src/`
+and fails on a filesystem-write API outside a named allowlist. Verification step 6 asks to audit
+this rather than assume it, and an audit is worth something once and then rots.
+
+### Withheld files: listed, never hidden
+
+Requirement 11 asks for sensitive files not to be sent. The toolbox already saw only what git sees,
+which is not enough: a committed `.env`, a checked-in private key or an `.npmrc` carrying a registry
+token are all things git tracks happily.
+
+Matching files are **flagged in every listing and refused for content**. Hiding them would have been
+simpler and wrong: §0.2.5 says every changed file appears in the graph, and a reviewer who cannot see
+that `.env` changed is worse off than one who can see it changed but not how. So `list_changed_files`,
+`list_directory`, `get_repository_tree` and `get_path_info` all show the path with a marker, and
+`read_file`, `get_file_diff` and `search_text` refuse it.
+
+Search is the exception to "filter the results": withheld paths are excluded in git via
+`:(exclude,glob)` pathspecs rather than filtered afterwards, so the total the tool reports is a
+total of matches it is willing to show. A filtered page would have reported a count including
+matches it then refused, and the offsets behind pagination would no longer line up.
+
+The default list names secret-bearing *files*, not content — a rule that has to open a file to decide
+whether it may be opened is no rule at all. Public certificates are deliberately absent.
+
+### The size budget, and what happens when a profile misses it
+
+12,000 characters, about 3,000 tokens, per repository and user-settable. The number matters more than
+it looks: the profile goes into the prompt of every analysis of that repository, and that prompt is
+re-sent on every turn of a tool-using run — so a profile twice as long costs twice as much on every
+future analysis rather than once here.
+
+Measured in characters rather than tokens because character counting is exact, free and identical
+across providers, where a token count needs a tokeniser per model to be better than a guess. Measured
+on the *rendered* document, which is what is actually spent.
+
+An over-budget answer is handed back once to be shortened and then **fails**. Truncating it to fit
+would produce a profile that ends mid-sentence and misinforms every future analysis, quietly and
+forever. The repair goes through a fresh session with no tools: a session runs once by contract, and
+the model is editing its own prose rather than learning anything new.
+
+The user's notes and custom instructions sit outside the budget. They are paid for on the same terms,
+and their size is reported for that reason, but capping what the user chose to write is not the
+application's call.
+
+### Drift is measured in files, not in commits or days
+
+Regeneration is offered when more than 150 files, or more than a tenth of the tracked files, differ
+between the profile's commit and `HEAD` — or when that commit is no longer in the repository at all.
+
+Commits would have been the more natural unit and would have needed `git rev-list` added to
+`GitProcessRunner.PermittedSubcommands`. That is a deliberate widening of the read-only contract for
+a worse signal: a hundred typo commits drift a repository less than one that moves a module. `diff`
+was already on the allowlist. Days are worse still — a repository nobody has touched for a year has
+not drifted at all.
+
+An unreachable commit — rebased away, rewritten, never fetched into a shallow clone — counts as
+substantial drift by definition. The honest answer is "we cannot tell how stale this is", and offering
+a fresh run is the right response to that.
+
+### Manual edits survive regeneration because the shape says so
+
+`IProjectProfileStore` has two save methods and they cannot reach each other's columns:
+`SaveGeneratedAsync` names the generated ones, `SaveUserSectionsAsync` names the user's. The RPC
+surface mirrors it — `profile.saveDocument` and `profile.saveNotes` — and so does the screen, as two
+cards. Requirement 5 is therefore a property of the shape rather than a rule someone has to remember,
+and a caller cannot get it wrong by passing the wrong object.
+
+Editing a generated section is allowed, and the form says plainly that a rerun replaces it. What
+survives a rerun is what the user wrote in their own sections, byte for byte.
+
+### Two notification channels, not one
+
+`analysis.progress` carries the model's own sentence about what it is doing; `analysis.toolCall`
+carries the mechanical traffic underneath it. They are separate methods because they are read
+differently — a reviewer reads the first and consults the second — and interleaving them would put a
+hundred `read_file` rows between two sentences someone was reading.
+
+Iteration 6 is where both finally have a producer. `docs/decisions.md` recorded that nothing exercised
+a real notification travelling the real bridge into the real window, and CLAUDE.md pencilled that test
+in for Iteration 7; the profile run is the first thing in the application that starts an LLM
+conversation, so the test landed here, in
+[05-repository-profile.spec.ts](../tests/e2e/specs/05-repository-profile.spec.ts). It drives a
+scripted OpenAI-compatible endpoint on localhost — no test in this repository reaches a real provider.
+
+### Number formatting is ours, not the runtime's
+
+`toLocaleString()` reads its grouping from whatever ICU data the runtime carries, which is how the
+same count came to render as `1,200` in the WebView and `1200` under jsdom. DiffHacker ships English
+only (§0.6) and the host runs with `InvariantGlobalization`, so `i18n/format.ts` owns one explicit
+rule instead of an inherited one.

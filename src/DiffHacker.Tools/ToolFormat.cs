@@ -43,7 +43,13 @@ internal static class ToolFormat
     }
 
     /// <summary>One row of <c>list_changed_files</c>. Path last, so an odd path cannot shift a column.</summary>
-    public static string ChangedRow(ChangedFile file)
+    /// <param name="file">The changed file.</param>
+    /// <param name="withheld">
+    /// Whether its content is withheld. Flagged rather than omitted: the file really did change,
+    /// and a reviewer who cannot see that it changed is worse off than one who can see it changed
+    /// but not how.
+    /// </param>
+    public static string ChangedRow(ChangedFile file, bool withheld = false)
     {
         var added = file.LinesAdded is { } a
             ? string.Create(CultureInfo.InvariantCulture, $"+{a}")
@@ -71,12 +77,18 @@ internal static class ToolFormat
             row += " [" + flag + "]";
         }
 
+        if (withheld)
+        {
+            row += " [content withheld]";
+        }
+
         return row;
     }
 
     /// <summary>The column key printed above a changed-file listing.</summary>
     public const string ChangedRowLegend =
-        "columns: status  +added  -removed  hunks  language  project  path  [flags]";
+        "columns: status  +added  -removed  hunks  language  project  path  [flags]\n"
+        + "[content withheld] means the file changed but may hold credentials, so it cannot be read or diffed.";
 
     private static IEnumerable<string> Flags(ChangedFile file)
     {

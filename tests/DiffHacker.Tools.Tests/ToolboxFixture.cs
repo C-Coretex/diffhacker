@@ -33,27 +33,35 @@ internal sealed class ToolboxFixture : IAsyncDisposable
     public static Task<ToolboxFixture> OpenAsync(
         FixtureRepository repository,
         CancellationToken cancellationToken,
-        ToolboxLimits? limits = null) =>
-        OpenAsync(repository, repository.Root, cancellationToken, limits);
+        ToolboxLimits? limits = null,
+        IReadOnlyList<string>? withheldGlobs = null) =>
+        OpenAsync(repository, repository.Root, cancellationToken, limits, withheldGlobs);
 
     public static async Task<ToolboxFixture> OpenAsync(
         FixtureRepository repository,
         string repositoryPath,
         CancellationToken cancellationToken,
-        ToolboxLimits? limits = null)
+        ToolboxLimits? limits = null,
+        IReadOnlyList<string>? withheldGlobs = null)
     {
         var progress = new RecordingProgressSink();
 
-        var catalogue = await Toolbox.OpenAsync(
-            new ToolboxOptions
-            {
-                Git = GitClientFactory.Create(),
-                LoggerFactory = NullLoggerFactory.Instance,
-                Progress = progress,
-                Limits = limits ?? ToolboxLimits.Default,
-            },
-            repositoryPath,
-            cancellationToken);
+        var options = new ToolboxOptions
+        {
+            Git = GitClientFactory.Create(),
+            LoggerFactory = NullLoggerFactory.Instance,
+            Progress = progress,
+            Limits = limits ?? ToolboxLimits.Default,
+        };
+
+        // Left at its default unless a test names one, so every existing test keeps exercising the
+        // built-in withheld list rather than an empty one.
+        if (withheldGlobs is not null)
+        {
+            options = options with { WithheldGlobs = withheldGlobs };
+        }
+
+        var catalogue = await Toolbox.OpenAsync(options, repositoryPath, cancellationToken);
 
         return new ToolboxFixture(repository, catalogue, progress);
     }

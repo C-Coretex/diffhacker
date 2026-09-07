@@ -15,6 +15,7 @@ export const en = {
     nav: {
       settings: 'Settings',
       back: 'Back',
+      profile: 'Repository profile',
     },
   },
   host: {
@@ -204,6 +205,135 @@ export const en = {
       finishing: 'Finishing up',
     },
   },
+
+  /**
+   * The repository knowledge base: what DiffHacker knows about a repository before it ever sees
+   * a diff.
+   */
+  profile: {
+    heading: 'Repository profile',
+    description:
+      'Standing knowledge about this repository, produced once and reused by every review. A review without one is guesswork about what the code is for.',
+    missingHeading: 'No profile yet',
+    missingBody:
+      'Reviews of this repository will be weaker without one: the model will have to work out what the project is from the diff alone, every time.',
+    generate: 'Analyse repository',
+    regenerate: 'Analyse again',
+    generating: 'Analysing…',
+    cancel: 'Stop',
+    cancelled: 'The run was stopped. Nothing was saved.',
+    delete: 'Forget this profile',
+    deleteConfirmTitle: 'Forget everything about this repository?',
+    deleteConfirmBody:
+      'This removes the generated profile, your notes, your instructions and your withheld-file list. It cannot be undone.',
+    deleteConfirm: 'Forget it',
+    keep: 'Keep it',
+
+    generatedFrom: 'Generated {date} from commit {commit} by {model}',
+    generatedFromNoCommit: 'Generated {date} by {model}',
+    budget: '{count} of {budget} characters',
+    budgetExceeded: 'Over the {budget}-character budget. Shorten a section, or raise the budget.',
+    userSectionSize: 'Your notes and instructions add {count} characters to every review.',
+
+    driftHeading: 'This repository has moved on',
+    driftBody:
+      '{changed} of {tracked} files differ from the commit this profile was made at. Analysing again will be more accurate.',
+    driftUnreachable:
+      'The commit this profile was made at is no longer in the repository, so there is no telling how stale it is. Analysing again is the only way to be sure.',
+
+    generatedSections: 'What the model found',
+    generatedWarning:
+      'Analysing again replaces everything in this section. Your notes and instructions below are never touched.',
+    purpose: 'Purpose',
+    architecture: 'Architecture',
+    modules: 'Modules',
+    moduleName: 'Name',
+    modulePath: 'Path',
+    moduleSummary: 'What it does',
+    moduleRelated: 'Related to',
+    moduleRelatedHint: 'Comma-separated module names',
+    addModule: 'Add a module',
+    removeModule: 'Remove',
+    layering: 'Layering',
+    patterns: 'Patterns and conventions',
+    entryPoints: 'Entry points',
+    entryPointPath: 'File',
+    entryPointPurpose: 'What starts here',
+    addEntryPoint: 'Add an entry point',
+    removeEntryPoint: 'Remove',
+    testLayout: 'Tests',
+    documentationRead: 'Documentation read: {files}',
+    noDocumentationRead: 'No repository documentation was read.',
+
+    userSections: 'Yours',
+    userSectionsHint: 'Everything here survives analysing again, exactly as you typed it.',
+    userNotes: 'Your notes',
+    userNotesHint: 'What you know about this repository that the model got wrong or missed.',
+    customInstructions: 'Standing instructions',
+    customInstructionsHint:
+      'Sent with every review of this repository. “This is CQRS.” “Ignore the generated/ folder.” “The Legacy project is being deleted.”',
+    budgetLabel: 'Size budget',
+    budgetHint:
+      'Characters the generated profile may use. Every review of this repository pays for it, on every turn.',
+
+    withheld: 'Files never read',
+    withheldHint:
+      'Files matching these patterns are listed but never opened, so their contents cannot reach a model. The built-in list covers credentials and key material; add your own below, one per line.',
+    withheldBuiltIn: 'Built in',
+    withheldCustom: 'Your patterns',
+
+    save: 'Save',
+    saving: 'Saving…',
+    saved: 'Saved.',
+  },
+
+  /** The live view of a run: what the model says, and what it is actually doing. */
+  toolLog: {
+    heading: 'What it is doing',
+    waiting: 'Starting…',
+    turn: 'Turn {turn}',
+    tokens: '{input} in / {output} out',
+    cost: '${cost}',
+    costUnknown: 'cost unknown',
+    columnTool: 'Tool',
+    columnArguments: 'Arguments',
+    columnResult: 'Result',
+    columnDuration: 'Time',
+    running: 'running…',
+    failed: 'failed',
+    bytes: '{bytes} bytes',
+    retry: 'Retrying (attempt {attempt}) in {delay}s',
+    empty: 'No tool calls yet.',
+  },
+
+  /** The documentation generator, and the one write path in the application. */
+  documentation: {
+    heading: 'Project documentation',
+    description:
+      'Three documents written from the profile above. They live in DiffHacker; writing them into your repository is a separate, deliberate step.',
+    preview: 'Preview documents',
+    previewing: 'Preparing…',
+    previewHeading: 'Documents to be written',
+    previewBody:
+      'This is every file and every byte that would be written. Nothing has been written yet.',
+    targetLabel: 'Write to',
+    targetRoot: 'Repository root',
+    targetDocs: 'The docs/ folder',
+    exists: 'This file already exists and would be replaced.',
+    existsUnreadable:
+      'A file already exists at this path and could not be read as text, so no comparison can be shown. It would be replaced.',
+    isNew: 'This file does not exist yet.',
+    unchanged: 'This file already has exactly this content.',
+    diffHeading: 'What would change',
+    write: 'Write to repository',
+    writing: 'Writing…',
+    cancel: 'Cancel, write nothing',
+    wrote: 'Wrote {count} files into {path}.',
+    wroteWithOverwrites: 'Wrote {count} files into {path}, replacing {replaced}.',
+    writeWarning:
+      'This is the only thing in DiffHacker that writes to your repository. Nothing else ever does.',
+    noProfile: 'Analyse the repository first — documentation is written from its profile.',
+  },
   error: {
     unknown_error: 'Something went wrong. See log.txt for details.',
     rpc_timeout: 'The host did not respond in time.',
@@ -232,6 +362,24 @@ export const en = {
 
     secret_store_unavailable: 'Your API keys could not be read. See log.txt for details.',
     settings_store_unavailable: 'Your settings could not be read. See log.txt for details.',
+
+    profile_no_provider:
+      'No LLM provider is set up. Add one in settings, and mark it active if you have several.',
+    profile_repository_unreadable:
+      '{path} could not be read as a git working tree. It may have been moved or deleted.',
+    profile_run_failed: 'The repository could not be profiled. See log.txt for details.',
+    profile_over_budget:
+      'The model could not fit the profile inside its size budget, even after being asked to shorten it. Raise the budget, or try a model that follows instructions more closely.',
+    profile_unreadable_answer:
+      'The model answered, but not with something that could be read as a profile. Try again, or use a more capable model.',
+    profile_not_found: 'There is no profile for this repository to edit.',
+
+    documentation_no_profile:
+      'Analyse the repository first — documentation is written from its profile.',
+    documentation_preview_required:
+      'The profile changed since you previewed the documents, so nothing was written. Preview again.',
+    documentation_write_failed:
+      'The documents could not be written into {path}. Check the folder’s permissions.',
   },
   testFailure: {
     provider_invalid_key: 'The provider rejected the API key.',

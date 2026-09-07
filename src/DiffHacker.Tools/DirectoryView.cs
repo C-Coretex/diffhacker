@@ -50,7 +50,10 @@ internal sealed class DirectoryView
 
             if (separator < 0)
             {
-                files.Add(DirectoryEntry.File(remainder, session.FindChanged(path)));
+                files.Add(DirectoryEntry.File(
+                    remainder,
+                    session.FindChanged(path),
+                    session.Scope.IsWithheld(path)));
                 continue;
             }
 
@@ -96,7 +99,9 @@ internal sealed class DirectoryView
         {
             if (!entry.IsDirectory)
             {
-                rows.Add(indent + entry.Name + (entry.Status is { } status ? "  " + status : string.Empty));
+                rows.Add(indent + entry.Name
+                    + (entry.Status is { } status ? "  " + status : string.Empty)
+                    + (entry.IsWithheld ? "  [content withheld]" : string.Empty));
                 continue;
             }
 
@@ -133,6 +138,9 @@ internal readonly record struct DirectoryEntry
     /// <summary>The file's change marker, or null when it did not change.</summary>
     public string? Status { get; init; }
 
+    /// <summary>Whether the file's content is withheld. Listed anyway, and flagged.</summary>
+    public bool IsWithheld { get; init; }
+
     public static DirectoryEntry Directory(string name, int fileCount, int changedCount) =>
         new()
         {
@@ -142,11 +150,12 @@ internal readonly record struct DirectoryEntry
             ChangedCount = changedCount,
         };
 
-    public static DirectoryEntry File(string name, Core.Changes.ChangedFile? changed) =>
+    public static DirectoryEntry File(string name, Core.Changes.ChangedFile? changed, bool withheld = false) =>
         new()
         {
             Name = name,
             IsDirectory = false,
             Status = changed is null ? null : "[" + ToolFormat.Status(changed.Status) + "]",
+            IsWithheld = withheld,
         };
 }

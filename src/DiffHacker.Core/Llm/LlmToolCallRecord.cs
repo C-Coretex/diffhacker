@@ -28,6 +28,17 @@ public sealed record LlmToolCallRecord
     /// <summary>Size of the result handed back, in UTF-8 bytes.</summary>
     public required int ResultBytes { get; init; }
 
+    /// <summary>
+    /// The start of what the tool returned, truncated to <see cref="ResultPreviewLength"/>.
+    /// <para>
+    /// Added in Iteration 6, where the live view shows the user what each call actually answered.
+    /// Still a preview and not the result: a single call may return 48 KiB and a run may make five
+    /// hundred of them, so keeping every byte to display a few would be the odd trade this record
+    /// already avoids for arguments.
+    /// </para>
+    /// </summary>
+    public string ResultPreview { get; init; } = string.Empty;
+
     public required TimeSpan Duration { get; init; }
 
     /// <summary>Whether the tool reported a failure the model was expected to react to.</summary>
@@ -36,16 +47,26 @@ public sealed record LlmToolCallRecord
     /// <summary>How much of an argument list is worth keeping.</summary>
     public const int PreviewLength = 200;
 
+    /// <summary>
+    /// How much of a result is worth keeping. Longer than the argument preview because a result is
+    /// where the interesting part is — a header line and the first few rows say whether the call
+    /// found anything, which is the question someone watching a run is asking.
+    /// </summary>
+    public const int ResultPreviewLength = 500;
+
     /// <summary>Truncates an argument list to <see cref="PreviewLength"/>, marking the cut.</summary>
-    public static string Preview(string? argumentsJson)
+    public static string Preview(string? argumentsJson) => Truncate(argumentsJson, PreviewLength);
+
+    /// <summary>Truncates a result to <see cref="ResultPreviewLength"/>, marking the cut.</summary>
+    public static string PreviewResult(string? content) => Truncate(content, ResultPreviewLength);
+
+    private static string Truncate(string? text, int limit)
     {
-        if (string.IsNullOrEmpty(argumentsJson))
+        if (string.IsNullOrEmpty(text))
         {
             return string.Empty;
         }
 
-        return argumentsJson.Length <= PreviewLength
-            ? argumentsJson
-            : argumentsJson[..PreviewLength] + "…";
+        return text.Length <= limit ? text : text[..limit] + "…";
     }
 }

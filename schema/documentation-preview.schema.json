@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.6/documentation-preview.schema.json",
+  "title": "DocumentationPreview",
+  "description": "Every file the documentation generator would write, with its full content, before anything is written. Generated documentation lives inside DiffHacker; exporting it into the user's repository is a separate, deliberate step, and this is the gate in front of it. The preview token is what makes that gate structural rather than a matter of interface discipline: profile.exportDocumentation refuses any token that does not match the exact files it is being asked to write, so an export that was never previewed cannot happen even if the renderer were wrong.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repositoryPath", "target", "previewToken", "files"],
+  "properties": {
+    "repositoryPath": {
+      "type": "string",
+      "description": "Absolute path of the worktree root the preview was rendered for."
+    },
+    "target": {
+      "type": "string",
+      "description": "Where these files would be written.",
+      "enum": ["repository_root", "docs_directory"]
+    },
+    "previewToken": {
+      "type": "string",
+      "description": "A hash over the target and the exact content of every file below. Passed back to profile.exportDocumentation, which recomputes it and refuses to write if it differs — so the bytes the user approved are the only bytes that can land on disk."
+    },
+    "files": {
+      "type": "array",
+      "description": "Every file that would be written, in the order they would be written, each with its complete content. Nothing is elided: a preview that summarised its own output would not be a preview.",
+      "items": {
+        "$ref": "#/$defs/documentationFile"
+      }
+    }
+  },
+  "$defs": {
+    "documentationFile": {
+      "title": "DocumentationFile",
+      "description": "One file the generator would write, and what is there already.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relativePath", "content", "exists"],
+      "properties": {
+        "relativePath": {
+          "type": "string",
+          "description": "Repository-relative path the file would be written to, with forward slashes."
+        },
+        "content": {
+          "type": "string",
+          "description": "The complete text that would be written."
+        },
+        "exists": {
+          "type": "boolean",
+          "description": "True when a file is already at that path. An existing file is never overwritten without the diff below being shown first."
+        },
+        "unifiedDiff": {
+          "type": "string",
+          "description": "What the write would change, as a unified diff from the file on disk to the generated content. Present only when the file exists and differs; an existing file whose content already matches has nothing to show and nothing to warn about."
+        },
+        "existingIsUnreadable": {
+          "type": "boolean",
+          "description": "True when a file is at that path but could not be read as text — a binary file, or one the process may not open. No diff can be shown for it, and the screen says so rather than presenting an empty diff as if the file were empty."
+        }
+      }
+    }
+  }
+}

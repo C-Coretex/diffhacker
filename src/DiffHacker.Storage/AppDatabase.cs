@@ -23,7 +23,7 @@ public sealed partial class AppDatabase : IAsyncDisposable
     /// Bumped whenever <see cref="MigrateAsync"/> gains a step. Stored in the file, so an older
     /// build opening a newer database can say so rather than misreading it.
     /// </summary>
-    private const int CurrentSchemaVersion = 2;
+    private const int CurrentSchemaVersion = 3;
 
     private readonly string _connectionString;
     private readonly ILogger<AppDatabase> _logger;
@@ -153,6 +153,61 @@ public sealed partial class AppDatabase : IAsyncDisposable
                 """
                 ALTER TABLE provider_profiles ADD COLUMN input_cost_per_million  TEXT NULL;
                 ALTER TABLE provider_profiles ADD COLUMN output_cost_per_million TEXT NULL;
+                """,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+
+        if (version < 3)
+        {
+            // Iteration 6: what is known about a repository, and the runs that produced it.
+            //
+            // Keyed by worktree root path, the same key recent_repositories already uses — one
+            // repository, one profile (§0.6 fixes the scope at one repository per analysis).
+            //
+            // The split between the generated column and the user's columns is load-bearing:
+            // regenerating a profile writes document_json and the four generated_* columns and
+            // touches nothing else, which is how a manual edit survives a rerun.
+            //
+            // Nothing here is named for a credential. A column called secret_globs would fail
+            // SqliteStoreTests.The_schema_has_no_column_that_looks_like_a_credential, which is
+            // the guard working: it cannot tell a list of paths from a list of keys, and it
+            // should not have to.
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                CREATE TABLE project_profiles (
+                    repository_path       TEXT PRIMARY KEY,
+                    document_json         TEXT NULL,
+                    user_notes            TEXT NOT NULL DEFAULT '',
+                    custom_instructions   TEXT NOT NULL DEFAULT '',
+                    excluded_globs        TEXT NULL,
+                    character_budget      INTEGER NULL,
+                    document_characters   INTEGER NULL,
+                    generated_at_utc      TEXT NULL,
+                    generated_from_commit TEXT NULL,
+                    generated_by_provider TEXT NULL,
+                    generated_by_model    TEXT NULL,
+                    created_at_utc        TEXT NOT NULL,
+                    updated_at_utc        TEXT NOT NULL
+                );
+
+                CREATE TABLE project_profile_runs (
+                    id               TEXT PRIMARY KEY,
+                    repository_path  TEXT NOT NULL,
+                    started_at_utc   TEXT NOT NULL,
+                    finished_at_utc  TEXT NULL,
+                    outcome          TEXT NOT NULL,
+                    failure_code     TEXT NULL,
+                    provider_name    TEXT NOT NULL,
+                    model            TEXT NOT NULL,
+                    input_tokens     INTEGER NOT NULL,
+                    output_tokens    INTEGER NOT NULL,
+                    cost_usd         TEXT NULL,
+                    duration_ms      INTEGER NOT NULL,
+                    trace_json       TEXT NOT NULL
+                );
+
+                CREATE INDEX ix_project_profile_runs_repository
+                    ON project_profile_runs (repository_path, started_at_utc DESC);
                 """,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
         }

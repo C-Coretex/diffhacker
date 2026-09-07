@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.6/tool-call-event.schema.json",
+  "title": "ToolCallEvent",
+  "description": "Payload of the analysis.toolCall notification: one observable moment in a live run, pushed from host to renderer as it happens. Where analysis.progress carries the model's own sentence about what it is doing, this carries the mechanical traffic underneath it — which tool, with what arguments, for how long, and what came back. The two are separate methods so that a reviewer's view of the work is not interleaved with a debug log. One flat record with a discriminator rather than a family of shapes, because the contract generator cannot render a definition that references another definition.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sequence", "kind", "turn", "isError", "inputTokens", "outputTokens"],
+  "properties": {
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "One-based and increasing within a run. Notifications carry no ordering guarantee worth relying on, so the renderer appends in sequence order and ignores anything it has already seen."
+    },
+    "kind": {
+      "type": "string",
+      "description": "What happened. A tool_started and its tool_finished share a turn and a tool name, in that order.",
+      "enum": ["turn_started", "tool_started", "tool_finished", "retry", "usage"]
+    },
+    "turn": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Which round trip to the provider this belongs to, from 1."
+    },
+    "toolName": {
+      "type": "string",
+      "description": "The tool being called. Set on tool_started and tool_finished, absent otherwise."
+    },
+    "argumentsPreview": {
+      "type": "string",
+      "description": "The arguments the model passed, truncated. Set on tool_started. A preview rather than the whole thing: a model can pass a long regular expression or a fifty-path list, and the live view wants the shape of the call, not its every byte."
+    },
+    "resultPreview": {
+      "type": "string",
+      "description": "The beginning of what the tool returned, truncated. Set on tool_finished. Tool results are capped at 48 KiB each and a run may make five hundred calls, so the full text is deliberately not pushed across the bridge or retained; resultBytes says how much there was."
+    },
+    "resultBytes": {
+      "type": "integer",
+      "description": "Size of the full result in UTF-8 bytes. Set on tool_finished."
+    },
+    "durationMs": {
+      "type": "number",
+      "description": "How long the call took, in milliseconds. Set on tool_finished."
+    },
+    "isError": {
+      "type": "boolean",
+      "description": "True when the tool refused or failed. A failed tool call is a result the model corrects, not a failed run, so this is information rather than an alarm."
+    },
+    "inputTokens": {
+      "type": "integer",
+      "description": "Running total of input tokens for the whole run, carried on every event so the view never has to accumulate."
+    },
+    "outputTokens": {
+      "type": "integer",
+      "description": "Running total of output tokens for the whole run."
+    },
+    "costUsd": {
+      "type": "number",
+      "description": "Running estimated cost in US dollars. Absent when the model has no entry in the price table — unknown is reported as unknown, never as zero."
+    },
+    "retryDelayMs": {
+      "type": "number",
+      "description": "How long before the next attempt. Set on retry."
+    },
+    "retryAttempt": {
+      "type": "integer",
+      "description": "Which attempt is about to be made, from 1. Set on retry."
+    },
+    "reasonCode": {
+      "type": "string",
+      "description": "Why a retry was scheduled or a turn failed, as a stable code the renderer translates. Never prose."
+    }
+  }
+}

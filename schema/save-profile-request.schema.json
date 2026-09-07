@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.6/save-profile-request.schema.json",
+  "title": "SaveProfileRequest",
+  "description": "Parameters for profile.saveDocument: the generated sections after the user has edited them. These are the sections regeneration replaces, and the screen says so before the user types into them. The user's own notes and custom instructions are not here — they are saved through profile.saveNotes, separately, precisely because they have a different lifetime.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "repositoryPath",
+    "purpose",
+    "architecture",
+    "modules",
+    "layering",
+    "patterns",
+    "entryPoints",
+    "testLayout",
+    "documentationSources"
+  ],
+  "properties": {
+    "repositoryPath": {
+      "type": "string",
+      "description": "Absolute path of the worktree root the profile belongs to."
+    },
+    "purpose": {
+      "type": "string",
+      "description": "What the project is and what problem it solves."
+    },
+    "architecture": {
+      "type": "string",
+      "description": "How the system is put together at a high level. Markdown."
+    },
+    "modules": {
+      "type": "array",
+      "description": "The projects or modules the repository is divided into.",
+      "items": {
+        "$ref": "#/$defs/saveModuleInfo"
+      }
+    },
+    "layering": {
+      "type": "string",
+      "description": "Layering and dependency conventions. Markdown."
+    },
+    "patterns": {
+      "type": "string",
+      "description": "Notable patterns, idioms and conventions. Markdown."
+    },
+    "entryPoints": {
+      "type": "array",
+      "description": "The places a reader starts from.",
+      "items": {
+        "$ref": "#/$defs/saveEntryPointInfo"
+      }
+    },
+    "testLayout": {
+      "type": "string",
+      "description": "Where the tests live and how they are organised. Markdown."
+    },
+    "documentationSources": {
+      "type": "array",
+      "description": "Repository-relative paths of the documentation the profile was built from. Round-tripped rather than edited, so that an edit to the prose does not quietly erase the record of what was read.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "saveModuleInfo": {
+      "title": "SaveModuleInfo",
+      "description": "One project or module, inbound. The same shape as ProjectModuleInfo and ProfileModuleInfo, duplicated because a schema cannot reference a definition in another file, and held to it by ProjectProfileAgreementTests.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "path", "summary", "relatedModules"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The module's name as the repository spells it."
+        },
+        "path": {
+          "type": "string",
+          "description": "Repository-relative path of the module's root directory."
+        },
+        "summary": {
+          "type": "string",
+          "description": "What this module is responsible for, in one or two sentences."
+        },
+        "relatedModules": {
+          "type": "array",
+          "description": "Names of the modules this one depends on or is most closely coupled to.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "saveEntryPointInfo": {
+      "title": "SaveEntryPointInfo",
+      "description": "One place a reader can start from, inbound. Same shape and same agreement test as the other two copies.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "purpose"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Repository-relative path of the file that is the entry point."
+        },
+        "purpose": {
+          "type": "string",
+          "description": "What starts here and what it does, in one sentence."
+        }
+      }
+    }
+  }
+}

@@ -405,6 +405,7 @@ internal sealed partial class LlmSession : ILlmSession
 
         stopwatch.Stop();
         var bytes = Encoding.UTF8.GetByteCount(result.Content);
+        var resultPreview = LlmToolCallRecord.PreviewResult(result.Content);
 
         progress?.Report(new LlmRunEvent
         {
@@ -412,6 +413,7 @@ internal sealed partial class LlmSession : ILlmSession
             Turn = turn,
             ToolName = call.Name,
             ResultBytes = bytes,
+            ResultPreview = resultPreview,
             Duration = stopwatch.Elapsed,
             IsError = result.IsError,
             CumulativeUsage = _cumulative,
@@ -430,6 +432,7 @@ internal sealed partial class LlmSession : ILlmSession
                 ToolName = call.Name,
                 ArgumentsPreview = preview,
                 ResultBytes = bytes,
+                ResultPreview = resultPreview,
                 Duration = stopwatch.Elapsed,
                 IsError = result.IsError,
             },

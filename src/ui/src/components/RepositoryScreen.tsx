@@ -1,11 +1,16 @@
+import { useCallback, useEffect } from 'react';
 import { InfoIcon } from 'lucide-react';
+import { describeError } from '@/i18n/errors';
 import { useT } from '@/i18n/useT';
+import { getProfile } from '@/rpc/methods';
+import { useRpc } from '@/rpc/RpcProvider';
 import { useAppStore } from '@/store/appStore';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ChangesetPanel } from '@/components/ChangesetPanel';
+import { MissingProfileNotice } from '@/components/ProfileScreen';
 
 /**
  * The open repository and its current change.
@@ -16,9 +21,35 @@ import { ChangesetPanel } from '@/components/ChangesetPanel';
 export function RepositoryScreen() {
   const t = useT();
 
+  const client = useRpc();
   const repository = useAppStore((state) => state.repositoryInfo);
   const normalizedFrom = useAppStore((state) => state.repositoryNormalizedFrom);
   const showScreen = useAppStore((state) => state.showScreen);
+  const profileStatus = useAppStore((state) => state.profile);
+  const startLoadingProfile = useAppStore((state) => state.startLoadingProfile);
+  const setProfile = useAppStore((state) => state.setProfile);
+  const failProfile = useAppStore((state) => state.failProfile);
+
+  const path = repository?.path;
+
+  // Loaded here, not only on the profile screen: requirement 10 wants the reviewer told that a
+  // review without a profile will be weaker, and this is the screen where they are about to have
+  // one. Idle-only, so navigating back does not refetch.
+  const loadProfile = useCallback(async () => {
+    if (!client || !path || profileStatus !== 'idle') return;
+
+    startLoadingProfile();
+
+    try {
+      setProfile(await getProfile(client, { repositoryPath: path }));
+    } catch (caught) {
+      failProfile(describeError(caught));
+    }
+  }, [client, path, profileStatus, startLoadingProfile, setProfile, failProfile]);
+
+  useEffect(() => {
+    void loadProfile();
+  }, [loadProfile]);
 
   if (!repository) {
     return null;
@@ -65,6 +96,8 @@ export function RepositoryScreen() {
           </Button>
         </CardContent>
       </Card>
+
+      <MissingProfileNotice onOpen={() => showScreen('profile')} />
 
       <ChangesetPanel />
     </div>

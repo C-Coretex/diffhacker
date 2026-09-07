@@ -1,11 +1,14 @@
 import { create } from 'zustand';
 import type {
+  AnalysisProgress,
   ChangesetResult,
   EnvironmentInfo,
   HostInfo,
+  ProfileState,
   ProviderProfile,
   RecentRepository,
   RepositoryInfo,
+  ToolCallEvent,
 } from '@/contracts';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'detached' | 'error';
@@ -14,6 +17,10 @@ export type RecentsStatus = 'loading' | 'ready' | 'error';
 export type RepositoryStatus = 'none' | 'opening' | 'open' | 'error';
 export type ProvidersStatus = 'loading' | 'ready' | 'error';
 export type ChangesetStatus = 'idle' | 'loading' | 'ready' | 'error';
+export type ProfileStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+/** Whether a profile run is in flight. Separate from the profile's own load state. */
+export type ProfileRunStatus = 'idle' | 'running';
 
 /**
  * Which screen is showing.
@@ -22,7 +29,16 @@ export type ChangesetStatus = 'idle' | 'loading' | 'ready' | 'error';
  * asset resolver serves exact paths with no SPA fallback, so a URL would be state to keep in
  * sync for nothing. Revisit if a later iteration wants deep links into the graph.
  */
-export type Screen = 'welcome' | 'repository' | 'settings';
+export type Screen = 'welcome' | 'repository' | 'settings' | 'profile';
+
+/**
+ * How many tool-log rows a live run keeps.
+ *
+ * A run may make five hundred calls, each carrying an argument and a result preview. Keeping all
+ * of them would grow the render cost of every subsequent event; the oldest are dropped because the
+ * interesting end of a live log is the recent end. The stored trace keeps the whole run.
+ */
+export const TOOL_LOG_LIMIT = 200;
 
 interface AppState {
   connection: ConnectionStatus;
@@ -61,6 +77,22 @@ interface AppState {
    */
   includeUntracked: boolean;
 
+  profile: ProfileStatus;
+  profileState?: ProfileState;
+  profileError?: string;
+
+  /**
+   * The live run.
+   *
+   * Held in the store rather than in the screen so that navigating away and back does not lose a
+   * run in flight — the notifications keep arriving either way, and a reviewer who opened the
+   * changeset to look something up should come back to the log, not to a blank panel.
+   */
+  profileRun: ProfileRunStatus;
+  profileRunProgress?: AnalysisProgress;
+  profileRunEvents: ToolCallEvent[];
+  profileRunLatest?: ToolCallEvent;
+
   setConnected(hostInfo: HostInfo): void;
   setDetached(): void;
   setConnectionError(message: string): void;
@@ -87,6 +119,15 @@ interface AppState {
   setChangeset(result: ChangesetResult): void;
   failChangeset(message: string): void;
   setIncludeUntracked(include: boolean): void;
+
+  startLoadingProfile(): void;
+  setProfile(state: ProfileState): void;
+  failProfile(message: string): void;
+
+  startProfileRun(): void;
+  recordProfileProgress(progress: AnalysisProgress): void;
+  recordProfileRunEvent(event: ToolCallEvent): void;
+  endProfileRun(): void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -106,6 +147,10 @@ export const useAppStore = create<AppState>((set) => ({
 
   changeset: 'idle',
   includeUntracked: true,
+
+  profile: 'idle',
+  profileRun: 'idle',
+  profileRunEvents: [],
 
   setConnected: (hostInfo) => set({ connection: 'connected', hostInfo, connectionError: undefined }),
   setDetached: () => set({ connection: 'detached' }),
@@ -131,6 +176,14 @@ export const useAppStore = create<AppState>((set) => ({
       changeset: 'idle',
       changesetResult: undefined,
       changesetError: undefined,
+      // The profile belongs to a repository too. Showing the previous repository's architecture
+      // beside this one's files would be worse than showing nothing.
+      profile: 'idle',
+      profileState: undefined,
+      profileError: undefined,
+      profileRunProgress: undefined,
+      profileRunEvents: [],
+      profileRunLatest: undefined,
     }),
 
   failRepository: (message) => set({ repository: 'none', repositoryError: message }),
@@ -151,4 +204,33 @@ export const useAppStore = create<AppState>((set) => ({
     set({ changeset: 'ready', changesetResult, changesetError: undefined }),
   failChangeset: (message) => set({ changeset: 'error', changesetError: message }),
   setIncludeUntracked: (includeUntracked) => set({ includeUntracked }),
+
+  startLoadingProfile: () => set({ profile: 'loading', profileError: undefined }),
+  setProfile: (profileState) => set({ profile: 'ready', profileState, profileError: undefined }),
+  failProfile: (message) => set({ profile: 'error', profileError: message }),
+
+  startProfileRun: () =>
+    set({
+      profileRun: 'running',
+      profileRunProgress: undefined,
+      profileRunEvents: [],
+      profileRunLatest: undefined,
+    }),
+
+  recordProfileProgress: (profileRunProgress) => set({ profileRunProgress }),
+
+  recordProfileRunEvent: (event) =>
+    set((state) => {
+      // Turn and usage events move the running totals without adding a row: the log is about what
+      // the model did, and "turn 14 started" is not something it did.
+      const isRow = event.kind === 'tool_started' || event.kind === 'tool_finished' || event.kind === 'retry';
+      const events = isRow ? [...state.profileRunEvents, event] : state.profileRunEvents;
+
+      return {
+        profileRunEvents: events.length > TOOL_LOG_LIMIT ? events.slice(-TOOL_LOG_LIMIT) : events,
+        profileRunLatest: event,
+      };
+    }),
+
+  endProfileRun: () => set({ profileRun: 'idle' }),
 }));

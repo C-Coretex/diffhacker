@@ -8,7 +8,7 @@
 |---|---|
 | **Depends on** | [5](iteration-05-repository-toolbox.md) |
 | **Blocks** | 7 |
-| **Status** | Not started |
+| **Status** | Complete, with requirement 3 changed by the user — see below |
 
 ## Goal
 
@@ -48,6 +48,12 @@ user's repository** (§0.2.12), and it is gated accordingly.
    documentation files derived from the profile — architecture, module map, conventions — into
    the repository, subject to the preview-and-confirm gate above. **Never automatic. Never
    silent.**
+
+   > **Changed during implementation, on the user's instruction.** The three documents —
+   > `ARCHITECTURE.md`, `MODULES.md`, `CONVENTIONS.md` — are generated **into DiffHacker**, not
+   > into the repository. Writing them out is a separate, explicitly confirmed export, and the
+   > preview-and-confirm gate is enforced by a token the host recomputes from the bytes it is
+   > about to write. See [decisions.md](../decisions.md#the-repository-knowledge-base).
 4. Persist the profile per repository with the commit it was generated from and a timestamp.
 5. The profile is **user-editable**. Manual edits survive regeneration — keep user-authored
    content in a distinct section that regeneration does not touch.

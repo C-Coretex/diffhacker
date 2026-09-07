@@ -47,8 +47,10 @@ public sealed class SearchTools(RepositorySession session, IGitClient git, Toolb
         Perl-style syntax you are used to, but not every build of git has it; if this one does not,
         the search runs as 'extended' and the header says so.
 
-        Binary files are skipped. Results are paged; the header always states the true total, so
-        a match count is something you can reason about even when you only see the first page.
+        Binary files are skipped. Files whose content is withheld — credentials, key material — are
+        not searched at all; list_directory and get_path_info still show you that they exist.
+        Results are paged; the header always states the true total, so a match count is something
+        you can reason about even when you only see the first page.
         """)]
     public async Task<string> SearchTextAsync(
         [Description("What to search for, in the dialect given by mode.")]
@@ -107,6 +109,10 @@ public sealed class SearchTools(RepositorySession session, IGitClient git, Toolb
                 Skip = changedOnly ? 0 : offset,
                 Take = changedOnly ? ChangedOnlyScanCeiling : pageSize,
                 ScanCeiling = changedOnly ? ChangedOnlyScanCeiling : GrepQuery.DefaultScanCeiling,
+
+                // Files whose content is withheld are excluded in git rather than filtered out of
+                // the answer, so the total this reports is a total of matches it will actually show.
+                ExcludeGlobs = session.Scope.WithheldGlobs,
             },
             cancellationToken).ConfigureAwait(false);
 

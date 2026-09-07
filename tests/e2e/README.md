@@ -77,6 +77,7 @@ specs/
   02-awkward-repositories.spec.ts        clean, no commits, not a repo, bare, large, no git
   03-settings-secrets-and-restart.spec.ts  providers, the promises about API keys, restart
   04-shell-guarantees.spec.ts            CSP enforcement, in-process serving, the handshake
+  05-repository-profile.spec.ts          profiling a repository, editing it, writing its docs
 src/
   appHarness.ts    launches the host, attaches over CDP, screenshots, tears down
   gitFixture.ts    builds real repositories in temp directories

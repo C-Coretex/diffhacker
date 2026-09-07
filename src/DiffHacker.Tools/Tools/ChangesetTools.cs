@@ -204,6 +204,25 @@ public sealed class ChangesetTools(RepositorySession session, IGitClient git, To
             return requested + "  not found";
         }
 
+        if (resolved.Rejection is PathRejection.Withheld)
+        {
+            // Everything except the content. Withholding a file's bytes is not a reason to pretend
+            // the file is not there, and its project, language and change status are exactly the
+            // things a model needs in order to stop asking about it.
+            var withheldPath = resolved.RelativePath;
+            var withheldChange = session.FindChanged(withheldPath);
+
+            var withheldParts = new List<string>
+            {
+                "project=" + session.LocateProject(withheldPath).Name,
+                "language=" + (LanguageTable.Detect(withheldPath) ?? "unknown"),
+                withheldChange is null ? "unchanged" : "changed=" + ToolFormat.Status(withheldChange.Status),
+                "content withheld: this path may hold credentials or key material and cannot be read or diffed",
+            };
+
+            return withheldPath + "  " + string.Join("  ", withheldParts);
+        }
+
         if (!resolved.IsAccepted)
         {
             return requested + "  " + resolved.Explain();
@@ -365,7 +384,8 @@ public sealed class ChangesetTools(RepositorySession session, IGitClient git, To
 
         foreach (var file in matched.Skip(offset))
         {
-            if (shown >= pageSize || !text.AddLine(ToolFormat.ChangedRow(file)))
+            if (shown >= pageSize ||
+                !text.AddLine(ToolFormat.ChangedRow(file, session.Scope.IsWithheld(file.Path))))
             {
                 break;
             }

@@ -216,8 +216,16 @@ export class SettingsScreen {
     apiKey: string;
     /** The optional price override. Only takes effect as a pair. */
     cost?: { input: string; output: string };
+    /** Set to point at an OpenAI-compatible endpoint, which is how the stub provider is used. */
+    baseUrl?: string;
   }): Promise<void> {
     await this.addButton.click();
+
+    if (details.baseUrl) {
+      await this.typeField.selectOption('openai_compatible');
+      await this.baseUrlField.fill(details.baseUrl);
+    }
+
     await this.nameField.fill(details.name);
     await this.modelField.fill(details.model);
     await this.apiKeyField.fill(details.apiKey);
@@ -231,12 +239,110 @@ export class SettingsScreen {
   }
 }
 
-/** All four screens for one page, so a spec reads as a journey rather than as selectors. */
+export class ProfileScreen {
+  constructor(private readonly page: Page) {}
+
+  get openButton(): Locator {
+    return this.page.getByRole('button', { name: en.app.nav.profile });
+  }
+
+  get backButton(): Locator {
+    return this.page.getByRole('button', { name: en.app.nav.back });
+  }
+
+  get heading(): Locator {
+    // A card title, not a heading element.
+    return this.page.getByText(en.profile.heading, { exact: true });
+  }
+
+  get missingNotice(): Locator {
+    return this.page.getByText(en.profile.missingHeading, { exact: true });
+  }
+
+  get generateButton(): Locator {
+    return this.page.getByRole('button', { name: en.profile.generate, exact: true });
+  }
+
+  get regenerateButton(): Locator {
+    return this.page.getByRole('button', { name: en.profile.regenerate, exact: true });
+  }
+
+  get stopButton(): Locator {
+    return this.page.getByRole('button', { name: en.profile.cancel, exact: true });
+  }
+
+  get runHeading(): Locator {
+    return this.page.getByText(en.toolLog.heading, { exact: true });
+  }
+
+  get purposeField(): Locator {
+    return this.page.getByLabel(en.profile.purpose);
+  }
+
+  get notesField(): Locator {
+    return this.page.getByLabel(en.profile.userNotes);
+  }
+
+  get instructionsField(): Locator {
+    return this.page.getByLabel(en.profile.customInstructions);
+  }
+
+  get driftWarning(): Locator {
+    return this.page.getByText(en.profile.driftHeading, { exact: true });
+  }
+
+  /** The tool log's row for one tool. Several calls to the same tool give several rows. */
+  toolRow(tool: string): Locator {
+    return this.page.getByRole('row').filter({ hasText: tool });
+  }
+
+  /** Scoped: both cards on this screen have a Save button. */
+  saveIn(section: 'generated' | 'yours'): Locator {
+    const title = section === 'generated' ? en.profile.generatedSections : en.profile.userSections;
+
+    return this.page
+      .locator('[data-slot="card"]')
+      .filter({ has: this.page.getByText(title, { exact: true }) })
+      .getByRole('button', { name: en.profile.save, exact: true });
+  }
+}
+
+export class DocumentationPanel {
+  constructor(private readonly page: Page) {}
+
+  get previewButton(): Locator {
+    return this.page.getByRole('button', { name: en.documentation.preview });
+  }
+
+  get dialog(): Locator {
+    return this.page.getByRole('alertdialog');
+  }
+
+  get writeButton(): Locator {
+    return this.dialog.getByRole('button', { name: en.documentation.write });
+  }
+
+  get cancelButton(): Locator {
+    return this.dialog.getByRole('button', { name: en.documentation.cancel });
+  }
+
+  get targetSelect(): Locator {
+    return this.page.getByLabel(en.documentation.targetLabel);
+  }
+
+  file(path: string): Locator {
+    return this.dialog.getByText(path, { exact: true });
+  }
+}
+
+/** Every screen for one page, so a spec reads as a journey rather than as selectors. */
 export function screens(page: Page) {
   return {
     welcome: new WelcomeScreen(page),
     repository: new RepositoryScreen(page),
     changeset: new ChangesetPanel(page),
     settings: new SettingsScreen(page),
+    profile: new ProfileScreen(page),
+    documentation: new DocumentationPanel(page),
   };
 }

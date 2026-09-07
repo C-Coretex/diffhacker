@@ -75,8 +75,11 @@ silently dropped or invented to make validation pass.
   OpenAI-compatible endpoint — including local Ollama.
 - **Local uncommitted changes only.** Working tree vs `HEAD`. No branch picker, no PR
   integration.
-- **Read-only.** The app never commits, stages, checks out or edits your files. The one
-  exception is the opt-in documentation generator, which previews every file and asks first.
+- **Read-only.** The app never commits, stages, checks out or edits your files. Generated
+  documentation lives inside DiffHacker; writing it into your repository is a separate, opt-in
+  export that shows you every file and every byte first, and a diff for anything it would replace.
+  That export is the only code in the product that writes to your repository, and a test asserts
+  it stays that way.
 - **Nothing renders until everything exists.** No half-built graphs, no explanations
   generated at hover time.
 - **Any changeset size.** 10 files or 1500.
@@ -147,6 +150,11 @@ It is read-only and offline by construction: no write path, no command execution
 access exist anywhere in the toolbox — an architecture test asserts the absence rather than the
 disuse. It sees only what git sees, so `.git/` and everything `.gitignore` covers are invisible,
 and every result is capped and paged so a single call cannot flood a context window.
+
+Files that tend to hold credentials — `.env`, private keys, `.npmrc`, `credentials`, `*.tfvars` —
+are **listed but never opened**, so their contents cannot reach a model. They stay visible on
+purpose: a changed `.env` is a real part of a change, and a reviewer who cannot see that it changed
+is worse off than one who can see it changed but not how.
 
 ## Roadmap
 

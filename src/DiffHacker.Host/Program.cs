@@ -1,5 +1,6 @@
 using System.Reflection;
 using DiffHacker.Core.Changes;
+using DiffHacker.Core.Knowledge;
 using DiffHacker.Core.Llm;
 using DiffHacker.Core.Providers;
 using DiffHacker.Core.Repositories;
@@ -7,6 +8,7 @@ using DiffHacker.Core.Settings;
 using DiffHacker.Core.Tools;
 using DiffHacker.Git;
 using DiffHacker.Host.Assets;
+using DiffHacker.Host.Knowledge;
 using DiffHacker.Host.Logging;
 using DiffHacker.Host.Rpc;
 using DiffHacker.Host.Shell;
@@ -14,6 +16,7 @@ using DiffHacker.Llm;
 using DiffHacker.Llm.Pricing;
 using DiffHacker.Storage;
 using DiffHacker.Storage.Secrets;
+using DiffHacker.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -128,9 +131,11 @@ internal static class Program
 
         // Storage: settings in the per-user data directory, keys in the secret store, never
         // the other way round.
+        services.AddSingleton(TimeProvider.System);
         services.AddSingleton(sp => new AppDatabase(paths.DatabaseFile, sp.GetRequiredService<ILogger<AppDatabase>>()));
         services.AddSingleton<IRecentRepositoryStore, SqliteRecentRepositoryStore>();
         services.AddSingleton<IProviderProfileStore, SqliteProviderProfileStore>();
+        services.AddSingleton<IProjectProfileStore, SqliteProjectProfileStore>();
         services.AddSingleton(sp => SecretStoreFactory.Create(
             paths.SecretsFile,
             paths.MasterKeyFile,
@@ -149,18 +154,30 @@ internal static class Program
         services.AddSingleton<ITokenPricing, ModelPricing>();
         services.AddSingleton<ILlmSessionFactory, LlmSessionFactory>();
 
-        // The notifier is the bridge's outbound-notification plumbing, and ToolProgressNotifier
-        // is its first real producer: the toolbox's report_progress arrives here and leaves as an
-        // analysis.progress notification. Nothing in the application starts an analysis yet, so
-        // nothing calls it until Iteration 7 — the pipe is complete and the producer is not.
+        // The repository knowledge base. StoredProjectProfileSource is what Iteration 5 cut the
+        // IProjectProfileSource seam for, and ToolboxFactory is how DiffHacker.Core orchestrates a
+        // run without referencing DiffHacker.Tools, which references it. Iteration 7's analysis
+        // pipeline opens its toolbox through the same factory.
+        services.AddSingleton<IProjectProfileSource, StoredProjectProfileSource>();
+        services.AddSingleton<IRepositoryToolboxFactory, ToolboxFactory>();
+        services.AddSingleton<IProfileBuilder, ProfileBuilder>();
+        services.AddSingleton<RepositoryDocumentationWriter>();
+
+        // The notifier is the bridge's outbound-notification plumbing. ToolProgressNotifier
+        // carries the toolbox's report_progress out as analysis.progress, and RunEventNotifier
+        // carries the tool traffic underneath it out as analysis.toolCall. Iteration 6 is where
+        // both finally have a producer: profile.generate is the first thing in the application
+        // that starts an LLM run.
         services.AddSingleton<RpcNotifier>();
         services.AddSingleton<IRpcNotifier>(sp => sp.GetRequiredService<RpcNotifier>());
         services.AddSingleton<IToolProgressSink, ToolProgressNotifier>();
+        services.AddSingleton<RunEventNotifier>();
         services.AddSingleton<HostRpcTarget>();
         services.AddSingleton<EnvironmentRpcTarget>();
         services.AddSingleton<RepositoryRpcTarget>();
         services.AddSingleton<ProviderRpcTarget>();
         services.AddSingleton<ChangesetRpcTarget>();
+        services.AddSingleton<ProfileRpcTarget>();
 
         services.AddSingleton(sp => new RpcBridge(
             sp.GetRequiredService<IAppShell>(),
@@ -171,6 +188,7 @@ internal static class Program
                 sp.GetRequiredService<RepositoryRpcTarget>(),
                 sp.GetRequiredService<ProviderRpcTarget>(),
                 sp.GetRequiredService<ChangesetRpcTarget>(),
+                sp.GetRequiredService<ProfileRpcTarget>(),
             ],
             sp.GetRequiredService<ILogger<RpcBridge>>()));
 

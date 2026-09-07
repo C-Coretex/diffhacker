@@ -1,4 +1,5 @@
 using DiffHacker.Core.Changes;
+using DiffHacker.Core.Knowledge;
 using DiffHacker.Core.Tools;
 using Microsoft.Extensions.Logging;
 
@@ -28,7 +29,7 @@ public static class Toolbox
         ArgumentNullException.ThrowIfNull(options);
 
         var session = await RepositorySession
-            .CreateAsync(options.Git, repositoryPath, cancellationToken)
+            .CreateAsync(options.Git, repositoryPath, options.WithheldGlobs, cancellationToken)
             .ConfigureAwait(false);
 
         var catalogue = ToolboxCatalog.Create(session, options);
@@ -61,8 +62,19 @@ public sealed record ToolboxOptions
     /// <summary>Where <c>report_progress</c> goes: the WebView in the app, the MCP client over stdio.</summary>
     public required IToolProgressSink Progress { get; init; }
 
-    /// <summary>Iteration 6 replaces the default, which answers "no profile stored".</summary>
+    /// <summary>Where the stored project profile comes from. The default answers "no profile stored".</summary>
     public IProjectProfileSource Profiles { get; init; } = new NoProjectProfile();
+
+    /// <summary>
+    /// Paths whose content is withheld from the model — credentials and key material.
+    /// <para>
+    /// Defaulted rather than required, so the standalone MCP server and every existing caller get
+    /// the protection without asking for it. Matching files stay listed and flagged; only reading,
+    /// diffing and searching them is refused, which is what keeps a changed <c>.env</c> visible as
+    /// a changed file (§0.2.5).
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<string> WithheldGlobs { get; init; } = SensitiveFiles.DefaultGlobs;
 
     public ToolboxLimits Limits { get; init; } = ToolboxLimits.Default;
 }

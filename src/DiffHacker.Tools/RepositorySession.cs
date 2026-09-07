@@ -20,13 +20,19 @@ namespace DiffHacker.Tools;
 public sealed class RepositorySession
 {
     private readonly IGitClient _git;
+    private readonly IReadOnlyList<string> _withheldGlobs;
     private readonly Lock _gate = new();
     private Snapshot _snapshot;
 
-    private RepositorySession(IGitClient git, string root, Snapshot snapshot)
+    private RepositorySession(
+        IGitClient git,
+        string root,
+        IReadOnlyList<string> withheldGlobs,
+        Snapshot snapshot)
     {
         _git = git;
         Root = root;
+        _withheldGlobs = withheldGlobs;
         _snapshot = snapshot;
     }
 
@@ -56,19 +62,24 @@ public sealed class RepositorySession
     public static async Task<RepositorySession> CreateAsync(
         IGitClient git,
         string repositoryPath,
+        IReadOnlyList<string> withheldGlobs,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(git);
         ArgumentException.ThrowIfNullOrWhiteSpace(repositoryPath);
+        ArgumentNullException.ThrowIfNull(withheldGlobs);
 
-        var snapshot = await TakeAsync(git, repositoryPath, cancellationToken).ConfigureAwait(false);
-        return new RepositorySession(git, snapshot.Changeset.RepositoryPath, snapshot);
+        var snapshot = await TakeAsync(git, repositoryPath, withheldGlobs, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new RepositorySession(
+            git, snapshot.Changeset.RepositoryPath, withheldGlobs, snapshot);
     }
 
     /// <summary>Re-reads the repository. Returns the new snapshot's timestamp.</summary>
     public async Task<DateTimeOffset> RefreshAsync(CancellationToken cancellationToken)
     {
-        var snapshot = await TakeAsync(_git, Root, cancellationToken).ConfigureAwait(false);
+        var snapshot = await TakeAsync(_git, Root, _withheldGlobs, cancellationToken).ConfigureAwait(false);
 
         lock (_gate)
         {
@@ -108,6 +119,7 @@ public sealed class RepositorySession
     private static async Task<Snapshot> TakeAsync(
         IGitClient git,
         string repositoryPath,
+        IReadOnlyList<string> withheldGlobs,
         CancellationToken cancellationToken)
     {
         var changeset = await git
@@ -138,7 +150,7 @@ public sealed class RepositorySession
             Changeset = changeset,
             VisibleFiles = visible,
             Changed = changeset.Files.ToDictionary(file => file.Path, StringComparer.Ordinal),
-            Scope = new RepositoryScope(changeset.RepositoryPath, visibleSet),
+            Scope = new RepositoryScope(changeset.RepositoryPath, visibleSet, withheldGlobs),
             Locator = new ProjectLocator(changeset.RepositoryPath),
             LocatorGate = new Lock(),
             TakenAt = DateTimeOffset.UtcNow,

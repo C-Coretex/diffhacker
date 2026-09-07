@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.6/documentation-export-result.schema.json",
+  "title": "DocumentationExportResult",
+  "description": "What profile.exportDocumentation actually wrote. Reported back so the interface can name the files rather than saying 'done', and so a test can assert the set of paths written equals the set previewed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repositoryPath", "writtenPaths", "overwrittenPaths"],
+  "properties": {
+    "repositoryPath": {
+      "type": "string",
+      "description": "Absolute path of the worktree root that was written into."
+    },
+    "writtenPaths": {
+      "type": "array",
+      "description": "Repository-relative paths of every file written, created and overwritten alike.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "overwrittenPaths": {
+      "type": "array",
+      "description": "The subset of writtenPaths that already existed. Called out separately because replacing a file the user wrote is a different act from adding one, even when both were previewed.",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

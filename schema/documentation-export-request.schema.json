@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.6/documentation-export-request.schema.json",
+  "title": "DocumentationExportRequest",
+  "description": "Parameters for profile.exportDocumentation, the one call in the entire application that writes into the user's repository. It carries the token from the preview the user approved; the host recomputes that token from what it is about to write and refuses if it differs, so no file can be written that was not shown first, byte for byte.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repositoryPath", "target", "previewToken"],
+  "properties": {
+    "repositoryPath": {
+      "type": "string",
+      "description": "Absolute path of the worktree root to write into."
+    },
+    "target": {
+      "type": "string",
+      "description": "Where to write. Must match the target the preview was taken for.",
+      "enum": ["repository_root", "docs_directory"]
+    },
+    "previewToken": {
+      "type": "string",
+      "description": "The token from the DocumentationPreview the user confirmed. A missing or stale token is refused rather than treated as consent."
+    }
+  }
+}

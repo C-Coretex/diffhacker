@@ -194,6 +194,16 @@ public sealed partial class GitClient
             arguments.Add(":(glob)" + query.PathGlob);
         }
 
+        // Exclusions last. A pathspec list holding only exclusions means "everything but these" to
+        // git, so this works with or without a positive glob above it.
+        foreach (var exclude in query.ExcludeGlobs)
+        {
+            if (!string.IsNullOrWhiteSpace(exclude))
+            {
+                arguments.Add(":(exclude,glob)" + exclude);
+            }
+        }
+
         return arguments;
     }
 

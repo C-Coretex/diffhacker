@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.6/documentation-request.schema.json",
+  "title": "DocumentationRequest",
+  "description": "Parameters for profile.previewDocumentation: which repository's profile to render into documentation, and where the files would go if the user later chose to export them. Rendering is deterministic and costs nothing, so a preview can be asked for as often as the user likes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repositoryPath", "target"],
+  "properties": {
+    "repositoryPath": {
+      "type": "string",
+      "description": "Absolute path of the worktree root whose profile is being rendered."
+    },
+    "target": {
+      "type": "string",
+      "description": "Where the files would be written on export. This affects the preview because it decides the file paths and therefore which of them already exist.",
+      "enum": ["repository_root", "docs_directory"]
+    }
+  }
+}

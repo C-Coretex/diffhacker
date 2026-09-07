@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.6/profile-state.schema.json",
+  "title": "ProfileState",
+  "description": "Everything the profile screen shows for one repository: the generated document, the user's own sections, where the document came from, what it costs, and whether the repository has moved on since. Returned by every profile.* method, so the renderer replaces its state wholesale rather than merging. The generated document's fields are hoisted to the root rather than nested under a profile object, because the contract generator cannot render a definition that references another definition and the module list needs one — the same flattening changeset-result.schema.json applies to its per-status counts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "repositoryPath",
+    "hasProfile",
+    "modules",
+    "entryPoints",
+    "documentationSources",
+    "userNotes",
+    "customInstructions",
+    "customExcludedGlobs",
+    "effectiveExcludedGlobs",
+    "characterBudget",
+    "driftSubstantial"
+  ],
+  "properties": {
+    "repositoryPath": {
+      "type": "string",
+      "description": "Absolute path of the worktree root this profile belongs to. One repository, one profile: nothing here works across repositories."
+    },
+    "hasProfile": {
+      "type": "boolean",
+      "description": "False when no profile has been generated yet. The user's sections and the excluded globs still exist in that case, which is why they are not optional and this flag is."
+    },
+    "purpose": {
+      "type": "string",
+      "description": "What the project is and what problem it solves. Absent until a profile is generated."
+    },
+    "architecture": {
+      "type": "string",
+      "description": "How the system is put together at a high level. Markdown."
+    },
+    "modules": {
+      "type": "array",
+      "description": "The projects or modules the repository is divided into. Empty until a profile is generated.",
+      "items": {
+        "$ref": "#/$defs/profileModuleInfo"
+      }
+    },
+    "layering": {
+      "type": "string",
+      "description": "Layering and dependency conventions. Markdown."
+    },
+    "patterns": {
+      "type": "string",
+      "description": "Notable patterns, idioms and conventions. Markdown."
+    },
+    "entryPoints": {
+      "type": "array",
+      "description": "The places a reader starts from. Empty until a profile is generated.",
+      "items": {
+        "$ref": "#/$defs/profileEntryPointInfo"
+      }
+    },
+    "testLayout": {
+      "type": "string",
+      "description": "Where the tests live and how they are organised. Markdown."
+    },
+    "documentationSources": {
+      "type": "array",
+      "description": "Repository-relative paths of the documentation read while building the profile, in the order it was read. This is what makes 'it read the README before it grepped anything' checkable after the fact.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "userNotes": {
+      "type": "string",
+      "description": "The user's own standing notes about this repository. Empty string when there are none. Regeneration never touches this field — it is the one part of the profile a rerun is guaranteed to leave byte-identical."
+    },
+    "customInstructions": {
+      "type": "string",
+      "description": "Free text injected into every analysis prompt for this repository: 'this is CQRS', 'ignore the generated/ folder', 'the Legacy project is being deleted'. Survives regeneration, and exists whether or not a profile has ever been generated."
+    },
+    "customExcludedGlobs": {
+      "type": "array",
+      "description": "Globs the user added on top of the built-in list of files whose content is withheld from the model. Stored separately from the built-in list so that the defaults can change without silently rewriting the user's choices.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "effectiveExcludedGlobs": {
+      "type": "array",
+      "description": "The built-in list and the user's additions together, sorted — what the toolbox will actually withhold. Reported so the screen can show the whole rule rather than only the part the user typed.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "characterCount": {
+      "type": "integer",
+      "description": "Length of the rendered generated document in characters. Absent until a profile is generated. This is what the size budget is measured against, because it is what is paid for on every analysis run."
+    },
+    "characterBudget": {
+      "type": "integer",
+      "description": "The hard size budget for the generated document, in characters. The user's notes and custom instructions sit outside it: they are the user's own words and are not the application's to cap."
+    },
+    "userSectionCharacters": {
+      "type": "integer",
+      "description": "Combined length of the user notes and custom instructions. Outside the budget but reported, because it is paid for on every run too."
+    },
+    "generatedAtUtc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC instant the generated document was produced."
+    },
+    "generatedFromCommit": {
+      "type": "string",
+      "description": "The commit HEAD pointed at when the profile was generated. Absent for a repository with no commits, which is also why drift cannot be computed there."
+    },
+    "generatedByProvider": {
+      "type": "string",
+      "description": "Display name of the provider profile that produced the document."
+    },
+    "generatedByModel": {
+      "type": "string",
+      "description": "Model that produced the document."
+    },
+    "driftSubstantial": {
+      "type": "boolean",
+      "description": "True when the repository has moved far enough from the profile's commit that regeneration is worth offering. False whenever there is no profile, no commit to compare against, or the difference is small."
+    },
+    "driftFilesChanged": {
+      "type": "integer",
+      "description": "Files differing between the profile's commit and HEAD. Absent when the comparison could not be made."
+    },
+    "driftTrackedFiles": {
+      "type": "integer",
+      "description": "Files git currently tracks, the denominator the changed count is judged against."
+    },
+    "driftCommitReachable": {
+      "type": "boolean",
+      "description": "False when the profile's commit is no longer in the repository — a rebase, a history rewrite, a shallow clone. The profile is then of unknown age rather than of a measurable one, and regeneration is offered on that basis."
+    }
+  },
+  "$defs": {
+    "profileModuleInfo": {
+      "title": "ProfileModuleInfo",
+      "description": "One project or module on the wire. The same shape as ProjectModuleInfo in project-profile-document.schema.json, duplicated because a schema here cannot reference one there, and held to it by ProjectProfileAgreementTests.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "path", "summary", "relatedModules"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The module's name as the repository spells it."
+        },
+        "path": {
+          "type": "string",
+          "description": "Repository-relative path of the module's root directory."
+        },
+        "summary": {
+          "type": "string",
+          "description": "What this module is responsible for, in one or two sentences."
+        },
+        "relatedModules": {
+          "type": "array",
+          "description": "Names of the modules this one depends on or is most closely coupled to.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "profileEntryPointInfo": {
+      "title": "ProfileEntryPointInfo",
+      "description": "One place a reader can start from. The same shape as ProjectEntryPointInfo, duplicated for the same reason and checked by the same test.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "purpose"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Repository-relative path of the file that is the entry point."
+        },
+        "purpose": {
+          "type": "string",
+          "description": "What starts here and what it does, in one sentence."
+        }
+      }
+    }
+  }
+}

@@ -379,7 +379,8 @@ public sealed class FileTools(RepositorySession session, IGitClient git, Toolbox
         }
 
         var status = entry.Status is { } s ? "  " + s : string.Empty;
-        return entry.Name + status;
+        var withheld = entry.IsWithheld ? "  [content withheld]" : string.Empty;
+        return entry.Name + status + withheld;
     }
 
     /// <summary>
