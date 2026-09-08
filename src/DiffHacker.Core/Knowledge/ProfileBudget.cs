@@ -26,7 +26,7 @@ public static class ProfileBudget
     /// repository — the failure this guards against in the other direction is a profile so terse
     /// it says nothing a reviewer could not have guessed.
     /// </summary>
-    public const int DefaultCharacters = 12_000;
+    public const int DefaultCharacters = 30_000;
 
     /// <summary>Floor and ceiling on a user-set budget, matched by the request schema.</summary>
     public const int MinimumCharacters = 1_000;

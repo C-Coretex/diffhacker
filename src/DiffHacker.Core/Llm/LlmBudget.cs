@@ -27,7 +27,7 @@ public sealed record LlmBudget
     public int MaxTurns { get; init; } = 300;
 
     /// <summary>Input plus output, across the whole run.</summary>
-    public long MaxTotalTokens { get; init; } = 2_000_000;
+    public long MaxTotalTokens { get; init; } = 10_000_000;
 
     /// <summary>
     /// Off by default. A mid-run cost kill throws away the tokens already paid for and
@@ -52,4 +52,13 @@ public sealed record LlmBudget
     /// model is not reading the error it is being handed.
     /// </summary>
     public int MaxConsecutiveToolFailures { get; init; } = 3;
+
+    /// <summary>
+    /// How much tool-result text stays in full in the transcript before older results are
+    /// replaced with a short stub. Every turn resends the whole conversation, so without this a
+    /// long exploration of a large changeset keeps growing the request forever and can outgrow
+    /// the model's real context window long before <see cref="MaxTotalTokens"/> — a whole-run
+    /// spend cap, not a per-request one — would ever stop it.
+    /// </summary>
+    public int ToolResultRetentionBytes { get; init; } = 200 * 1024;
 }

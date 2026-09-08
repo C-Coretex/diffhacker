@@ -16,6 +16,7 @@ export const en = {
       settings: 'Settings',
       back: 'Back',
       profile: 'Repository profile',
+      analysis: 'Analysis',
     },
   },
   host: {
@@ -306,6 +307,100 @@ export const en = {
     empty: 'No tool calls yet.',
   },
 
+  /**
+   * The analysis itself: one run over the working tree, and the graph it produces.
+   *
+   * Nothing here renders a diagram — that is Iteration 8. What these strings describe is the
+   * result existing: the clusters, the order to read them in, and the risks beside them.
+   */
+  analysis: {
+    heading: 'Analysis',
+    description:
+      'What the uncommitted change does, clustered into the parts a reviewer should read together and ordered so the most important comes first.',
+
+    run: 'Analyse this change',
+    rerun: 'Analyse again',
+    running: 'Analysing…',
+    cancel: 'Stop',
+    cancelled: 'The run was stopped. Nothing was saved.',
+    open: 'Open analysis',
+
+    emptyHeading: 'This change has not been analysed',
+    emptyBody:
+      'One run reads the working tree, explores the repository and produces the whole result at once. It costs real money, so nothing starts until you ask.',
+    cleanHeading: 'Nothing to analyse',
+    cleanBody: 'The working tree matches HEAD, so there is no change to describe.',
+
+    provenance: 'Analysed {date} by {model}, in {duration}',
+    provenanceCommit: 'Analysed {date} from commit {commit} by {model}, in {duration}',
+    usage: '{input} in / {output} out',
+    cost: '${cost}',
+    costUnknown: 'cost unknown',
+    repairs: 'Repaired {count} time(s) before it validated',
+    stale: 'The working tree has changed since this analysis. Analyse again to catch up.',
+
+    summaryHeading: 'What this change does',
+    risksHeading: 'Risks',
+    noRisks: 'No risks were reported.',
+    containersDescription:
+      'In the order a reviewer should read them. Inside each, the file to start from comes first and its consequences follow.',
+
+    containersHeading: 'Clusters',
+    containerOrder: 'Cluster {order} of {total}',
+    entryNode: 'Start here',
+    nodeCount: '{count} file(s)',
+
+    nodeTitle: 'What it does in this change',
+    nodeWhatChanged: 'What changed',
+    nodeWhyItChanged: 'Why',
+    nodeAffects: 'What it affects',
+    nodeNotes: 'Worth knowing',
+    nodeImportance: 'Importance {value} of 5',
+    nodeLines: 'lines {start}–{end}',
+
+    edgesHeading: 'How the parts connect',
+    edgeDirect: 'direct',
+    edgeConceptual: 'conceptual',
+    edgeCrosses: 'crosses clusters',
+    noEdges: 'No relationships were recorded.',
+
+    statisticsHeading: 'By the numbers',
+    statFiles: 'Files',
+    statLines: 'Lines',
+    statNodes: 'Nodes',
+    statContainers: 'Clusters',
+    statEdges: 'Edges',
+    statEdgeSplit: '{direct} direct / {conceptual} conceptual',
+    statLongestChain: 'Longest chain',
+    statFanIn: 'Most depended on',
+    statFanOut: 'Most far-reaching',
+    statRiskyNodes: 'Risky files',
+    statRisks: 'Risks recorded',
+    statNone: 'none',
+
+    diagnosticsHeading: 'What validation noticed',
+    diagnosticsBody:
+      'The result passed every rule that would have stopped it. These are the things worth knowing anyway.',
+
+    state: {
+      changed: 'changed',
+      added: 'added',
+      deleted: 'deleted',
+      unchanged_relevant: 'unchanged',
+      risky: 'risky',
+      entry_point: 'start here',
+    },
+
+    diagnostic: {
+      cycle: 'These files depend on each other in a loop.',
+      self_edge: 'A file was linked to itself.',
+      incomplete_reading_order:
+        'The model’s reading order left some files out, so cluster order and rank were used instead.',
+      unreachable_node:
+        'Nothing in its cluster leads to this file, so a reader arrives at it without being told why.',
+    },
+  },
+
   /** The documentation generator, and the one write path in the application. */
   documentation: {
     heading: 'Project documentation',
@@ -373,6 +468,21 @@ export const en = {
     profile_unreadable_answer:
       'The model answered, but not with something that could be read as a profile. Try again, or use a more capable model.',
     profile_not_found: 'There is no profile for this repository to edit.',
+
+    analysis_no_provider:
+      'No LLM provider is set up. Add one in settings, and mark it active if you have several.',
+    analysis_repository_unreadable:
+      '{path} could not be read as a git working tree. It may have been moved or deleted.',
+    analysis_clean_changeset:
+      'There is nothing uncommitted to analyse. Make a change first.',
+    analysis_unreadable_answer:
+      'The model answered, but not with something that could be read as an analysis. Try again, or use a more capable model.',
+    analysis_validation_failed:
+      'The model could not produce a result that covered the whole change, even after being asked to fix it. See the detail below, or try a more capable model.',
+    analysis_run_failed: 'The change could not be analysed. See log.txt for details.',
+
+    llm_result_rejected:
+      'The model’s answer never passed DiffHacker’s checks, even after being asked to repair it. Nothing was saved.',
 
     documentation_no_profile:
       'Analyse the repository first — documentation is written from its profile.',

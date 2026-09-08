@@ -1,5 +1,6 @@
 using DiffHacker.Core.Llm;
 using DiffHacker.Core.Providers;
+using Microsoft.Extensions.AI;
 
 namespace DiffHacker.Llm.Tests;
 
@@ -30,6 +31,27 @@ public sealed class LlmSessionTests
         result.Text.ShouldBe("It renames a method.");
         result.TurnCount.ShouldBe(1);
         result.ToolCalls.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Every_request_goes_through_the_streaming_path()
+    {
+        // A non-streaming request sits silent until the whole answer is generated, which is
+        // exactly the shape of request an idle-duration network timeout kills on a large
+        // changeset. Every turn streams the response internally instead, aggregated back into
+        // one ChatResponse before anything downstream sees it.
+        var harness = new SessionHarness();
+        harness.Provider
+            .Calls(("echo", new { text = "a" }))
+            .Says("done");
+
+        await using var session = harness.Build();
+        await session.RunAsync(
+            SessionHarness.Conversation([SessionHarness.EchoTool()]),
+            progress: null,
+            TestContext.Current.CancellationToken);
+
+        harness.Provider.StreamingRequestCount.ShouldBe(harness.Provider.Requests.Count);
     }
 
     [Fact]
@@ -255,6 +277,70 @@ public sealed class LlmSessionTests
         result.Outcome.ShouldBe(LlmRunOutcome.Failed);
         result.FailureCode.ShouldBe(LlmFailures.InvalidResponse);
         harness.Provider.Requests.Count.ShouldBe(2, "exactly one repair, not an endless argument.");
+    }
+
+    [Fact]
+    public async Task MaxSchemaRepairs_grants_more_rounds_than_the_default()
+    {
+        // A caller with more to get right — e.g. AnalysisRunner scaling this by file count — can
+        // ask for more than the one round every other conversation gets by default.
+        var harness = new SessionHarness();
+        harness.Provider
+            .Says("""{"summary":"a"}""")
+            .Says("""{"summary":"b"}""")
+            .Says("""{"summary":"c","confidence":4}""");
+
+        await using var session = harness.Build();
+        var result = await session.RunAsync(
+            SessionHarness.Conversation(format: SessionHarness.AnswerFormat) with { MaxSchemaRepairs = 2 },
+            progress: null,
+            TestContext.Current.CancellationToken);
+
+        result.Outcome.ShouldBe(LlmRunOutcome.Completed);
+        harness.Provider.Requests.Count.ShouldBe(3, "two repair rounds before the third attempt conforms.");
+    }
+
+    [Fact]
+    public async Task A_rejected_submit_result_call_is_answered_before_the_repair_prompt()
+    {
+        // ToolCall mode's answer arrives as a tool call the session intercepts rather than
+        // dispatches, so nothing ever answers it the way a real tool call is answered. Skipping
+        // that on a repair round would leave an assistant message with an unanswered tool call
+        // directly followed by a new user message — a malformed request on any provider that
+        // enforces the tool_call/tool_result pairing strictly, DeepSeek's ToolCall mode included.
+        var harness = new SessionHarness { Profile = SessionHarness.ProfileFor(LlmProviderType.DeepSeek) };
+        harness.Provider
+            .Calls(("submit_result", new { summary = "a rename" }))
+            .Calls(("submit_result", new { summary = "a rename", confidence = 4 }));
+
+        await using var session = harness.Build();
+        var result = await session.RunAsync(
+            SessionHarness.Conversation(format: SessionHarness.AnswerFormat),
+            progress: null,
+            TestContext.Current.CancellationToken);
+
+        result.Outcome.ShouldBe(LlmRunOutcome.Completed);
+
+        var repairRequest = harness.Provider.Requests[1];
+        var rejectedCallId = repairRequest.Messages
+            .SelectMany(message => message.Contents)
+            .OfType<FunctionCallContent>()
+            .First(call => call.Name == "submit_result")
+            .CallId;
+
+        repairRequest.Messages
+            .SelectMany(message => message.Contents)
+            .OfType<FunctionResultContent>()
+            .ShouldContain(result => result.CallId == rejectedCallId);
+
+        // And it comes before the repair prompt, not after — the pairing must be immediate.
+        var indexed = repairRequest.Messages.Select((message, index) => (message, index)).ToList();
+        var toolIndex = indexed.First(entry => entry.message.Role == ChatRole.Tool).index;
+        var repairPromptIndex = indexed
+            .First(entry => entry.message.Role == ChatRole.User
+                && entry.message.Text!.Contains("did not match", StringComparison.OrdinalIgnoreCase))
+            .index;
+        toolIndex.ShouldBeLessThan(repairPromptIndex);
     }
 
     [Fact]

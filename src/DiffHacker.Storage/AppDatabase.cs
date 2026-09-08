@@ -23,7 +23,7 @@ public sealed partial class AppDatabase : IAsyncDisposable
     /// Bumped whenever <see cref="MigrateAsync"/> gains a step. Stored in the file, so an older
     /// build opening a newer database can say so rather than misreading it.
     /// </summary>
-    private const int CurrentSchemaVersion = 3;
+    private const int CurrentSchemaVersion = 4;
 
     private readonly string _connectionString;
     private readonly ILogger<AppDatabase> _logger;
@@ -208,6 +208,54 @@ public sealed partial class AppDatabase : IAsyncDisposable
 
                 CREATE INDEX ix_project_profile_runs_repository
                     ON project_profile_runs (repository_path, started_at_utc DESC);
+                """,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+
+        if (version < 4)
+        {
+            // Iteration 7: the analyses themselves. One row per completed run — a cancelled or
+            // rejected run has nothing to store, which is what keeps §0.2.8's "nothing partial is
+            // ever shown" true even after a restart.
+            //
+            // The document is a versioned JSON blob with the things worth querying lifted out
+            // beside it: repository and created_at for "show me the latest", model and
+            // schema_version because both go stale and both are how an old result is recognised as
+            // one. Statistics, diagnostics and the tool trace are separate blobs rather than
+            // columns because nothing filters on them and flattening them would be a schema change
+            // every time the graph gains a number.
+            //
+            // input_tokens and output_tokens are spelled exactly as project_profile_runs spells
+            // them, deliberately: The_schema_has_no_column_that_looks_like_a_credential blanks
+            // those two names before it goes looking for the word "token", and a third spelling
+            // would fail a guard that is right to be blunt.
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                CREATE TABLE analyses (
+                    id               TEXT PRIMARY KEY,
+                    repository_path  TEXT NOT NULL,
+                    schema_version   TEXT NOT NULL,
+                    created_at_utc   TEXT NOT NULL,
+                    head_commit      TEXT NULL,
+                    provider_name    TEXT NOT NULL,
+                    model            TEXT NOT NULL,
+                    input_tokens     INTEGER NOT NULL,
+                    output_tokens    INTEGER NOT NULL,
+                    cost_usd         TEXT NULL,
+                    duration_ms      INTEGER NOT NULL,
+                    repair_rounds    INTEGER NOT NULL,
+                    document_json    TEXT NOT NULL,
+                    statistics_json  TEXT NOT NULL,
+                    diagnostics_json TEXT NOT NULL,
+                    trace_json       TEXT NOT NULL
+                );
+
+                CREATE INDEX ix_analyses_repository
+                    ON analyses (repository_path, created_at_utc DESC);
+
+                CREATE INDEX ix_analyses_model ON analyses (model);
+
+                CREATE INDEX ix_analyses_schema_version ON analyses (schema_version);
                 """,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
         }

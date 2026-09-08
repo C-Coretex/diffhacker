@@ -336,6 +336,58 @@ export class DocumentationPanel {
 }
 
 /** Every screen for one page, so a spec reads as a journey rather than as selectors. */
+
+/** The analysis screen: one run over the working tree, and the result it produced. */
+export class AnalysisScreen {
+  constructor(private readonly page: Page) {}
+
+  get openButton(): Locator {
+    return this.page.getByRole('button', { name: en.app.nav.analysis, exact: true });
+  }
+
+  get backButton(): Locator {
+    return this.page.getByRole('button', { name: en.app.nav.back });
+  }
+
+  get heading(): Locator {
+    // A card title, not a heading element.
+    return this.page.getByText(en.analysis.heading, { exact: true });
+  }
+
+  get emptyNotice(): Locator {
+    return this.page.getByText(en.analysis.emptyHeading, { exact: true });
+  }
+
+  get runButton(): Locator {
+    return this.page.getByRole('button', { name: en.analysis.run, exact: true });
+  }
+
+  get rerunButton(): Locator {
+    return this.page.getByRole('button', { name: en.analysis.rerun, exact: true });
+  }
+
+  get stopButton(): Locator {
+    return this.page.getByRole('button', { name: en.analysis.cancel, exact: true });
+  }
+
+  get runHeading(): Locator {
+    return this.page.getByText(en.toolLog.heading, { exact: true });
+  }
+
+  get summaryHeading(): Locator {
+    return this.page.getByText(en.analysis.summaryHeading, { exact: true });
+  }
+
+  get entryBadge(): Locator {
+    return this.page.getByText(en.analysis.entryNode, { exact: true });
+  }
+
+  /** The tool log's row for one tool. Several calls to the same tool give several rows. */
+  toolRow(tool: string): Locator {
+    return this.page.getByRole('row').filter({ hasText: tool });
+  }
+}
+
 export function screens(page: Page) {
   return {
     welcome: new WelcomeScreen(page),
@@ -343,6 +395,7 @@ export function screens(page: Page) {
     changeset: new ChangesetPanel(page),
     settings: new SettingsScreen(page),
     profile: new ProfileScreen(page),
+    analysis: new AnalysisScreen(page),
     documentation: new DocumentationPanel(page),
   };
 }

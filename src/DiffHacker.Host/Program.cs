@@ -1,4 +1,5 @@
 using System.Reflection;
+using DiffHacker.Core.Analyses;
 using DiffHacker.Core.Changes;
 using DiffHacker.Core.Knowledge;
 using DiffHacker.Core.Llm;
@@ -136,6 +137,7 @@ internal static class Program
         services.AddSingleton<IRecentRepositoryStore, SqliteRecentRepositoryStore>();
         services.AddSingleton<IProviderProfileStore, SqliteProviderProfileStore>();
         services.AddSingleton<IProjectProfileStore, SqliteProjectProfileStore>();
+        services.AddSingleton<IAnalysisStore, SqliteAnalysisStore>();
         services.AddSingleton(sp => SecretStoreFactory.Create(
             paths.SecretsFile,
             paths.MasterKeyFile,
@@ -162,6 +164,7 @@ internal static class Program
         services.AddSingleton<IRepositoryToolboxFactory, ToolboxFactory>();
         services.AddSingleton<IProfileBuilder, ProfileBuilder>();
         services.AddSingleton<RepositoryDocumentationWriter>();
+        services.AddSingleton<IAnalysisRunner, AnalysisRunner>();
 
         // The notifier is the bridge's outbound-notification plumbing. ToolProgressNotifier
         // carries the toolbox's report_progress out as analysis.progress, and RunEventNotifier
@@ -178,6 +181,7 @@ internal static class Program
         services.AddSingleton<ProviderRpcTarget>();
         services.AddSingleton<ChangesetRpcTarget>();
         services.AddSingleton<ProfileRpcTarget>();
+        services.AddSingleton<AnalysisRpcTarget>();
 
         services.AddSingleton(sp => new RpcBridge(
             sp.GetRequiredService<IAppShell>(),
@@ -189,6 +193,7 @@ internal static class Program
                 sp.GetRequiredService<ProviderRpcTarget>(),
                 sp.GetRequiredService<ChangesetRpcTarget>(),
                 sp.GetRequiredService<ProfileRpcTarget>(),
+                sp.GetRequiredService<AnalysisRpcTarget>(),
             ],
             sp.GetRequiredService<ILogger<RpcBridge>>()));
 

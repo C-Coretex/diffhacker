@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.7/analysis-result.schema.json",
+  "title": "AnalysisResult",
+  "description": "The complete map of one changeset: how the change clusters, how it flows, what to read first, what each part does and what is risky. Every field is required, so a field with nothing to say is an empty string, an empty array or 0. Timestamps, model name and statistics are the application's to record and are stored around this document, not inside it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "overallRisks",
+    "readingOrder",
+    "containers",
+    "nodes",
+    "edges"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "What this change does as a whole, in a few sentences, written for someone who has not opened a file yet: the goal, what it took, the shape of the result. Not a list of the containers below."
+    },
+    "overallRisks": {
+      "type": "array",
+      "description": "Risks belonging to the change as a whole rather than to any one file: a migration that cannot be rolled back, a behaviour change with no test, a contract broken for callers outside this repository. One per entry, each a complete sentence. Empty when there are none.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "readingOrder": {
+      "type": "array",
+      "description": "The single path through the whole change: every node id, once, in the order you would use walking someone through it. It crosses cluster boundaries. Normally the containers in displayOrder with each one's nodes in rank order.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "containers": {
+      "type": "array",
+      "description": "The clusters the change divides into. A cluster shares a reason for existing, which is not the same as sharing a code dependency.",
+      "items": {
+        "$ref": "#/$defs/analysisContainer"
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "description": "Every participant in the change. One node per changed file; split a file only when it holds two genuinely unrelated changes. A deleted or unreadable binary file still gets a node.",
+      "items": {
+        "$ref": "#/$defs/analysisNode"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "description": "How the nodes relate. An edge means 'to understand the target, read from the source' - reading flow, not call semantics.",
+      "items": {
+        "$ref": "#/$defs/analysisEdge"
+      }
+    }
+  },
+  "$defs": {
+    "analysisContainer": {
+      "title": "AnalysisContainer",
+      "description": "One cluster of interconnected change. Members are named by id rather than nested, because a $def here may not reference another $def.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "summary",
+        "explanation",
+        "risks",
+        "displayOrder",
+        "entryNodeId",
+        "nodeIds"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "description": "Stable identifier, lowercase with hyphens, named for what the cluster is about: 'token-budget-accounting', not 'container-3'. Unique across containers."
+        },
+        "title": {
+          "type": "string",
+          "description": "A short name for the cluster, the length of a heading."
+        },
+        "summary": {
+          "type": "string",
+          "description": "What this cluster is, in one or two sentences. Shown when the reviewer hovers the container."
+        },
+        "explanation": {
+          "type": "string",
+          "description": "The longer account: what the cluster achieves, how its parts fit together, and why it is one cluster rather than several. Markdown. No risks here."
+        },
+        "risks": {
+          "type": "array",
+          "description": "Risks belonging to the cluster as a whole rather than to a single file in it. One per entry, each a complete sentence. Empty when there are none.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "displayOrder": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Position among the containers, counting from 1 with no gaps and no repeats. Earlier containers should make later ones comprehensible."
+        },
+        "entryNodeId": {
+          "type": "string",
+          "description": "The node the reviewer starts from: the change that explains the others rather than one of its echoes. Must be one of nodeIds, must be the node whose rank is 1, and must carry the entry_point state. Exactly one per container."
+        },
+        "nodeIds": {
+          "type": "array",
+          "description": "Ids of the nodes in this container. Every node in the result belongs to exactly one container - none listed twice, none left out.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "analysisNode": {
+      "title": "AnalysisNode",
+      "description": "A file, or a specific place inside a file, participating in the change.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "filePath",
+        "symbol",
+        "startLine",
+        "endLine",
+        "title",
+        "whatChanged",
+        "whyItChanged",
+        "howItAffectsOthers",
+        "implementationNotes",
+        "risks",
+        "importance",
+        "rank",
+        "states"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Derived from filePath so it is identical on every run: exactly filePath, or filePath then '#' then a short lowercase-and-hyphens slug when one file yields several nodes ('src/Cache.cs#eviction'). Nothing else is accepted. Unique."
+        },
+        "filePath": {
+          "type": "string",
+          "description": "Repository-relative path, spelled exactly as the changed-file list spells it, and the new path for a rename. Must be a path in the changeset."
+        },
+        "symbol": {
+          "type": "string",
+          "description": "The function, type or section this node is about, when it is about a specific one. Empty when the node is the whole file, which is the common case."
+        },
+        "startLine": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "First line of the region this node covers, counting from 1. Zero when the node is the whole file."
+        },
+        "endLine": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Last line of the region, counting from 1. Zero under the same conditions as startLine."
+        },
+        "title": {
+          "type": "string",
+          "description": "A short label, the length of a heading: what this file does in this change, not its name repeated. Non-empty even for a deleted or binary file."
+        },
+        "whatChanged": {
+          "type": "string",
+          "description": "What actually changed here, concretely. Non-empty. For a binary file, say that it is binary and what its addition, removal or replacement means; do not guess at its contents."
+        },
+        "whyItChanged": {
+          "type": "string",
+          "description": "The intent behind the change, not a restatement of the diff. Non-empty. 'Because the caller in X now passes a token' is an answer; 'the method was updated' is not."
+        },
+        "howItAffectsOthers": {
+          "type": "string",
+          "description": "What downstream is affected and how - where you hand the reader on, so the next node is expected rather than a surprise. Empty for a leaf."
+        },
+        "implementationNotes": {
+          "type": "string",
+          "description": "Details worth knowing while reading the code that the diff does not make obvious: an ordering that matters, a deliberate omission, a workaround and what it is for. Empty when there are none. No risks here."
+        },
+        "risks": {
+          "type": "array",
+          "description": "What could go wrong because of this node specifically. One per entry, each a complete sentence. Empty when there are none. Never fold a risk into whatChanged, whyItChanged or implementationNotes - risks are read as their own column.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "importance": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "How much this node matters to understanding the change, 1 to 5. 5 is 'a reviewer who reads nothing else must read this'; 1 is a mechanical consequence. Spend the high numbers sparingly."
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Position within its own container, counting from 1 with no gaps and no repeats. Rank 1 is the entry node, and the ranks after it are a reading path: a node comes after everything a reader needs in order to understand it. Not importance, not size."
+        },
+        "states": {
+          "type": "array",
+          "description": "What is true of this node. Not mutually exclusive: an added file that is also the starting point and also risky carries three. Give at least one.",
+          "items": {
+            "title": "AnalysisNodeState",
+            "description": "changed, added and deleted describe what git did to the file; unchanged_relevant marks a file that did not change but must be read to follow the change; risky and entry_point are your own judgements.",
+            "type": "string",
+            "enum": [
+              "changed",
+              "added",
+              "deleted",
+              "unchanged_relevant",
+              "risky",
+              "entry_point"
+            ]
+          }
+        }
+      }
+    },
+    "analysisEdge": {
+      "title": "AnalysisEdge",
+      "description": "A relationship between two nodes, expressing reading flow: to understand the target, read from the source.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceNodeId",
+        "targetNodeId",
+        "kind",
+        "explanation",
+        "risks"
+      ],
+      "properties": {
+        "sourceNodeId": {
+          "type": "string",
+          "description": "Id of the node to read from. Must be a node in this result."
+        },
+        "targetNodeId": {
+          "type": "string",
+          "description": "Id of the node to read next. Must be a node in this result, and must not be the source."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "direct",
+            "conceptual"
+          ],
+          "description": "direct when real code backs the relationship - an import, a call, a schema both sides come from. conceptual when you inferred it from intent, workflow or reading order. Conceptual edges are wanted, not a last resort: they are how a cluster held together by intent is expressed at all. The reviewer is shown which is which."
+        },
+        "explanation": {
+          "type": "string",
+          "description": "What the relationship is and how this change affects it. Shown when the reviewer hovers the edge, so it is about the pair, not either end alone."
+        },
+        "risks": {
+          "type": "array",
+          "description": "What could go wrong in this relationship specifically - a contract now broken, an assumption the target still makes about the source. One per entry. Empty when there are none.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

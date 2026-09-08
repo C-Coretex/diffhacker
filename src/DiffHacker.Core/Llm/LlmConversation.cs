@@ -24,6 +24,37 @@ public sealed record LlmConversation
     /// the answer is validated against the schema before the run is called complete.
     /// </summary>
     public LlmResponseFormat? ResponseFormat { get; init; }
+
+    /// <summary>
+    /// Checked against the answer once it already satisfies <see cref="ResponseFormat"/>, for the
+    /// rules a JSON Schema cannot express. Returns one message per problem, each naming the thing
+    /// it is about; an empty list means the answer is accepted.
+    /// <para>
+    /// The check happens <i>inside</i> the run rather than after it, and that is the point. The
+    /// failures are handed back into the same conversation, so the model still has its whole
+    /// exploration in context and its tools still bound — it can go and read the file it forgot
+    /// rather than being asked to fix a document from memory in a fresh session. Null, the
+    /// default, means the schema is the only gate.
+    /// </para>
+    /// </summary>
+    public Func<string, IReadOnlyList<string>>? ResultValidator { get; init; }
+
+    /// <summary>
+    /// How many times a result rejected by <see cref="ResultValidator"/> may be handed back.
+    /// Once spent — and at zero, immediately — the run fails with
+    /// <see cref="LlmFailures.ResultRejected"/> rather than returning an answer that did not pass.
+    /// </summary>
+    public int MaxResultRepairs { get; init; }
+
+    /// <summary>
+    /// How many times an answer that does not match <see cref="ResponseFormat"/>'s JSON Schema
+    /// may be handed back before the run fails with <see cref="LlmFailures.InvalidResponse"/>.
+    /// Defaults to one so a caller that never sets it keeps today's behaviour: a single
+    /// structural mistake is usually a formatting slip the model fixes from what it already
+    /// wrote, and a caller with a lot to get right — many array entries, each independently
+    /// liable to a small mistake — can ask for more.
+    /// </summary>
+    public int MaxSchemaRepairs { get; init; } = 1;
 }
 
 /// <summary>

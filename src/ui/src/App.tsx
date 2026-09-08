@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BookOpenIcon, SettingsIcon } from 'lucide-react';
+import { BookOpenIcon, NetworkIcon, SettingsIcon } from 'lucide-react';
 import { describeError } from '@/i18n/errors';
 import { useT } from '@/i18n/useT';
 import { useRpc } from '@/rpc/RpcProvider';
@@ -11,6 +11,7 @@ import { GitMissingBanner } from '@/components/EnvironmentBanner';
 import { WelcomeScreen } from '@/components/WelcomeScreen';
 import { RepositoryScreen } from '@/components/RepositoryScreen';
 import { SettingsScreen } from '@/components/SettingsScreen';
+import { AnalysisScreen } from '@/components/AnalysisScreen';
 import { ProfileScreen } from '@/components/ProfileScreen';
 import { HostPanel } from '@/components/HostPanel';
 
@@ -78,7 +79,7 @@ export function App() {
         </div>
 
         <nav className="flex items-center gap-2">
-          {screen === 'settings' || screen === 'profile' ? (
+          {screen === 'settings' || screen === 'profile' || screen === 'analysis' ? (
             <Button
               variant="ghost"
               size="sm"
@@ -89,10 +90,16 @@ export function App() {
           ) : (
             <>
               {screen === 'repository' && (
-                <Button variant="ghost" size="sm" onClick={() => showScreen('profile')}>
-                  <BookOpenIcon aria-hidden />
-                  {t('app.nav.profile')}
-                </Button>
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => showScreen('analysis')}>
+                    <NetworkIcon aria-hidden />
+                    {t('app.nav.analysis')}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => showScreen('profile')}>
+                    <BookOpenIcon aria-hidden />
+                    {t('app.nav.profile')}
+                  </Button>
+                </>
               )}
               <Button variant="ghost" size="sm" onClick={() => showScreen('settings')}>
                 <SettingsIcon aria-hidden />
@@ -112,7 +119,7 @@ export function App() {
         */}
         <div
           className={
-            screen === 'repository'
+            screen === 'repository' || screen === 'analysis'
               ? 'flex flex-col gap-6'
               : 'mx-auto flex max-w-3xl flex-col gap-6'
           }
@@ -125,6 +132,7 @@ export function App() {
           {screen === 'repository' && <RepositoryScreen />}
           {screen === 'settings' && <SettingsScreen />}
           {screen === 'profile' && <ProfileScreen />}
+          {screen === 'analysis' && <AnalysisScreen />}
         </div>
       </main>
     </div>

@@ -37,8 +37,18 @@ internal sealed partial class LlmSession : ILlmSession
     private readonly List<LlmUsage> _requestUsages = [];
     private readonly List<LlmToolCallRecord> _toolCalls = [];
 
+    // Bounds what PruneOldToolResults resends: which message holds which call ids, and which
+    // of those have already been shrunk to a stub so a later pass does not redo the work.
+    private readonly List<ToolMessageEntry> _toolMessageHistory = [];
+    private readonly HashSet<int> _prunedMessageIndices = [];
+
     private LlmUsage _cumulative;
     private bool _hasRun;
+
+    // On the session rather than threaded through the loop, for the same reason the usage and
+    // the tool calls are: every result that comes out of here has to report it, and a counter
+    // passed by hand is one a future branch forgets to pass.
+    private int _resultRepairs;
 
     public LlmSession(
         IChatClient chat,
@@ -190,14 +200,48 @@ internal sealed partial class LlmSession : ILlmSession
                 var errors = StructuredOutput.Validate(answer, conversation.ResponseFormat);
                 if (errors.Count == 0)
                 {
-                    return Completed(response.Text, answer, turn);
+                    var rejections = CallerRejections(conversation, answer!);
+
+                    if (rejections.Count == 0)
+                    {
+                        return Completed(response.Text, answer, turn);
+                    }
+
+                    if (_resultRepairs < conversation.MaxResultRepairs)
+                    {
+                        // Back into the same conversation, not a fresh one. The model still has
+                        // everything it read in context and its tools are still bound, so a
+                        // "no node covers src/Cache.cs" is something it can go and fix properly
+                        // rather than paper over from the file list.
+                        _resultRepairs++;
+                        ResultRejected(_logger, _profile.Id, rejections.Count, _resultRepairs);
+                        AcknowledgeSubmission(messages, submission);
+                        messages.Add(new ChatMessage(ChatRole.User, ResultRepairPrompt(rejections)));
+                        continue;
+                    }
+
+                    return Failed(
+                        new LlmFailure(
+                            LlmFailures.ResultRejected,
+                            "The result did not pass validation after "
+                                + $"{_resultRepairs} repair round(s): "
+                                + string.Join("; ", rejections.Take(5)),
+                            null,
+                            false,
+                            null),
+                        turn,
+                        answer);
                 }
 
-                if (repairsUsed++ == 0)
+                if (repairsUsed < conversation.MaxSchemaRepairs)
                 {
-                    // One repair round trip. The model is told exactly what was wrong, which
-                    // works far more often than asking again in the same words.
+                    // The model is told exactly what was wrong, which works far more often than
+                    // asking again in the same words. MaxSchemaRepairs is usually 1: a structural
+                    // mistake is usually a formatting slip fixed from what the model already
+                    // wrote, not something more rounds converge on.
+                    repairsUsed++;
                     ResponseInvalid(_logger, _profile.Id, errors.Count);
+                    AcknowledgeSubmission(messages, submission);
                     messages.Add(new ChatMessage(ChatRole.User, RepairPrompt(errors)));
                     continue;
                 }
@@ -220,6 +264,12 @@ internal sealed partial class LlmSession : ILlmSession
                 : 0;
 
             messages.Add(new ChatMessage(ChatRole.Tool, [.. results.Select(result => result.Content)]));
+
+            _toolMessageHistory.Add(new ToolMessageEntry(
+                messages.Count - 1,
+                [.. results.Select(result => (result.Content.CallId, result.Record.ToolName))]));
+
+            PruneOldToolResults(messages);
 
             progress?.Report(new LlmRunEvent
             {
@@ -269,7 +319,16 @@ internal sealed partial class LlmSession : ILlmSession
 
             try
             {
-                var response = await _chat.GetResponseAsync(messages, options, timeout.Token).ConfigureAwait(false);
+                // Streamed rather than buffered so the connection keeps receiving bytes while a
+                // large answer is generated. A non-streaming call to a large-changeset request
+                // sits silent until the whole response is ready, which is exactly the shape of
+                // request an idle-duration network timeout kills. This stays internal — the
+                // chunks are aggregated back into one ChatResponse before anything downstream
+                // sees it, so nothing partial ever reaches the UI (still true to §0.2.8).
+                var response = await _chat
+                    .GetStreamingResponseAsync(messages, options, timeout.Token)
+                    .ToChatResponseAsync(timeout.Token)
+                    .ConfigureAwait(false);
                 RecordUsage(response.Usage);
 
                 progress?.Report(new LlmRunEvent
@@ -439,6 +498,79 @@ internal sealed partial class LlmSession : ILlmSession
         };
     }
 
+    /// <summary>
+    /// Keeps the transcript's tool-result text within
+    /// <see cref="LlmBudget.ToolResultRetentionBytes"/> by replacing the oldest results with a
+    /// short stub once the newer ones already cover the budget on their own.
+    /// <para>
+    /// Every result stays addressable by its original call id — only
+    /// <see cref="FunctionResultContent.Result"/> shrinks — so the message list stays a valid
+    /// tool-call/tool-result pairing for every provider. Idempotent: a message already pruned
+    /// measures small on the next pass, so the walk naturally moves the retention window
+    /// forward instead of re-touching it.
+    /// </para>
+    /// </summary>
+    private void PruneOldToolResults(List<ChatMessage> messages)
+    {
+        //TODO: maybe add reasoning pruning too. If we would add it though, we would need to tell the model explicitly to save important data to the Response Text, not the Reasoning
+        var retained = 0L;
+        var keepFromIndex = 0;
+
+        for (var i = _toolMessageHistory.Count - 1; i >= 0; i--)
+        {
+            var entry = _toolMessageHistory[i];
+            var content = messages[entry.MessageIndex].Contents.OfType<FunctionResultContent>();
+            retained += content.Sum(result => Encoding.UTF8.GetByteCount(result.Result as string ?? string.Empty));
+
+            if (retained > _budget.ToolResultRetentionBytes)
+            {
+                keepFromIndex = i + 1;
+                break;
+            }
+        }
+
+        for (var i = 0; i < keepFromIndex; i++)
+        {
+            var entry = _toolMessageHistory[i];
+            if (!_prunedMessageIndices.Add(entry.MessageIndex))
+            {
+                continue;
+            }
+
+            messages[entry.MessageIndex] = new ChatMessage(
+                ChatRole.Tool,
+                [.. entry.Calls.Select(call => (AIContent)new FunctionResultContent(
+                    call.CallId,
+                    $"[pruned: {call.ToolName} because of the retained window. Call it again if you need it.]"))]);
+        }
+    }
+
+    /// <summary>
+    /// Answers a submitted <c>submit_result</c> tool call before the conversation continues past
+    /// it, when there was one.
+    /// <para>
+    /// <see cref="StructuredOutputMode.ToolCall"/>'s answer arrives as a tool call this session
+    /// intercepts and reads as the final answer rather than dispatches — so nothing ever responds
+    /// to it the way a real tool call is answered. That is invisible when the answer is accepted:
+    /// the run just ends there. A repair round does not end there; it appends a further message
+    /// on the same turn, and an assistant message whose tool call was never answered followed by
+    /// a new message is a malformed request on any provider that enforces the pairing strictly —
+    /// DeepSeek's default mode among them, which is why a repair round could 400 on the very next
+    /// request even though nothing else about the conversation changed.
+    /// </para>
+    /// </summary>
+    private static void AcknowledgeSubmission(List<ChatMessage> messages, FunctionCallContent? submission)
+    {
+        if (submission is null)
+        {
+            return;
+        }
+
+        messages.Add(new ChatMessage(
+            ChatRole.Tool,
+            [new FunctionResultContent(submission.CallId, "Received; a correction was requested next.")]));
+    }
+
     private ChatOptions BuildOptions(
         LlmConversation conversation,
         IEnumerable<LlmToolDefinition> tools,
@@ -471,6 +603,38 @@ internal sealed partial class LlmSession : ILlmSession
          {string.Join(Environment.NewLine, errors.Take(20).Select(error => "- " + error))}
 
          Reply with the corrected JSON alone. Do not explain, and do not call any more tools.
+         """;
+
+    /// <summary>
+    /// Runs the caller's own check over an answer that already satisfies the schema.
+    /// <para>
+    /// Deliberately not wrapped in a try/catch. A validator that throws is our bug, and the
+    /// alternative to it surfacing is accepting a result nothing checked.
+    /// </para>
+    /// </summary>
+    private static IReadOnlyList<string> CallerRejections(LlmConversation conversation, string answer) =>
+        conversation.ResultValidator is { } validate ? validate(answer) : [];
+
+    /// <summary>
+    /// What is said when the answer was well-formed but wrong.
+    /// <para>
+    /// Unlike <see cref="RepairPrompt"/> this one <i>invites</i> tool calls. A schema violation
+    /// is a formatting mistake the model can fix from what it already wrote; a rejected result
+    /// usually means something in the repository was missed, and fixing that honestly means
+    /// going back and looking.
+    /// </para>
+    /// </summary>
+    private static string ResultRepairPrompt(IReadOnlyList<string> rejections) =>
+        $"""
+         Your answer matched the schema but failed the checks it has to pass:
+
+         {string.Join(Environment.NewLine, rejections.Take(30).Select(rejection => "- " + rejection))}
+
+         Fix exactly these and send the whole document again. Your tools are still available —
+         read whatever you need first, because a problem fixed by looking is fixed properly.
+
+         Do not delete anything to make a check pass, and do not invent anything either. A file
+         with no node gets a real one; a reference to a missing id gets corrected, not removed.
          """;
 
     private void RecordUsage(UsageDetails? usage)
@@ -550,9 +714,15 @@ internal sealed partial class LlmSession : ILlmSession
         Usage = _cumulative,
         TurnCount = turn,
         ToolCalls = _toolCalls,
+        ResultRepairs = _resultRepairs,
     };
 
-    private LlmRunResult Failed(LlmFailure failure, int turn) => new()
+    /// <param name="structuredJson">
+    /// The answer that was rejected, where there was one. Carried on a failure so the caller can
+    /// show the user what it actually got — a result that kept failing the caller's own rules is
+    /// worth seeing, unlike a transport error where there is nothing to show.
+    /// </param>
+    private LlmRunResult Failed(LlmFailure failure, int turn, string? structuredJson = null) => new()
     {
         // A context overflow is its own outcome, not a failure code with a label. Iteration 7
         // has to branch on it (requirement 6), and that reads better as an outcome than as a
@@ -562,9 +732,11 @@ internal sealed partial class LlmSession : ILlmSession
             : LlmRunOutcome.Failed,
         FailureCode = failure.FailureCode,
         ProviderMessage = failure.ProviderMessage,
+        StructuredJson = structuredJson,
         Usage = _cumulative,
         TurnCount = turn,
         ToolCalls = _toolCalls,
+        ResultRepairs = _resultRepairs,
     };
 
     private LlmRunResult BudgetStop(string explanation, int turn)
@@ -585,6 +757,7 @@ internal sealed partial class LlmSession : ILlmSession
             Usage = _cumulative,
             TurnCount = turn,
             ToolCalls = _toolCalls,
+            ResultRepairs = _resultRepairs,
         };
     }
 
@@ -605,6 +778,9 @@ internal sealed partial class LlmSession : ILlmSession
 
         public required LlmToolCallRecord Record { get; init; }
     }
+
+    /// <summary>Where one turn's tool results live in <c>messages</c>, for <see cref="PruneOldToolResults"/>.</summary>
+    private sealed record ToolMessageEntry(int MessageIndex, IReadOnlyList<(string CallId, string ToolName)> Calls);
 
     [LoggerMessage(
         EventId = 4002,
@@ -648,4 +824,15 @@ internal sealed partial class LlmSession : ILlmSession
         Level = LogLevel.Warning,
         Message = "Run on provider {ProfileId} hit a budget limit: {Explanation}")]
     private static partial void BudgetStopped(ILogger logger, string profileId, string explanation);
+
+    [LoggerMessage(
+        EventId = 4009,
+        Level = LogLevel.Warning,
+        Message = "Provider {ProfileId} returned a schema-valid result the caller rejected for "
+            + "{RejectionCount} reason(s); repair round {Round}.")]
+    private static partial void ResultRejected(
+        ILogger logger,
+        string profileId,
+        int rejectionCount,
+        int round);
 }

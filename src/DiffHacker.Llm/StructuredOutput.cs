@@ -3,7 +3,9 @@ using System.Text.Json;
 using DiffHacker.Core.Llm;
 using DiffHacker.Core.Providers;
 using Microsoft.Extensions.AI;
+using Newtonsoft.Json.Linq;
 using NJsonSchema;
+using NJsonSchema.Validation;
 
 namespace DiffHacker.Llm;
 
@@ -200,7 +202,50 @@ internal static class StructuredOutput
                 $"The schema '{format.SchemaName}' could not be parsed.", ex);
         }
 
-        return [.. schema.Validate(json).Select(error => error.ToString())];
+        try
+        {
+            return [.. schema.Validate(json).Select(Describe)];
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // The validator parses before it validates, and it throws rather than reporting when
+            // what it was handed is not JSON at all. That is a real answer a model can give —
+            // prose instead of a document, which is exactly what the weakest structured-output
+            // tier invites — so it is the model's mistake to report, not an exception to escape
+            // the run with.
+            return [$"The response was not valid JSON: {ex.Message}"];
+        }
+    }
+
+    /// <summary>
+    /// Names the array element an error is in, when it is one and has an id.
+    /// <para>
+    /// A bare NJsonSchema message reads as <c>#/nodes/47/state: ... is required</c> — accurate,
+    /// but the model has to count array entries to find element 47. Every schema this validates
+    /// against identifies its array elements with an <c>id</c> field (§0.6), so walking from the
+    /// error's own token up to the nearest object that has one turns that into "which node",
+    /// which is what a repair round actually needs to act on.
+    /// </para>
+    /// </summary>
+    private static string Describe(ValidationError error)
+    {
+        var message = error.ToString();
+        return NearestId(error.Token) is { } id ? $"{message} (id \"{id}\")" : message;
+    }
+
+    private static string? NearestId(JToken? token)
+    {
+        for (var current = token; current is not null; current = current.Parent)
+        {
+            if (current is JObject obj
+                && obj.TryGetValue("id", out var idValue)
+                && idValue.Type == JTokenType.String)
+            {
+                return idValue.Value<string>();
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

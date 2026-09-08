@@ -361,3 +361,144 @@ scripted OpenAI-compatible endpoint on localhost — no test in this repository 
 same count came to render as `1,200` in the WebView and `1200` under jsdom. DiffHacker ships English
 only (§0.6) and the host runs with `InvariantGlobalization`, so `i18n/format.ts` owns one explicit
 rule instead of an inherited one.
+
+## The analysis pipeline
+
+### Validation happens inside the run, not after it
+
+The graph rules a JSON Schema cannot express — every changed file covered, every node in exactly one
+container, one entry node each, no dangling edge — are checked by a delegate the caller hands to
+`LlmConversation`, and `LlmSession` runs it beside the schema check it already did.
+
+Checking afterwards was the obvious shape and it is the wrong one. A result rejected after
+`RunAsync` returns can only be repaired by a model that has forgotten everything it read: the session
+is single-use by contract, and a fresh one starts with the file list and nothing else. Handed the
+failures inside the conversation, the model still has its exploration in context and its tools still
+bound, so "no node covers `src/Cache.cs`" is something it can fix by going and looking rather than by
+writing a node from the metadata it was given. Fixing it from metadata is close enough to inventing
+data that requirement 4 forbids it.
+
+The cost of doing it this way is one additive change to Iteration 4's contract —
+`ResultValidator` and `MaxResultRepairs` on `LlmConversation`, `ResultRepairs` on `LlmRunResult`,
+`llm_result_rejected` in `LlmFailures`. Every existing caller passes no validator and behaves exactly
+as before.
+
+**Two repair rounds, then the run fails loudly.** One round fixes what was reported; a second catches
+what the fix knocked over, which happens — moving a node between containers can leave the one it left
+without an entry node. A model that has not converged by then usually will not, and every round
+re-emits the whole document at the model's output rate, which on a five-hundred-file change is the
+expensive half of the run.
+
+### Errors fail a run; warnings travel with it
+
+`AnalysisValidator` produces diagnostics at two severities, and the split is what keeps repair rounds
+for real breakage. An uncovered file or a dangling edge makes the result unusable. A cycle does not:
+mutual dependencies exist in real code, and rejecting the answer would be asking the model to
+misdescribe the repository. Reading direction stays unambiguous regardless, because it comes from
+container `displayOrder` and node `rank` — the model's own layout intent — rather than from following
+edges.
+
+An incomplete reading order is a warning for the same reason: container order and rank already define
+a complete traversal, so there is nothing to ask the model that it has not already said, and
+`AnalysisReadingOrder` derives one rather than spending a round.
+
+### Node ids keep the path as their whole prefix
+
+`src/Cache.cs`, or `src/Cache.cs#eviction` when one file genuinely holds two unrelated changes. §0.6
+says identity is path-derived and stable across re-runs, and later iterations key reviewed-state off
+it; an id the model chose freely would reset every time it phrased something differently. Validation
+enforces the form, so for the ordinary one-node-per-file case stability is a property of the shape
+rather than a hope about the model.
+
+### The longest chain is measured over the condensation
+
+Accepting cycles means the graph the statistics walk can contain one, and a longest-path walk over a
+cyclic graph does not terminate. `AnalysisGraph` measures it over the strongly connected components
+instead, so a cycle counts as the one thing it is. Tarjan is written with an explicit stack rather
+than recursion because §0.2.10 allows fifteen hundred files and a graph that deep is not something to
+hand to the call stack.
+
+### Only completed analyses are stored
+
+There is no method on `IAnalysisStore` for saving a partial one, and that is the design rather than
+an omission: an interface that cannot express it cannot accidentally be made to. A cancelled run
+rethrows with its usage readable on the session, a failed one comes back as a result carrying what it
+spent, and neither reaches SQLite. §0.2.8 is a promise about what the user sees, and it survives a
+restart only if nothing partial was written in the first place.
+
+### The generator attaches enum converters to the type, not only to the property
+
+NJsonSchema points each enum *property* at a converter and, for an enum inside an array, emits a TODO
+about `ItemConverterType` — which System.Text.Json has no equivalent of. Node states are the first
+array of enums in `/schema`, so `unchanged_relevant` would have reached the wire as
+`Unchanged_relevant` with nothing failing until someone read a stored analysis back.
+`ContractGenerator.AttachEnumConverters` puts `[JsonConverter(typeof(SchemaEnumConverter<T>))]` on the
+generated enum itself, which applies wherever it appears, collections included.
+
+The same work found that `StructuredOutput.Validate` threw out of a run when handed something that
+was not JSON at all — a real answer for a model to give, and the whole point of the weakest
+structured-output tier is asking it not to. It now comes back as a validation failure the run can
+repair or fail on.
+
+### The prompt is the product, so it is tested like one
+
+The first draft of `AnalysisPrompt.SystemPrompt()` specified the mechanics well and the purpose
+badly, which is backwards for the thing this application exists to do. `rank` was defined only as
+"1, 2, 3 with no gaps" — a shape any ordering satisfies, so a model would reach for importance or
+path order and produce a pile of files rather than a walk. `readingOrder` appeared once, as a
+constraint. The single container example given was a code-dependency chain, which quietly taught
+that clusters are held together by imports.
+
+The rewrite is organised around the reader instead: what they do with the answer, how a starting
+point is chosen, what orders the nodes after it, and — stated in its own section, before any of the
+mechanics — that **this is not a dependency graph**. A program could compute the imports; the model
+is here for the connections a program cannot see, and a flag with its migration and its changelog
+line is one cluster even though nothing references anything. Conceptual edges are described as
+wanted rather than tolerated, because they are the only way a cluster held together by intent can be
+expressed at all.
+
+`AnalysisPromptTests` pins the ideas rather than the wording, so the prose can be improved without
+rewriting the tests — but not silently dropped. It asserts against a whitespace-collapsed copy of the
+prompt: the prompt is a wrapped raw string literal, and a phrase that happens to straddle a line
+break is not a different phrase. Without that, rewrapping a paragraph fails a test for no reason and
+the cheapest fix is to contort the prose to keep the test green, which is exactly backwards.
+
+### The prompt owns the guidance; a schema description owns its field
+
+That rewrite duplicated the reading-path guidance into the schema descriptions for `entryNodeId`,
+`rank`, `displayOrder`, `readingOrder`, `containers`, `edges` and `kind`, on the reasoning that they
+travel to the provider as the response format and are read alongside the system prompt. Both halves
+of that are true. What it missed is that *both* are re-sent on **every request**, so a paragraph
+written twice is paid for twice on every turn of a run that may take three hundred of them.
+
+Measured, the fixed preamble of one analysis request was ~35,000 characters — system prompt 9,563,
+response schema 15,671, ten tool descriptions ~10,000 — about 8,800 tokens before a single changed
+file is named, against a 300-turn, 2,000,000-token budget. The duplicated guidance alone was ~4,000
+characters a turn, and it taught the model nothing the prompt had not already said.
+
+So the division is fixed: the **prompt owns the guidance** — how to cluster, how to choose a starting
+point, what rank means, why a conceptual edge is wanted — and a **schema description owns only what
+its field is and the constraint the validator will check**. Short factual restatement across the two
+is fine and often useful next to the field being emitted; paragraphs of persuasion are not. Trimming
+to that line, plus compressing the prompt itself and the tool descriptions, took the preamble to
+~28,500 characters (~7,100 tokens) with every idea `AnalysisPromptTests` pins still present. The same
+rule governs `ProfilePrompt` and `project-profile-document.schema.json`.
+
+Two things are worth keeping in view when editing any of this. Tool descriptions carry a
+200-character floor in `ToolboxCatalogTests`, which is a floor and not a target — each still has to
+say what its tool will not do and which tool to reach for instead, and that content is why they were
+only trimmed ~11%. And the profile's own size limit is the same argument one level out: a profile is
+re-sent on every turn of every *future* review of that repository, which is why `ProfilePrompt` marks
+it as a hard limit rather than a target.
+
+### Reachability is a warning, and it is the closest thing to a check on the point
+
+`AnalysisValidator.CheckReachability` walks each container from its entry node along the edges whose
+ends both sit inside it. A node nothing leads to is one the reviewer arrives at cold, having to work
+out for themselves why it is in front of them — which is the work the product is supposed to have
+already done.
+
+It is a warning rather than an error on purpose. The node may genuinely belong there with the
+connection merely left unstated, and failing the run would spend a repair round buying an edge the
+model might invent rather than find. Cross-container edges do not count as a way in: §0.6 keeps them
+out of the layout, so they are not something a reader follows to arrive somewhere.

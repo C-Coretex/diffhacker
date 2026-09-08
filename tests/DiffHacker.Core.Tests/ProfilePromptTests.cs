@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using DiffHacker.Core.Knowledge;
 
 namespace DiffHacker.Core.Tests;
@@ -114,12 +115,18 @@ public sealed class ProfilePromptTests
     [Fact]
     public void The_system_prompt_states_the_budget_and_the_reading_order()
     {
-        var prompt = ProfilePrompt.SystemPrompt(12_000);
+        // Whitespace-collapsed, because the prompt is a wrapped raw string literal and a phrase
+        // that happens to straddle a line break is not a different phrase.
+        var prompt = Regex.Replace(ProfilePrompt.SystemPrompt(12_000), @"\s+", " ");
 
         prompt.ShouldContain("12,000");
         prompt.ShouldContain("get_project_profile");
-        prompt.ShouldContain("documentation before you look at any code");
+        prompt.ShouldContain("documentation before any code");
         prompt.ShouldContain("report_progress");
+        prompt.ShouldContain("Older tool results may be pruned");
+        prompt.ShouldContain("Only tool results are pruned");
+        prompt.ShouldContain("state it clearly and concisely in your reasoning");
+        prompt.ShouldContain("call the tool again");
     }
 
     [Fact]

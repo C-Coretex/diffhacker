@@ -1,0 +1,133 @@
+using System.Reflection;
+using System.Runtime.Serialization;
+using System.Text.Json.Serialization;
+
+namespace DiffHacker.Contracts.Tests;
+
+/// <summary>
+/// One container shape twice, one node shape twice, one edge shape twice, and the two enums that
+/// travel with them.
+/// <para>
+/// A schema cannot reference a definition in another file, so the document the model answers with
+/// and the view the renderer reads each carry their own copy of the graph. That is a survivable
+/// amount of duplication only while something checks the copies cannot drift — which is this.
+/// </para>
+/// <para>
+/// The view's copies carry a few fields the model was never asked for: which container a node is
+/// in, and whether an edge crosses one. Those are resolved by the host from what the model did say,
+/// so they are named as exceptions here rather than being allowed to hide a real divergence.
+/// </para>
+/// </summary>
+public sealed class AnalysisAgreementTests
+{
+    [Fact]
+    public void The_two_container_shapes_agree()
+    {
+        Shape<AnalysisContainerInfo>().ShouldBe(Shape<AnalysisContainer>());
+    }
+
+    [Fact]
+    public void The_two_node_shapes_agree_apart_from_the_container_the_host_resolves()
+    {
+        Shape<AnalysisNodeInfo>()
+            .Where(static entry => entry.Name is not ("containerId" or "states"))
+            .ShouldBe(
+                Shape<AnalysisNode>().Where(static entry => entry.Name != "states"),
+                ignoreOrder: true);
+
+        // The states arrays hold differently-named copies of the same enum, so they are compared
+        // by their values instead, just below.
+        Names<AnalysisNodeInfo>().ShouldContain("states");
+        Names<AnalysisNode>().ShouldContain("states");
+    }
+
+    [Fact]
+    public void The_two_edge_shapes_agree_apart_from_the_crossing_the_host_computes()
+    {
+        Shape<AnalysisEdgeInfo>()
+            .Where(static entry => entry.Name != "crossesContainers" && entry.Name != "kind")
+            .ShouldBe(Shape<AnalysisEdge>().Where(static entry => entry.Name != "kind"), ignoreOrder: true);
+    }
+
+    [Fact]
+    public void The_two_node_state_enums_agree()
+    {
+        string[] expected = ["changed", "added", "deleted", "unchanged_relevant", "risky", "entry_point"];
+
+        WireValues<AnalysisNodeState>().ShouldBe(expected, ignoreOrder: true);
+        WireValues<AnalysisNodeInfoState>().ShouldBe(expected, ignoreOrder: true);
+    }
+
+    [Fact]
+    public void The_two_edge_kind_enums_agree()
+    {
+        string[] expected = ["direct", "conceptual"];
+
+        WireValues<AnalysisEdgeKind>().ShouldBe(expected, ignoreOrder: true);
+        WireValues<AnalysisEdgeInfoKind>().ShouldBe(expected, ignoreOrder: true);
+    }
+
+    [Fact]
+    public void The_node_shape_is_the_one_the_renderer_was_written_against()
+    {
+        // Pinned so that dropping a field from both copies at once is still a failure. Every one
+        // of these is either shown to the reviewer or used to lay the diagram out.
+        Names<AnalysisNode>().ShouldBe(
+            [
+                "id", "filePath", "symbol", "startLine", "endLine", "title", "whatChanged",
+                "whyItChanged", "howItAffectsOthers", "implementationNotes", "risks", "importance",
+                "rank", "states",
+            ],
+            ignoreOrder: true);
+    }
+
+    [Fact]
+    public void Risks_are_their_own_field_on_every_shape_that_can_carry_one()
+    {
+        // §0.2 keeps risks out of the explanations so a reviewer can read them as a column. A
+        // schema that merged them would be the quiet way to lose that, so the separation is
+        // asserted rather than assumed.
+        foreach (var shape in new[] { Names<AnalysisNode>(), Names<AnalysisContainer>(), Names<AnalysisEdge>() })
+        {
+            shape.ShouldContain("risks");
+        }
+
+        Names<AnalysisResult>().ShouldContain("overallRisks");
+        Names<AnalysisNodeInfo>().ShouldContain("risks");
+    }
+
+    [Fact]
+    public void Every_diagnostic_severity_the_host_can_report_has_a_wire_value()
+    {
+        WireValues<AnalysisDiagnosticInfoSeverity>().ShouldBe(["error", "warning"], ignoreOrder: true);
+    }
+
+    private static string[] Names<T>() =>
+        [.. Shape<T>().Select(static entry => entry.Name)];
+
+    /// <summary>
+    /// A record's wire shape: its JSON property names paired with the simple name of each type, so
+    /// that two generated copies can be compared without their element types — which differ by
+    /// namespace-local name — getting in the way.
+    /// </summary>
+    private static (string Name, string Type)[] Shape<T>() =>
+        [.. typeof(T)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(property => (
+                Name: property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name,
+                Type: Describe(property.PropertyType)))
+            .OrderBy(entry => entry.Name, StringComparer.Ordinal)];
+
+    private static string Describe(Type type) =>
+        type.IsGenericType
+            ? $"{type.Name}<{string.Join(',', type.GetGenericArguments().Select(argument => argument.Name))}>"
+            : type.Name;
+
+    private static string[] WireValues<TEnum>()
+        where TEnum : struct, Enum =>
+        [.. typeof(TEnum)
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Select(field => field.GetCustomAttributes(typeof(EnumMemberAttribute), false)
+                .Cast<EnumMemberAttribute>()
+                .FirstOrDefault()?.Value ?? field.Name)];
+}

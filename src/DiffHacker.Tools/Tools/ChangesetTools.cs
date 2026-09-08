@@ -20,20 +20,18 @@ public sealed class ChangesetTools(RepositorySession session, IGitClient git, To
     [McpServerTool(Name = "list_changed_files", ReadOnly = true, OpenWorld = false)]
     [Description(
         """
-        Lists every file that differs between the working tree and HEAD. This is the change under
-        review, and its full extent — nothing is summarised away or hidden.
+        Lists every file that differs between the working tree and HEAD: the change under review,
+        in full. Start here — every other tool explores around what this returns.
 
-        Start here. Every other tool exists to explore around what this returns.
+        Each row: status (A added, M modified, D deleted, R renamed, C copied), lines added and
+        removed, hunk count, language, project or module, path. A dash means "not counted" —
+        binary files and submodules have no line counts.
 
-        Each row is: status (A added, M modified, D deleted, R renamed, C copied), lines added and
-        removed, hunk count, detected language, the project or module the file belongs to, and the
-        path. A dash means "not counted" — binary files and submodules have no line counts.
+        Returns no file content. Use get_file_diff for what changed inside a file, read_file for
+        the whole file.
 
-        Returns no file content. Use get_file_diff to see what changed inside a file, or read_file
-        to see the whole file.
-
-        Filters combine with AND. Large changesets are paged: if the result says it was truncated,
-        call again with the cursor it gives you.
+        Filters combine with AND. Large changesets are paged; if the result says truncated, call
+        again with the cursor it gives you.
         """)]
     public async Task<string> ListChangedFilesAsync(
         [Description("Only files whose path matches this glob, e.g. 'src/**/*.ts'. Omit for all files.")]
@@ -78,17 +76,14 @@ public sealed class ChangesetTools(RepositorySession session, IGitClient git, To
     [McpServerTool(Name = "get_file_diff", ReadOnly = true, OpenWorld = false)]
     [Description(
         """
-        Returns the unified diff for one or more changed files: exactly which lines were added and
-        removed, with surrounding context.
+        Returns the unified diff for one or more changed files: which lines were added and
+        removed, with surrounding context. This is the tool for understanding what a change
+        actually did. Ask for several related files in one call rather than one at a time.
 
-        This is the tool for understanding what a change actually did. Ask for several related
-        files in one call rather than one at a time.
+        Only works for files in list_changed_files; for an unchanged file use read_file.
 
-        Only works for files that appear in list_changed_files. For an unchanged file, use
-        read_file instead.
-
-        Binary files report their size rather than a diff. Very large diffs are truncated per file
-        and the whole result is capped; if you need all of a long diff, ask for that file alone.
+        Binary files report their size instead of a diff. Long diffs are truncated per file and
+        the result is capped, so ask for a single file when you need all of a long one.
         """)]
     public async Task<string> GetFileDiffAsync(
         [Description("Repository-relative paths, exactly as they appear in list_changed_files. At most 10 per call.")]
@@ -146,12 +141,12 @@ public sealed class ChangesetTools(RepositorySession session, IGitClient git, To
     [McpServerTool(Name = "get_path_info", ReadOnly = true, OpenWorld = false)]
     [Description(
         """
-        Describes paths without reading them: which project or module owns the path, its detected
-        language, its size, and whether it is part of the change under review.
+        Describes paths without reading them: owning project or module, detected language, size,
+        and whether the path is part of the change under review.
 
-        Cheap. Use it to orient yourself before spending a read_file or a get_file_diff, and to
-        find out why a path you expected is not readable — it distinguishes "does not exist" from
-        "exists but is ignored by git", which no other tool does.
+        Cheap. Use it to orient yourself before spending a read_file or get_file_diff, and to find
+        out why a path you expected is not readable — it alone distinguishes "does not exist" from
+        "exists but is ignored by git".
         """)]
     public async Task<string> GetPathInfoAsync(
         [Description("Repository-relative paths to describe. At most 50 per call.")]

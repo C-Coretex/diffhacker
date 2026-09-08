@@ -159,5 +159,43 @@ public sealed class LlmBudgetTests
         budget.RequestTimeout.ShouldBe(TimeSpan.FromMinutes(10));
         budget.MaxCostUsd.ShouldBeNull(
             "a mid-run cost kill wastes everything already spent; Iteration 13's pre-run estimate is the place to prevent an expensive run.");
+        budget.ToolResultRetentionBytes.ShouldBe(200 * 1024);
+    }
+
+    [Fact]
+    public async Task Old_tool_results_are_pruned_once_they_outgrow_the_retention_window()
+    {
+        // Every turn resends the whole transcript, so without a retention window a long
+        // exploration keeps growing the request forever. Three 100 KB results against a 150 KB
+        // window should leave only the most recent one in full.
+        var harness = new SessionHarness { Budget = LlmBudget.Default with { ToolResultRetentionBytes = 150 * 1024 } };
+
+        var bigTool = new LlmToolDefinition
+        {
+            Name = "big",
+            Description = "Returns a large result.",
+            ParametersSchemaJson = """{"type":"object","properties":{},"additionalProperties":false}""",
+            Invoke = (_, _) => ValueTask.FromResult(LlmToolResult.Success(new string('x', 100 * 1024))),
+        };
+
+        harness.Provider
+            .Calls(("big", new { }))
+            .Calls(("big", new { }))
+            .Calls(("big", new { }))
+            .Says("done");
+
+        await using var session = harness.Build();
+        var result = await session.RunAsync(
+            SessionHarness.Conversation([bigTool]),
+            null,
+            TestContext.Current.CancellationToken);
+
+        result.Outcome.ShouldBe(LlmRunOutcome.Completed);
+
+        var toolResults = harness.Provider.LastRequest.ToolResults;
+        toolResults.Count.ShouldBe(3);
+        toolResults.Count(text => text.Contains("pruned")).ShouldBe(2);
+        toolResults[^1].ShouldNotContain("pruned");
+        toolResults[^1].Length.ShouldBe(100 * 1024);
     }
 }

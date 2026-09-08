@@ -25,11 +25,11 @@ public sealed partial class ContextTools(
         Returns the stored profile for this repository: what it is, how it is laid out, the
         conventions it follows, and anything previously learned about it.
 
-        Call this first, before exploring. It is free, and when a profile exists it will save you
-        a great many calls.
+        Call this first, before exploring. It is free, and where a profile exists it saves a great
+        many calls.
 
-        When no profile has been stored, that is what it says. Explore the repository yourself in
-        that case — get_repository_tree and the manifest files it shows you are the usual start.
+        Says so when no profile is stored. Explore yourself in that case — get_repository_tree and
+        the manifest files it reveals are the usual start.
         """)]
     public async Task<string> GetProjectProfileAsync(CancellationToken cancellationToken = default)
     {
@@ -49,16 +49,14 @@ public sealed partial class ContextTools(
     [McpServerTool(Name = "report_progress", ReadOnly = true, OpenWorld = false)]
     [Description(
         """
-        Tells the reviewer what you are doing right now. Call it whenever you move to a new stage
-        of your work — not for every tool call, but every time the honest answer to "what is it
-        doing?" changes.
+        Tells the reviewer what you are doing right now. Call it when you move to a new stage —
+        not for every tool call, but every time the honest answer to "what is it doing?" changes.
 
-        The person waiting sees this text. Without it they see a spinner and have no idea whether
-        you are reading files, forming a picture, or nearly finished. Write for them: "reading the
-        authentication changes", not "calling search_text".
+        The person waiting sees this text; without it they see a spinner. Write for them: "reading
+        the authentication changes", not "calling search_text".
 
-        Returns immediately and never fails. It has no effect on your analysis; it is purely how
-        the work becomes visible while it happens.
+        Returns immediately, never fails, and has no effect on your analysis. It is purely how the
+        work becomes visible while it happens.
         """)]
     public async Task<string> ReportProgressAsync(
         [Description("One short sentence, in your own words, about what you are doing now.")]

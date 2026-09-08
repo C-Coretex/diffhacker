@@ -115,12 +115,67 @@ public sealed class StructuredOutputTests
         StructuredOutput.Validate(answer, SessionHarness.AnswerFormat).ShouldNotBeEmpty();
     }
 
+    [Theory]
+    [InlineData("I had a look and the change is mostly a rename.")]
+    [InlineData("{\"summary\": unquoted}")]
+    public void An_answer_that_is_not_JSON_at_all_is_reported_rather_than_thrown(string answer)
+    {
+        // A model replying in prose is a real answer, and the weakest structured-output tier is
+        // nothing but a request that it does not. It has to come back as something the run can
+        // repair or fail on, not as an exception from the JSON reader.
+        var errors = StructuredOutput.Validate(answer, SessionHarness.AnswerFormat);
+
+        errors.ShouldNotBeEmpty();
+        errors[0].ShouldContain("not valid JSON");
+    }
+
     [Fact]
     public void A_conforming_document_produces_no_errors()
     {
         StructuredOutput.Validate(
             """{"summary":"a rename","confidence":4}""",
             SessionHarness.AnswerFormat).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void An_error_inside_an_identified_array_element_names_its_id()
+    {
+        // A bare NJsonSchema message is "#/items/0: ... is required" — accurate, but a model has
+        // to count array entries to find element 0. §0.6's node ids (and every array of them in
+        // the analysis schema) exist so a repair prompt can say which one instead.
+        var format = new LlmResponseFormat
+        {
+            SchemaName = "items_test",
+            SchemaJson =
+                """
+                {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "state": { "type": "string" }
+                        },
+                        "required": ["id", "state"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["items"],
+                  "additionalProperties": false
+                }
+                """,
+        };
+
+        var errors = StructuredOutput.Validate(
+            """{"items":[{"id":"src/Cache.cs"},{"id":"src/Other.cs","state":"ok"}]}""",
+            format);
+
+        errors.ShouldContain(error => error.Contains("(id \"src/Cache.cs\")", StringComparison.Ordinal));
+        errors.ShouldNotContain(error => error.Contains("src/Other.cs", StringComparison.Ordinal));
     }
 
     [Fact]

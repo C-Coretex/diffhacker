@@ -32,6 +32,9 @@
   </Folder>
   <Folder Name="/schema/">
     <File Path="../schema/analysis-progress.schema.json" />
+    <File Path="../schema/analysis-request.schema.json" />
+    <File Path="../schema/analysis-result.schema.json" />
+    <File Path="../schema/analysis-view.schema.json" />
     <File Path="../schema/browse-folder-request.schema.json" />
     <File Path="../schema/browse-folder-result.schema.json" />
     <File Path="../schema/changeset-request.schema.json" />

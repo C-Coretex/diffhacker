@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.6/project-profile-document.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.7/project-profile-document.schema.json",
   "title": "ProjectProfileDocument",
-  "description": "Standing knowledge about one repository, as the model produces it. This document is the shape asked of the provider through LlmResponseFormat and validated against on the way back, so the thing the model is told to write and the thing the host deserialises are one artifact rather than two that drift. It carries no timestamps, no commit and no user-authored text: those belong to the stored profile around it, not to the model's answer. Everything is required so that providers offering strict json_schema enforcement can be given it verbatim; a field the model has nothing to say about comes back as an empty string or an empty array, which is a claim it can make honestly.",
+  "description": "Standing knowledge about one repository, reused by every future review of it. Every field is required, so a field with nothing to say comes back as an empty string or an empty array. Timestamps, commit and user-authored notes belong to the stored profile around this document, not to your answer.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -52,7 +52,7 @@
     },
     "documentationSources": {
       "type": "array",
-      "description": "Repository-relative paths of the documentation actually read while building this profile — README, ARCHITECTURE, CONTRIBUTING, agent instructions, decision records. Recorded because reading the documentation before exploring code is the cheapest good context available, and because it is the only way to check afterwards that it happened.",
+      "description": "Repository-relative paths of the documentation you actually read while building this profile - README, ARCHITECTURE, CONTRIBUTING, agent instructions, decision records.",
       "items": {
         "type": "string"
       }
@@ -61,10 +61,15 @@
   "$defs": {
     "projectModuleInfo": {
       "title": "ProjectModuleInfo",
-      "description": "One project or module, and what it is for. Related modules are named as plain strings rather than as references so that the shape stays one level deep: the contract generator cannot render a definition that refers to another definition.",
+      "description": "One project or module, and what it is for. Related modules are named as plain strings rather than references, because a $def here may not reference another $def.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "path", "summary", "relatedModules"],
+      "required": [
+        "name",
+        "path",
+        "summary",
+        "relatedModules"
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -92,7 +97,10 @@
       "description": "One place a reader can start from.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "purpose"],
+      "required": [
+        "path",
+        "purpose"
+      ],
       "properties": {
         "path": {
           "type": "string",

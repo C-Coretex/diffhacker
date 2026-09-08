@@ -3,6 +3,7 @@ using System.Text.Json;
 using DiffHacker.Contracts;
 using DiffHacker.Core.Changes;
 using DiffHacker.Core.Llm;
+using DiffHacker.Core.Providers;
 using DiffHacker.Core.Settings;
 using DiffHacker.Core.Tools;
 using Microsoft.Extensions.Logging;
@@ -57,7 +58,7 @@ public sealed partial class ProfileBuilder(
         var startedAt = clock.GetUtcNow();
         var stopwatch = Stopwatch.StartNew();
 
-        var provider = await ResolveProviderAsync(cancellationToken).ConfigureAwait(false);
+        var provider = await ActiveProvider.ResolveAsync(providers, cancellationToken).ConfigureAwait(false);
 
         if (provider is null)
         {
@@ -229,22 +230,6 @@ public sealed partial class ProfileBuilder(
         return run.Succeeded ? Deserialise(run.StructuredJson) : null;
     }
 
-    private async ValueTask<Providers.LlmProviderProfile?> ResolveProviderAsync(CancellationToken cancellationToken)
-    {
-        var activeId = await providers.GetActiveIdAsync(cancellationToken).ConfigureAwait(false);
-
-        if (activeId is not null &&
-            await providers.FindAsync(activeId, cancellationToken).ConfigureAwait(false) is { } active)
-        {
-            return active;
-        }
-
-        // No active profile is not the same as no profile at all: a user who configured exactly
-        // one provider and never pressed "use this" should not be told they have none.
-        var all = await providers.ListAsync(cancellationToken).ConfigureAwait(false);
-        return all.Count == 1 ? all[0] : null;
-    }
-
     private static ProjectProfileDocument? Deserialise(string? structuredJson)
     {
         if (string.IsNullOrWhiteSpace(structuredJson))
@@ -337,41 +322,6 @@ public sealed partial class ProfileBuilder(
             ToolCalls = toolCalls,
             ProgressMessages = progressMessages,
         };
-
-    /// <summary>
-    /// Forwards every progress report onward and keeps a copy.
-    /// <para>
-    /// The live view wants them as they happen and the stored trace wants them afterwards, and
-    /// neither is worth a second mechanism. Nothing here may throw: the contract on
-    /// <see cref="IToolProgressSink"/> is that a report can never fail a run.
-    /// </para>
-    /// </summary>
-    private sealed class RecordingProgressSink(IToolProgressSink inner) : IToolProgressSink
-    {
-        private readonly Lock _gate = new();
-        private readonly List<string> _messages = [];
-
-        public IReadOnlyList<string> Messages
-        {
-            get
-            {
-                lock (_gate)
-                {
-                    return [.. _messages];
-                }
-            }
-        }
-
-        public async ValueTask ReportAsync(ToolProgressReport report, CancellationToken cancellationToken)
-        {
-            lock (_gate)
-            {
-                _messages.Add(report.Message);
-            }
-
-            await inner.ReportAsync(report, cancellationToken).ConfigureAwait(false);
-        }
-    }
 
     [LoggerMessage(
         EventId = 6001,

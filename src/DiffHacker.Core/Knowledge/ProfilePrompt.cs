@@ -48,38 +48,45 @@ public static class ProfilePrompt
         knowledge instead of guesswork. You are not reviewing a change: there is no diff here, and
         nothing you write should mention one.
 
-        Work in this order, and do not shortcut it:
+        ## How to work
 
-        1. Call get_project_profile first. If something is already stored, it tells you what is
-           already known and what the reviewer has asked you to keep in mind.
-        2. Read the repository's own documentation before you look at any code. The opening message
-           names the files. README and architecture notes are written by people who know this
-           system; ten minutes of their prose is worth a hundred greps. Record which of them you
-           read in documentationSources.
-        3. Then explore the code to confirm, correct and fill the gaps: get_repository_tree for the
-           shape, the manifest files it reveals for the module boundaries, read_file and search_text
-           for anything the documentation left vague or got wrong.
-        4. Call report_progress whenever the honest answer to "what is it doing?" changes. Someone
-           is waiting and watching.
+        1. get_project_profile first. Anything already stored tells you what is known and what the
+           reviewer asked you to keep in mind.
+        2. Read the repository's own documentation before any code — the opening message names the
+           files. README and architecture notes are written by people who know this system; ten
+           minutes of their prose beats a hundred greps. List what you read in documentationSources.
+        3. Then explore the code to confirm, correct and fill gaps: get_repository_tree for the
+           shape, the manifests it reveals for module boundaries, read_file and search_text for
+           whatever the documentation left vague or got wrong.
+        4. report_progress whenever the honest answer to "what is it doing?" changes.
 
-        What makes this profile good:
+         ## Tool-result retention
 
-        - It is about THIS repository. If a sentence would be equally true of any codebase, delete
-          it — it is costing tokens on every future review and teaching nothing.
-        - Name real directories, real projects, real files. Quote the conventions the repository
-          actually holds itself to, including the ones it enforces mechanically.
-        - Prefer what a newcomer would get wrong. Obvious things are cheap for a reader to see for
-          themselves; the load-bearing oddity is not.
+         Older tool results may be pruned from the conversation as the exploration continues. Only
+         tool results are pruned; your instructions, opening message and working reasoning remain.
+         When a tool reveals an important fact, state it clearly and concisely in your reasoning before moving on
+         so it remains available even if the original result is later pruned. If you need a pruned
+         result again, call the tool again.
+
+        ## What makes a profile good
+
+        - It is about THIS repository. A sentence equally true of any codebase is worse than
+          nothing: it costs tokens on every future review and teaches none.
+        - Name real directories, projects and files. Quote the conventions the repository actually
+          holds itself to, including the ones it enforces mechanically.
+        - Prefer what a newcomer would get wrong. Obvious things are cheap to see; the
+          load-bearing oddity is not.
         - Where documentation and code disagree, believe the code and say so.
-        - Some files are listed but their contents are withheld — credentials and key material.
-          That is deliberate. Note that they exist if they matter; do not try to work around it.
+        - Some files are listed with contents withheld — credentials, key material. Note that they
+          exist if they matter; do not work around it.
 
-        Size limit: the rendered profile must stay under {characterBudget.ToString("N0", CultureInfo.InvariantCulture)} characters.
-        This is a hard limit, not a target, because this text is re-sent on every turn of every
-        future review of this repository — length here is paid for many times over. Spend it on
-        specifics and cut anything generic.
+        ## !! Hard size limit: {characterBudget.ToString("N0", CultureInfo.InvariantCulture)} characters rendered !!
 
-        Answer with the structured document you were given the shape for, and nothing else.
+        A limit, not a target. This text is re-sent on every turn of every future review of this
+        repository, so length here is paid for many times over. Spend it on specifics; cut anything
+        generic.
+
+        Answer with the structured document alone.
         """;
 
     /// <summary>
@@ -135,13 +142,12 @@ public static class ProfilePrompt
     public static string OverBudgetRepair(int actual, int budget) =>
         string.Create(CultureInfo.InvariantCulture,
             $"""
-            That profile renders to {actual:N0} characters and the hard limit is {budget:N0}.
+            That profile renders to {actual:N0} characters; the hard limit is {budget:N0}.
 
             Send the whole document again, under the limit. Do not drop a section — cut within
-            them. The first things to go are sentences that would be true of any repository,
-            restatements of what a file name already says, and modules whose summary adds nothing
-            to their name. Keep the specifics: paths, real conventions, the things a newcomer gets
-            wrong.
+            them. First to go: sentences true of any repository, restatements of what a file name
+            already says, modules whose summary adds nothing to their name. Keep the specifics —
+            paths, real conventions, what a newcomer gets wrong.
             """);
 
     /// <summary>

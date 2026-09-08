@@ -281,11 +281,15 @@ Run from the repository root.
 - **Contracts are generated, never hand-edited.** Fix the JSON Schema in `/schema` and rebuild.
 - **Schema files are versioned**; a persisted analysis records its schema version. Bumping it
   means editing `schema/contract-version.json` **and** the `/<major>.<minor>/` segment in
-  every schema's `$id` (see the 1.0→1.1→1.2 bumps).
+  every schema's `$id` (see the 1.0→1.1→1.2→1.7 bumps). A `sed` over `schema/*.schema.json` is the
+  intended way to do it; each file carries the segment exactly once.
 - **A `$def` must not reference another `$def`** — NJsonSchema's C# record template throws on
   nested references; only root→`$def` is supported. Flatten instead (e.g.
   `schema/changeset-result.schema.json`'s flat per-status counts). Cross-file `$ref` is
   likewise unused — shapes are duplicated per file and reconciled with an agreement test.
+- **An inline enum needs a `title` too.** An enum inside an `items` block is named after the property
+  otherwise, so two schemas both holding `states` would generate two types called `States` and fail
+  to compile. Give it a title, as `analysis-result.schema.json` gives `AnalysisNodeState`.
 - **No hardcoded user-facing strings** — resource layer even though English-only.
 - **Never parse human-facing git output.** Machine-readable flags only: `-z` everywhere,
   `--raw` for statuses/modes, `--numstat` for line counts. Hunk counting (the one place a
@@ -307,6 +311,32 @@ Run from the repository root.
   8000 bytes → binary, then BOM, then strict UTF-8, then Latin-1 (not Windows-1252, since
   `InvariantGlobalization` is on and code pages would need a package); the result records
   which was used.
+- **The analysis prompt is the product, not boilerplate.** `AnalysisPrompt.SystemPrompt()` is
+  organised around what the reviewer does with the answer — start here, read down — and says in its
+  own section that **this is not a dependency graph**: a cluster held together by intent alone, with
+  no import between its members, is the case the product exists for. `AnalysisPromptTests` pins those
+  ideas so the prose can be improved but not quietly dropped. It asserts against a whitespace-collapsed
+  copy, so rewrapping a paragraph never fails a test and nobody has to contort the prose to keep one
+  green.
+- **The prompt owns the guidance; a schema description owns its field.** Both reach the model on
+  *every* request — the schema as the response format — so anything said at length in both is paid
+  for twice a turn, up to 300 times a run. Guidance was duplicated into the schema descriptions once
+  and cost ~4,000 characters a turn to say what the prompt had already said. A schema description
+  states what the field is and the constraint the validator checks; persuasion belongs in the prompt.
+  The same rule governs `ProfilePrompt` and `project-profile-document.schema.json`.
+- **Anything re-sent per turn is measured, not eyeballed.** The fixed preamble of an analysis request
+  is the system prompt + the response schema + the ten tool descriptions: ~7,100 tokens, before a
+  single changed-file row. `list_changed_files` at 150 rows a page and `ToolText`'s byte caps exist
+  for the same reason. Tool descriptions have a 200-character floor (`ToolboxCatalogTests`) — that is
+  a floor, not a target, and each still says what its tool will not do and which tool to use instead.
+- **The analysis result is the model's, unedited.** `AnalysisValidator` reports; it never corrects.
+  Errors go back into the same conversation (`LlmConversation.ResultValidator`, two rounds) and then
+  fail the run; warnings — cycles above all — travel with the stored result. Nothing partial is ever
+  written: `IAnalysisStore` has no method that could express it. See
+  [docs/decisions.md](docs/decisions.md#the-analysis-pipeline).
+- **A node id keeps its file path as its whole prefix** — `src/Cache.cs`, or `src/Cache.cs#eviction`
+  when one file holds two unrelated changes. §0.6's "stable across re-runs" is enforced by
+  `AnalysisNodeId`, not hoped for.
 - **Logging:** structured entries to rolling `log.txt` in the per-user app data dir. Redact
   secrets at the sink, not at call sites.
 - **Tests:** xUnit (.NET), Vitest + RTL (UI), Playwright (E2E). Git-layer/toolbox tests run
@@ -347,7 +377,11 @@ starts an LLM conversation, so `report_progress` → `ToolProgressNotifier` → 
 and the tool log on `analysis.toolCall` beside it — now travel the real bridge into the real window
 in [05-repository-profile.spec.ts](tests/e2e/specs/05-repository-profile.spec.ts). It drives a
 scripted OpenAI-compatible endpoint on localhost (`tests/e2e/src/stubProvider.ts`); no test reaches
-a real provider. Iteration 7's analysis run reuses the same stub.
+a real provider. **Iteration 7 reuses it** in
+[06-analysis-pipeline.spec.ts](tests/e2e/specs/06-analysis-pipeline.spec.ts), where
+`stubAnalysisResult` builds a valid answer for whichever files the fixture changed — the same
+spec drives a three-file change and a five-hundred-file one, and §0.2.5 means the answer has to
+name every path either way.
 
 ### Dependencies beyond §0.3
 
@@ -363,7 +397,9 @@ a real provider. Iteration 7's analysis run reuses the same stub.
 2.13.0** · `Anthropic` (official `anthropics/anthropic-sdk-csharp` SDK, not community
 `Anthropic.SDK`) · `NJsonSchema` now also at runtime (Iteration 4) —
 `ModelContextProtocol.Core` **2.2.0, not the main `ModelContextProtocol` package** ·
-`Microsoft.Extensions.DependencyInjection.Abstractions` (Iteration 5) — **Iteration 6 added none.**
+`Microsoft.Extensions.DependencyInjection.Abstractions` (Iteration 5) — **Iterations 6 and 7 added
+none.** Iteration 7's graph walk (cycles, longest chain, fan-in/out) is Tarjan's algorithm in one
+file rather than a graph package, and the validator is plain LINQ over the model's answer.
 `DiffHacker.Core` gained the already-approved `Microsoft.Extensions.Logging.Abstractions` when the
 profile orchestrator landed there; the unified diff behind the export preview is sixty lines rather
 than a package, and Monaco stays in Iteration 10.

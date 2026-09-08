@@ -49,6 +49,13 @@ public static class LlmFailures
     /// </summary>
     public const string InvalidResponse = "llm_invalid_response";
 
+    /// <summary>
+    /// The answer matched the schema every time but kept failing the caller's own rules, and the
+    /// repair rounds ran out. Distinct from <see cref="InvalidResponse"/> because the shape was
+    /// never the problem: the content was, and the caller holds the diagnostics saying how.
+    /// </summary>
+    public const string ResultRejected = "llm_result_rejected";
+
     /// <summary>A hard stop from <see cref="LlmBudget"/> fired.</summary>
     public const string BudgetExceeded = "llm_budget_exceeded";
 
@@ -70,6 +77,7 @@ public static class LlmFailures
         Unreachable,
         TimedOut,
         InvalidResponse,
+        ResultRejected,
         BudgetExceeded,
         UnexpectedResponse,
     ];

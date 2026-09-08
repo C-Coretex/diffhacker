@@ -1,5 +1,5 @@
 import { Loader2Icon } from 'lucide-react';
-import type { AnalysisProgressPhase, ToolCallEvent } from '@/contracts';
+import type { AnalysisProgress, AnalysisProgressPhase, ToolCallEvent } from '@/contracts';
 import { formatCount } from '@/i18n/format';
 import { useT } from '@/i18n/useT';
 import { useAppStore } from '@/store/appStore';
@@ -15,24 +15,27 @@ const phaseLabels = {
   finishing: 'progress.phase.finishing',
 } as const satisfies Record<AnalysisProgressPhase, string>;
 
-interface ProfileRunPanelProps {
+interface RunPanelProps {
+  progress?: AnalysisProgress;
+  events: readonly ToolCallEvent[];
+  latest?: ToolCallEvent;
   onCancel(): void;
 }
 
 /**
- * The live view of a profile run.
+ * The live view of a run.
  *
  * Two things at once, deliberately kept apart. The top line is what the model says it is doing, in
  * its own words, arriving through `analysis.progress`; the table below is the mechanical record of
  * what it actually did, arriving through `analysis.toolCall`. A reviewer reads the first and
  * consults the second, and interleaving them would ruin both.
+ *
+ * It takes its state as props rather than reading the store because there are two runs in the
+ * application that look exactly like this — profiling a repository and analysing a change — and
+ * they keep their own slices so that neither can show the other's log.
  */
-export function ProfileRunPanel({ onCancel }: ProfileRunPanelProps) {
+export function RunPanel({ progress, events, latest, onCancel }: RunPanelProps) {
   const t = useT();
-
-  const progress = useAppStore((state) => state.profileRunProgress);
-  const events = useAppStore((state) => state.profileRunEvents);
-  const latest = useAppStore((state) => state.profileRunLatest);
 
   return (
     <Card>
@@ -78,6 +81,30 @@ export function ProfileRunPanel({ onCancel }: ProfileRunPanelProps) {
         <ToolLog events={events} />
       </CardContent>
     </Card>
+  );
+}
+
+/** The profile run's slice of the store, in the shared panel. */
+export function ProfileRunPanel({ onCancel }: { onCancel(): void }) {
+  return (
+    <RunPanel
+      progress={useAppStore((state) => state.profileRunProgress)}
+      events={useAppStore((state) => state.profileRunEvents)}
+      latest={useAppStore((state) => state.profileRunLatest)}
+      onCancel={onCancel}
+    />
+  );
+}
+
+/** The analysis run's slice, in the same panel. */
+export function AnalysisRunPanel({ onCancel }: { onCancel(): void }) {
+  return (
+    <RunPanel
+      progress={useAppStore((state) => state.analysisRunProgress)}
+      events={useAppStore((state) => state.analysisRunEvents)}
+      latest={useAppStore((state) => state.analysisRunLatest)}
+      onCancel={onCancel}
+    />
   );
 }
 

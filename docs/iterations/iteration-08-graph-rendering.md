@@ -56,6 +56,7 @@ The user arranges nothing. The LLM decided the ordering and the app respects it.
 11. Responsive and readable at ~300 nodes: **profile it and fix what is slow.**
 12. **Snapshot-test the ELK layout output** for a fixed input graph so layout regressions are
     visible.
+13. Add a search fields, which would find (highlight and show) node with this file name (if it's in the changeset)
 
 ## Out of scope
 

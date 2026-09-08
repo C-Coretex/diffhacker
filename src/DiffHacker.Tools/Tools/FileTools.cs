@@ -22,16 +22,16 @@ public sealed class FileTools(RepositorySession session, IGitClient git, Toolbox
         """
         Reads a file, or a range of lines from it, with line numbers.
 
-        Two sides are available. 'working_tree' is the file as it is now, including uncommitted
-        changes — this is what you usually want. 'head' is the committed version, useful for
-        seeing what a changed file looked like before.
+        Two sides: 'working_tree' is the file as it is now, including uncommitted changes, and is
+        what you usually want. 'head' is the committed version, for seeing what a changed file
+        looked like before.
 
-        Reads are paged by line. The header tells you the file's total line count, so you can ask
-        for the next range directly rather than guessing. Prefer a range around something you
-        found with search_text over reading a whole large file.
+        Paged by line, and the header gives the file's total line count so you can ask for the
+        next range rather than guess. Prefer a range around a search_text hit over reading a whole
+        large file.
 
-        Binary files and files over 5 MB are reported, not returned. Files that are not UTF-8 are
-        decoded and the encoding is named in the header, so you are never handed silent mojibake.
+        Binary files and files over 5 MB are reported, not returned. Non-UTF-8 files are decoded
+        and the encoding named in the header, so you are never handed silent mojibake.
         """)]
     public async Task<string> ReadFileAsync(
         [Description("Repository-relative path, e.g. 'src/app/main.ts'.")]
@@ -124,15 +124,15 @@ public sealed class FileTools(RepositorySession session, IGitClient git, Toolbox
     [McpServerTool(Name = "find_files", ReadOnly = true, OpenWorld = false)]
     [Description(
         """
-        Finds files by path pattern. Use '*' to match within a path segment, '**' to cross
-        directories: 'src/**/*.test.ts', '**/Dockerfile', 'docs/*.md'.
+        Finds files by path pattern. '*' matches within a path segment, '**' crosses directories:
+        'src/**/*.test.ts', '**/Dockerfile', 'docs/*.md'.
 
-        This is how you locate a file whose exact path you do not know. It searches names only —
-        use search_text to search inside files.
+        This is how you locate a file whose exact path you do not know. Names only — use
+        search_text to search inside files.
 
-        Only files git can see are listed. Anything covered by .gitignore is invisible to every
-        tool here, so a pattern that should obviously match may return nothing for that reason;
-        get_path_info on the path will tell you if that is what happened.
+        Lists only what git can see. Anything covered by .gitignore is invisible to every tool
+        here, so a pattern that obviously should match may return nothing for that reason;
+        get_path_info will tell you whether that is what happened.
         """)]
     public string FindFiles(
         [Description("Glob to match against repository-relative paths.")]
@@ -209,14 +209,13 @@ public sealed class FileTools(RepositorySession session, IGitClient git, Toolbox
     [McpServerTool(Name = "list_directory", ReadOnly = true, OpenWorld = false)]
     [Description(
         """
-        Lists one directory: its subdirectories, with how many files each contains, and its files,
-        with their sizes and whether they changed.
+        Lists one directory: its subdirectories with a file count each, and its files with sizes
+        and whether they changed.
 
-        Use it to orient yourself in an unfamiliar repository. get_repository_tree is better for
-        seeing shape at a glance; this is better for looking at one place closely.
+        For looking at one place closely; get_repository_tree is better for shape at a glance.
 
-        Directories covered by .gitignore are not listed, but the count of what was hidden is —
-        so an apparently sparse directory never quietly misleads you.
+        Directories covered by .gitignore are not listed, but the count of what was hidden is, so
+        an apparently sparse directory never quietly misleads you.
         """)]
     public string ListDirectory(
         [Description("Repository-relative directory path. Omit or pass '' for the repository root.")]
@@ -289,13 +288,12 @@ public sealed class FileTools(RepositorySession session, IGitClient git, Toolbox
     [Description(
         """
         Shows the directory structure as an indented tree, with the number of files in each
-        directory and how many of them changed.
+        directory and how many changed.
 
-        The fastest way to understand how a repository is laid out. Start at the root with the
-        default depth to see the shape, then pass a path and a greater depth to go into whichever
-        part matters.
+        The fastest way to see how a repository is laid out. Start at the root with the default
+        depth for the shape, then pass a path and a greater depth for whichever part matters.
 
-        Only shows what git can see. Depth is limited and the result is capped, so a very wide
+        Shows only what git can see. Depth is limited and the result capped, so a very wide
         repository returns its top and tells you what it left out.
         """)]
     public string GetRepositoryTree(

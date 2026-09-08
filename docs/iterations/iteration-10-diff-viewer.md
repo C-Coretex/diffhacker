@@ -37,7 +37,7 @@ exists to escape.
    targets a specific in-file location, **scroll to and highlight it**.
 2. Side-by-side and inline modes, syntax highlighting, expandable context around hunks,
    hunk-to-hunk navigation.
-3. "Open in VS Code" button with diff enabled. **Handle VS Code not being installed.**
+3. "Open in VS Code" button with diff enabled. **Handle VS Code not being installed.** Also add button "Open in VS" (visual studio) if possible
 4. The node's **explanation and risks stay visible alongside the diff** — the reviewer should
    not return to the graph to remember why they are here.
 5. Navigation that **follows the graph, not the file list**. Because a node can have several

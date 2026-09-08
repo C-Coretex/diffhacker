@@ -64,5 +64,12 @@ public sealed record LlmRunResult
     /// <summary>Every tool call, in the order the model made them.</summary>
     public IReadOnlyList<LlmToolCallRecord> ToolCalls { get; init; } = [];
 
+    /// <summary>
+    /// How many times <see cref="LlmConversation.ResultValidator"/> rejected an answer and it was
+    /// handed back to be repaired. Zero on a clean run, and worth storing: a run that needed
+    /// repairs cost more than one that did not.
+    /// </summary>
+    public int ResultRepairs { get; init; }
+
     public bool Succeeded => Outcome == LlmRunOutcome.Completed;
 }

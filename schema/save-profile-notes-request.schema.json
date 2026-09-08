@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.6/save-profile-notes-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.7/save-profile-notes-request.schema.json",
   "title": "SaveProfileNotesRequest",
   "description": "Parameters for profile.saveNotes: everything about a repository that the user authored rather than a model. Kept on its own method, and in its own columns, because regeneration overwrites the generated document and must be structurally incapable of touching any of this. It can be saved before a profile has ever been generated.",
   "type": "object",

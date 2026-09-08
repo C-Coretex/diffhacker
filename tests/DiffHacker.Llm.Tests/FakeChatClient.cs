@@ -22,6 +22,13 @@ internal sealed class FakeChatClient : IChatClient
 
     public Request LastRequest => Requests[^1];
 
+    /// <summary>
+    /// How many requests came in through <see cref="GetStreamingResponseAsync"/> rather than a
+    /// direct <see cref="GetResponseAsync"/> call. A test asserting <c>LlmSession</c> uses the
+    /// streaming path checks this against <see cref="Requests"/>.Count.
+    /// </summary>
+    public int StreamingRequestCount { get; private set; }
+
     /// <summary>Turns still unused. A test asserting a run stopped early checks this.</summary>
     public int Remaining => _script.Count;
 
@@ -112,9 +119,12 @@ internal sealed class FakeChatClient : IChatClient
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        // Present so the fake is a complete IChatClient. Nothing in DiffHacker streams: the
-        // answer is one large JSON document produced at the end, and §0.2.8 forbids revealing
-        // a half-built one.
+        // LlmSession streams the request itself (to keep the connection alive on a long
+        // generation) but aggregates the chunks back into one ChatResponse before it looks at
+        // anything, so §0.2.8 still holds: nothing partial is ever visible past that point. The
+        // fake mirrors that shape by producing updates from the same scripted response rather
+        // than scripting streaming turns separately.
+        StreamingRequestCount++;
         var response = await GetResponseAsync(messages, options, cancellationToken);
 
         foreach (var update in response.ToChatResponseUpdates())

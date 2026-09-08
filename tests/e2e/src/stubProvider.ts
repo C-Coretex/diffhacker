@@ -179,3 +179,66 @@ export const stubProfileDocument = {
   testLayout: 'The fixture has no tests.',
   documentationSources: ['readme.md'],
 };
+
+/**
+ * An analysis document that satisfies `analysis-result.schema.json` and every rule the validator
+ * enforces, built for whichever files the fixture actually changed.
+ *
+ * Generated rather than written out, because the suite runs it over a three-file change and over a
+ * five-hundred-file one, and the completeness invariant (§0.2.5) means the answer has to name every
+ * path either way. One cluster with the first file as its entry node is the smallest shape that
+ * satisfies "exactly one entry node, ranks 1..n, every file covered".
+ */
+export function stubAnalysisResult(paths: readonly string[]) {
+  const nodes = paths.map((path, index) => ({
+    id: path,
+    filePath: path,
+    symbol: '',
+    startLine: 0,
+    endLine: 0,
+    title: `What ${path} does in this change`,
+    whatChanged: `A line was added to ${path}.`,
+    whyItChanged: 'The fixture needed something to review.',
+    howItAffectsOthers: index === 0 ? 'Everything downstream reads from here.' : '',
+    implementationNotes: '',
+    risks: index === 0 ? ['The entry point changed shape.'] : [],
+    importance: index === 0 ? 5 : 2,
+    rank: index + 1,
+    states: index === 0 ? ['changed', 'entry_point'] : ['changed'],
+  }));
+
+  return {
+    summary: 'Every file in the fixture gained a line, which is the whole of the change.',
+    overallRisks: ['The fixture has no tests, so nothing proves the change works.'],
+    readingOrder: paths.map((path) => path),
+    containers: [
+      {
+        id: 'the-whole-change',
+        title: 'The whole change',
+        summary: 'One cluster, because every file changed for the same reason.',
+        explanation: 'The fixture was edited in one pass, so there is nothing to separate.',
+        risks: [],
+        displayOrder: 1,
+        entryNodeId: paths[0],
+        nodeIds: paths.map((path) => path),
+      },
+    ],
+    nodes,
+    edges: paths.slice(1).map((path) => ({
+      sourceNodeId: paths[0],
+      targetNodeId: path,
+      kind: 'conceptual',
+      explanation: 'Read the first file before the ones that follow it.',
+      risks: [],
+    })),
+  };
+}
+
+/**
+ * The same document with one file left out, so a run has something specific to be sent back for.
+ * Requirement 4 is that the failure fed to the model is specific, and this is what makes it so.
+ */
+export function stubAnalysisMissing(paths: readonly string[], omit: string) {
+  const kept = paths.filter((path) => path !== omit);
+  return stubAnalysisResult(kept);
+}

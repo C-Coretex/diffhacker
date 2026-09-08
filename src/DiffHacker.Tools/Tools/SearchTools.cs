@@ -36,21 +36,21 @@ public sealed class SearchTools(RepositorySession session, IGitClient git, Toolb
     [McpServerTool(Name = "search_text", ReadOnly = true, OpenWorld = false)]
     [Description(
         """
-        Searches the text of every file git can see, and returns matches with surrounding lines.
+        Searches the text of every file git can see and returns matches with surrounding lines.
 
-        This is the main tool for exploring code you have not read. Use it to find where a symbol
-        is defined, everywhere it is used, or which files mention a concept.
+        The main tool for exploring code you have not read: where a symbol is defined, everywhere
+        it is used, which files mention a concept.
 
-        Three pattern modes. 'fixed' matches the pattern literally and is what you want for a
-        symbol name — no escaping to get wrong. 'extended' is POSIX extended regex: note that
-        \\d and \\w are NOT available, write [0-9] and [A-Za-z0-9_]. 'perl' gives you the
-        Perl-style syntax you are used to, but not every build of git has it; if this one does not,
-        the search runs as 'extended' and the header says so.
+        Three pattern modes. 'fixed' matches literally and is what you want for a symbol name —
+        nothing to escape wrongly. 'extended' is POSIX extended regex, where \\d and \\w are NOT
+        available: write [0-9] and [A-Za-z0-9_]. 'perl' gives the Perl-style syntax you are used
+        to, but not every build of git has it; if this one does not, the search runs as 'extended'
+        and the header says so.
 
-        Binary files are skipped. Files whose content is withheld — credentials, key material — are
-        not searched at all; list_directory and get_path_info still show you that they exist.
-        Results are paged; the header always states the true total, so a match count is something
-        you can reason about even when you only see the first page.
+        Binary files are skipped. Files whose content is withheld — credentials, key material —
+        are not searched at all, though list_directory and get_path_info still show they exist.
+        Results are paged, and the header always states the true total, so a match count is
+        something you can reason about from the first page alone.
         """)]
     public async Task<string> SearchTextAsync(
         [Description("What to search for, in the dialect given by mode.")]

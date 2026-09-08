@@ -1,0 +1,492 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.7/analysis-view.schema.json",
+  "title": "AnalysisView",
+  "description": "Everything the renderer is given about the stored analysis of one repository: the model's graph, the provenance of the run that produced it, the statistics the application computed alongside it, and the diagnostics validation raised. Returned by every analysis.* method, so the renderer replaces its state wholesale rather than merging. The document's fields are hoisted to the root rather than nested under an analysis object, because the contract generator cannot render a definition that references another definition and the container list needs one — the same flattening profile-state.schema.json applies. The container, node and edge shapes duplicate the ones in analysis-result.schema.json, because a schema here cannot reference one there; AnalysisAgreementTests holds the two copies together.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "repositoryPath",
+    "hasAnalysis",
+    "summary",
+    "overallRisks",
+    "readingOrder",
+    "containers",
+    "nodes",
+    "edges",
+    "diagnostics"
+  ],
+  "properties": {
+    "repositoryPath": {
+      "type": "string",
+      "description": "Absolute path of the worktree root this analysis belongs to. One repository per analysis; there are no workspaces."
+    },
+    "hasAnalysis": {
+      "type": "boolean",
+      "description": "False when nothing has been analysed for this repository yet. The arrays are then empty and every optional field is absent, so a renderer can bind to the same shape either way."
+    },
+    "analysisId": {
+      "type": "string",
+      "description": "Identifier of the stored analysis. Absent when there is none."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "description": "The contract version the stored document was written against. Recorded so an analysis produced by an older build is recognisable as one rather than silently misread."
+    },
+    "createdAtUtc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC instant the run that produced this analysis finished."
+    },
+    "headCommit": {
+      "type": "string",
+      "description": "The commit HEAD pointed at when the analysis ran. Absent for a repository with no commits."
+    },
+    "providerDisplayName": {
+      "type": "string",
+      "description": "Display name of the provider profile that produced the analysis."
+    },
+    "model": {
+      "type": "string",
+      "description": "Model that produced the analysis."
+    },
+    "inputTokens": {
+      "type": "integer",
+      "description": "Input tokens the run consumed, across every request it made."
+    },
+    "outputTokens": {
+      "type": "integer",
+      "description": "Output tokens the run produced, across every request it made."
+    },
+    "costUsd": {
+      "type": "string",
+      "description": "What the run cost in US dollars, as a decimal string so no rounding happens on the way to the screen. Absent when the model is not in the price table — an unrated model costs an unknown amount, never nothing."
+    },
+    "durationMs": {
+      "type": "integer",
+      "description": "Wall-clock milliseconds the run took, from the first request to the validated result."
+    },
+    "repairRounds": {
+      "type": "integer",
+      "description": "How many times the result came back failing validation and was handed back to be repaired. Zero on a clean run. Worth showing: a run that needed repairs cost more than one that did not."
+    },
+    "summary": {
+      "type": "string",
+      "description": "What this change does as a whole. Empty until an analysis exists."
+    },
+    "overallRisks": {
+      "type": "array",
+      "description": "Risks belonging to the change as a whole. Kept in their own field, never merged into the summary, so the screen can show risks as a column beside the explanations rather than buried inside them.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "readingOrder": {
+      "type": "array",
+      "description": "Node ids in the order a reviewer should walk the change. When the model's own order did not cover every node, this is the traversal the application derived from container order and node rank instead, and a diagnostic records that it did.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "containers": {
+      "type": "array",
+      "description": "The clusters the change divides into, already sorted by display order.",
+      "items": {
+        "$ref": "#/$defs/analysisContainerInfo"
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "description": "Every participant in the change, already sorted by container display order and then by rank.",
+      "items": {
+        "$ref": "#/$defs/analysisNodeInfo"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "description": "How the nodes relate.",
+      "items": {
+        "$ref": "#/$defs/analysisEdgeInfo"
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "description": "What validation observed about the stored result. A stored analysis only ever carries warnings — anything that failed validation was repaired or the run failed, and a failed run is not stored.",
+      "items": {
+        "$ref": "#/$defs/analysisDiagnosticInfo"
+      }
+    },
+    "statistics": {
+      "$ref": "#/$defs/analysisStatsInfo"
+    }
+  },
+  "$defs": {
+    "analysisContainerInfo": {
+      "title": "AnalysisContainerInfo",
+      "description": "One cluster of interconnected change, on the wire.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "summary",
+        "explanation",
+        "risks",
+        "displayOrder",
+        "entryNodeId",
+        "nodeIds"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable identifier for this container."
+        },
+        "title": {
+          "type": "string",
+          "description": "A short name for the cluster."
+        },
+        "summary": {
+          "type": "string",
+          "description": "What this cluster is, in one or two sentences."
+        },
+        "explanation": {
+          "type": "string",
+          "description": "The longer account of what the cluster achieves. Markdown, and carries no risks."
+        },
+        "risks": {
+          "type": "array",
+          "description": "Risks belonging to the cluster as a whole.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "displayOrder": {
+          "type": "integer",
+          "description": "Where this container sits in the reading order of containers, counting from 1."
+        },
+        "entryNodeId": {
+          "type": "string",
+          "description": "The node a reviewer starts from inside this container."
+        },
+        "nodeIds": {
+          "type": "array",
+          "description": "Ids of the nodes in this container, in rank order.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "analysisNodeInfo": {
+      "title": "AnalysisNodeInfo",
+      "description": "A file, or a specific place inside a file, on the wire. Carries its container id, which the model's own document does not: membership is declared once by the container there, and resolved onto the node here so the renderer does not have to search for it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "containerId",
+        "filePath",
+        "symbol",
+        "startLine",
+        "endLine",
+        "title",
+        "whatChanged",
+        "whyItChanged",
+        "howItAffectsOthers",
+        "implementationNotes",
+        "risks",
+        "importance",
+        "rank",
+        "states"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Path-derived identifier: the file path, or the file path and a '#' slug when one file yields several nodes. Stable across runs of the same changeset, which is what lets reviewed-state be keyed off it."
+        },
+        "containerId": {
+          "type": "string",
+          "description": "Id of the container this node belongs to. Exactly one, resolved from the containers' membership lists."
+        },
+        "filePath": {
+          "type": "string",
+          "description": "Repository-relative path, spelled as git spells it."
+        },
+        "symbol": {
+          "type": "string",
+          "description": "The function, type or section this node is about. Empty when the node is the whole file."
+        },
+        "startLine": {
+          "type": "integer",
+          "description": "First line of the region, counting from 1. Zero when there is no line range."
+        },
+        "endLine": {
+          "type": "integer",
+          "description": "Last line of the region, counting from 1. Zero when there is no line range."
+        },
+        "title": {
+          "type": "string",
+          "description": "A short label for this node."
+        },
+        "whatChanged": {
+          "type": "string",
+          "description": "What actually changed here."
+        },
+        "whyItChanged": {
+          "type": "string",
+          "description": "The intent behind the change."
+        },
+        "howItAffectsOthers": {
+          "type": "string",
+          "description": "What downstream is affected, and how. Empty for a leaf."
+        },
+        "implementationNotes": {
+          "type": "string",
+          "description": "Details worth knowing while reading the code. Carries no risks."
+        },
+        "risks": {
+          "type": "array",
+          "description": "What could go wrong because of this node. Its own field, never folded into the explanations.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "importance": {
+          "type": "integer",
+          "description": "How much this node matters, from 1 to 5. What a later iteration de-emphasises trivial changes on."
+        },
+        "rank": {
+          "type": "integer",
+          "description": "Position within its container, counting from 1. Rank 1 is the entry node."
+        },
+        "states": {
+          "type": "array",
+          "description": "What is true of this node. Not mutually exclusive.",
+          "items": {
+            "title": "AnalysisNodeInfoState",
+            "description": "One thing that is true of a node. The same values as AnalysisNodeState in analysis-result.schema.json, duplicated because a schema here cannot reference one there, and held to it by AnalysisAgreementTests.",
+            "type": "string",
+            "enum": [
+              "changed",
+              "added",
+              "deleted",
+              "unchanged_relevant",
+              "risky",
+              "entry_point"
+            ]
+          }
+        }
+      }
+    },
+    "analysisEdgeInfo": {
+      "title": "AnalysisEdgeInfo",
+      "description": "A relationship between two nodes, on the wire. Says whether it crosses a container boundary, because a cross-container edge is drawn faintly and kept out of the layout.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceNodeId",
+        "targetNodeId",
+        "kind",
+        "explanation",
+        "risks",
+        "crossesContainers"
+      ],
+      "properties": {
+        "sourceNodeId": {
+          "type": "string",
+          "description": "Id of the node to read from."
+        },
+        "targetNodeId": {
+          "type": "string",
+          "description": "Id of the node to read next."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["direct", "conceptual"],
+          "description": "direct for a real code-level dependency, conceptual for one inferred from intent or reading order. The two must be visually distinguishable."
+        },
+        "explanation": {
+          "type": "string",
+          "description": "What the relationship is and how the change affects it."
+        },
+        "risks": {
+          "type": "array",
+          "description": "What could go wrong in this relationship.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "crossesContainers": {
+          "type": "boolean",
+          "description": "True when the two ends sit in different containers. Computed by the application from container membership rather than claimed by the model."
+        }
+      }
+    },
+    "analysisDiagnosticInfo": {
+      "title": "AnalysisDiagnosticInfo",
+      "description": "Something validation observed. Errors fail a run and are sent back for repair, so a stored analysis carries only warnings — things worth knowing that are not reasons to reject the model's answer, a cycle in the reading flow being the main one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "code", "message", "subject"],
+      "properties": {
+        "severity": {
+          "type": "string",
+          "enum": ["error", "warning"],
+          "description": "error fails validation and triggers repair; warning is recorded and never fails a run."
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Stable code for what was observed, so the renderer can phrase it in its own resource layer rather than showing the host's developer text."
+        },
+        "message": {
+          "type": "string",
+          "description": "The developer-facing description, naming the offending id or path. Written to the log and shown when a run fails, so it is specific by construction: 'no node covers src/Cache.cs', not 'a file was missing'."
+        },
+        "subject": {
+          "type": "string",
+          "description": "The node id, container id, edge or file path the diagnostic is about. Empty when it is about the result as a whole."
+        }
+      }
+    },
+    "analysisStatsInfo": {
+      "title": "AnalysisStatsInfo",
+      "description": "Numbers the application computed from the changeset and from the model's graph, never numbers the model reported. The per-status counts are flat properties rather than a nested object because the contract generator cannot render a definition that references another definition — the same flattening changeset-result.schema.json applies.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "totalFiles",
+        "totalLinesAdded",
+        "totalLinesRemoved",
+        "addedFiles",
+        "modifiedFiles",
+        "deletedFiles",
+        "renamedFiles",
+        "copiedFiles",
+        "binaryFiles",
+        "languages",
+        "projects",
+        "containerCount",
+        "nodeCount",
+        "edgeCount",
+        "directEdgeCount",
+        "conceptualEdgeCount",
+        "largestContainerSize",
+        "smallestContainerSize",
+        "riskyNodeCount",
+        "riskCount",
+        "longestChain",
+        "highestFanIn",
+        "highestFanOut"
+      ],
+      "properties": {
+        "totalFiles": {
+          "type": "integer",
+          "description": "Files in the changeset."
+        },
+        "totalLinesAdded": {
+          "type": "integer",
+          "description": "Added lines across the changeset. Binaries and submodules contribute nothing, so this under-reports them."
+        },
+        "totalLinesRemoved": {
+          "type": "integer",
+          "description": "Removed lines across the changeset, under the same caveat."
+        },
+        "addedFiles": {
+          "type": "integer",
+          "description": "Files added."
+        },
+        "modifiedFiles": {
+          "type": "integer",
+          "description": "Files modified."
+        },
+        "deletedFiles": {
+          "type": "integer",
+          "description": "Files deleted."
+        },
+        "renamedFiles": {
+          "type": "integer",
+          "description": "Files renamed."
+        },
+        "copiedFiles": {
+          "type": "integer",
+          "description": "Files copied."
+        },
+        "binaryFiles": {
+          "type": "integer",
+          "description": "Files whose line counts are unknowable."
+        },
+        "languages": {
+          "type": "array",
+          "description": "Distinct detected languages, sorted. Files with no detected language are absent.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "projects": {
+          "type": "array",
+          "description": "Distinct project names the changed files belong to, sorted.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "containerCount": {
+          "type": "integer",
+          "description": "Containers in the graph."
+        },
+        "nodeCount": {
+          "type": "integer",
+          "description": "Nodes in the graph. Greater than totalFiles when a file was split into several nodes."
+        },
+        "edgeCount": {
+          "type": "integer",
+          "description": "Edges in the graph."
+        },
+        "directEdgeCount": {
+          "type": "integer",
+          "description": "Edges backed by an actual code-level dependency."
+        },
+        "conceptualEdgeCount": {
+          "type": "integer",
+          "description": "Edges the model inferred from intent, workflow or reading order."
+        },
+        "largestContainerSize": {
+          "type": "integer",
+          "description": "Nodes in the biggest container."
+        },
+        "smallestContainerSize": {
+          "type": "integer",
+          "description": "Nodes in the smallest container."
+        },
+        "riskyNodeCount": {
+          "type": "integer",
+          "description": "Nodes carrying the risky state or at least one risk of their own."
+        },
+        "riskCount": {
+          "type": "integer",
+          "description": "Every risk recorded anywhere in the result: node, edge, container and overall together."
+        },
+        "longestChain": {
+          "type": "integer",
+          "description": "Nodes on the longest reading path through the graph. Computed over the graph's strongly connected components so that a cycle cannot make it unbounded; a cycle counts as the one component it is."
+        },
+        "highestFanIn": {
+          "type": "integer",
+          "description": "The greatest number of edges arriving at any one node."
+        },
+        "highestFanOut": {
+          "type": "integer",
+          "description": "The greatest number of edges leaving any one node."
+        },
+        "highestFanInNodeId": {
+          "type": "string",
+          "description": "The node with the most edges arriving at it — the thing the most other parts of the change depend on. Absent when there are no edges. Ties are broken by node id so that two runs of the same graph name the same node."
+        },
+        "highestFanOutNodeId": {
+          "type": "string",
+          "description": "The node with the most edges leaving it. Absent when there are no edges, and tie-broken the same way."
+        }
+      }
+    }
+  }
+}

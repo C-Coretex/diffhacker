@@ -1,5 +1,7 @@
 import type {
   AnalysisProgress,
+  AnalysisRequest,
+  AnalysisView,
   BrowseFolderRequest,
   BrowseFolderResult,
   ChangesetRequest,
@@ -46,6 +48,14 @@ const CHANGESET_TIMEOUT_MS = 5 * 60_000;
 const PROFILE_TIMEOUT_MS = 30 * 60_000;
 
 /**
+ * Longer than a profile's, because the work is larger by construction: a profile reads a
+ * repository once, an analysis reads a change that §0.2.10 allows to be fifteen hundred files.
+ * The user can stop it at any point, so this is the ceiling on a run nobody is watching rather
+ * than a promise about how long one takes.
+ */
+const ANALYSIS_TIMEOUT_MS = 60 * 60_000;
+
+/**
  * The host's method surface, typed from the generated contracts.
  *
  * Every name here matches a `[JsonRpcMethod]` attribute in `DiffHacker.Host`. Adding a method
@@ -79,6 +89,8 @@ export const RpcMethods = {
   deleteProfile: 'profile.delete',
   previewDocumentation: 'profile.previewDocumentation',
   exportDocumentation: 'profile.exportDocumentation',
+  getAnalysis: 'analysis.get',
+  runAnalysis: 'analysis.run',
 } as const;
 
 /**
@@ -285,4 +297,27 @@ export function exportDocumentation(
   request: DocumentationExportRequest,
 ): Promise<DocumentationExportResult> {
   return client.call<DocumentationExportResult>(RpcMethods.exportDocumentation, request);
+}
+
+/** The stored analysis of a repository, or an empty view when it has never been analysed. */
+export function getAnalysis(client: RpcClient, request: AnalysisRequest): Promise<AnalysisView> {
+  return client.call<AnalysisView>(RpcMethods.getAnalysis, request);
+}
+
+/**
+ * Analyses the working tree. The most expensive call in the application and the longest running,
+ * so it takes an abort signal: cancelling sends `$/cancelRequest`, the host unwinds the run, and
+ * what it spent is still reported.
+ */
+export function runAnalysis(
+  client: RpcClient,
+  request: AnalysisRequest,
+  signal: AbortSignal,
+): Promise<AnalysisView> {
+  return client.callAbortable<AnalysisView>(
+    RpcMethods.runAnalysis,
+    signal,
+    ANALYSIS_TIMEOUT_MS,
+    request,
+  );
 }

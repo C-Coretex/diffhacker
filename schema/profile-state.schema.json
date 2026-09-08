@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.6/profile-state.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.7/profile-state.schema.json",
   "title": "ProfileState",
   "description": "Everything the profile screen shows for one repository: the generated document, the user's own sections, where the document came from, what it costs, and whether the repository has moved on since. Returned by every profile.* method, so the renderer replaces its state wholesale rather than merging. The generated document's fields are hoisted to the root rather than nested under a profile object, because the contract generator cannot render a definition that references another definition and the module list needs one — the same flattening changeset-result.schema.json applies to its per-status counts.",
   "type": "object",

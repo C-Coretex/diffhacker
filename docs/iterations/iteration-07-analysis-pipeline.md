@@ -8,7 +8,22 @@
 |---|---|
 | **Depends on** | [5](iteration-05-repository-toolbox.md), [6](iteration-06-repository-knowledge-base.md) |
 | **Blocks** | 8, 9, 10, 11, 12, 13 |
-| **Status** | Not started |
+| **Status** | Complete |
+
+> **The six questions at the bottom of this file were answered before implementation.** Repairs
+> happen *inside* the run loop, capped at two rounds; cycles are accepted and annotated rather than
+> rejected; a file may yield several nodes as long as the id keeps the path as its whole prefix;
+> deleted and binary files get thin nodes and validation allows them; importance is a bounded 1–5
+> score, separate from the per-container `rank` that drives layout; and the run is started from the
+> repository screen's changed-file list, on an `analysis` screen of its own.
+>
+> **Two things beyond the requirements.** `LlmConversation` gained an optional validator delegate
+> and a repair cap, so the graph rules are checked without leaving the conversation — that is an
+> additive change to Iteration 4's contract and no existing caller behaves differently. And the
+> contract generator now attaches the schema enum converter to the enum *type* rather than only to
+> the properties that use it: node states are the first array of enums in `/schema`, and NJsonSchema
+> attaches nothing to those, so `unchanged_relevant` would have reached the wire as
+> `Unchanged_relevant`.
 
 ## Goal
 

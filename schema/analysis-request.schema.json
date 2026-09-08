@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.7/analysis-request.schema.json",
+  "title": "AnalysisRequest",
+  "description": "Names the repository an analysis.get or analysis.run call applies to. The path travels on every call rather than being held as host state, for the same reason it does on profile requests: the renderer owns which repository is open, and a stale host-side selection would be a way to spend money analysing the wrong one.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repositoryPath"],
+  "properties": {
+    "repositoryPath": {
+      "type": "string",
+      "description": "Absolute path of the worktree root, as repository.open returned it."
+    }
+  }
+}

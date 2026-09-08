@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using NJsonSchema;
 using NJsonSchema.CodeGeneration.CSharp;
 using NJsonSchema.CodeGeneration.TypeScript;
@@ -10,7 +11,7 @@ namespace DiffHacker.SchemaGen;
 /// Turns every <c>*.schema.json</c> under <c>/schema</c> into C# records and TypeScript
 /// interfaces. One parser feeds both languages, so the two cannot drift.
 /// </summary>
-internal sealed class ContractGenerator(Options options)
+internal sealed partial class ContractGenerator(Options options)
 {
     private const string SchemaSuffix = ".schema.json";
 
@@ -42,7 +43,8 @@ internal sealed class ContractGenerator(Options options)
                 typeName + ".g.cs",
                 Prelude(relativeSource, "//") + "#pragma warning disable\n\n" +
                     UseSchemaEnumConverter(
-                        new CSharpGenerator(schema, CreateCSharpSettings()).GenerateFile(typeName)));
+                        AttachEnumConverters(
+                            new CSharpGenerator(schema, CreateCSharpSettings()).GenerateFile(typeName))));
 
             var moduleName = ToCamelCase(typeName);
             typeScriptModules.Add(moduleName);
@@ -85,6 +87,37 @@ internal sealed class ContractGenerator(Options options)
             "System.Text.Json.Serialization.JsonStringEnumConverter<",
             $"global::{options.Namespace}.SchemaEnumConverter<",
             StringComparison.Ordinal);
+
+    /// <summary>
+    /// Puts the converter on the enum <i>type</i> as well as on the properties that use it.
+    /// <para>
+    /// NJsonSchema attaches a converter per property, and for an enum inside an array it attaches
+    /// none at all — it emits a TODO about <c>ItemConverterType</c>, which System.Text.Json has no
+    /// equivalent of. A list of node states would then go on the wire as
+    /// <c>"Unchanged_relevant"</c> rather than the <c>"unchanged_relevant"</c> the schema declares.
+    /// A type-level attribute applies wherever the enum appears, collections included, so the TODO
+    /// is answered rather than carried, and it is removed with it.
+    /// </para>
+    /// </summary>
+    private string AttachEnumConverters(string generated)
+    {
+        var attached = EnumDeclaration().Replace(
+            generated,
+            match => match.Groups[1].Value
+                + $"[System.Text.Json.Serialization.JsonConverter(typeof(global::{options.Namespace}"
+                + $".SchemaEnumConverter<{match.Groups[2].Value}>))]\n"
+                + match.Groups[1].Value + "public enum " + match.Groups[2].Value);
+
+        return ItemConverterTodo().Replace(attached, string.Empty);
+    }
+
+    [GeneratedRegex(@"^([ \t]*)public enum (\w+)$", RegexOptions.Multiline)]
+    private static partial Regex EnumDeclaration();
+
+    [GeneratedRegex(
+        @"^[ \t]*// TODO\(system\.text\.json\): Add ItemConverterType with enum converter when supported\r?\n",
+        RegexOptions.Multiline)]
+    private static partial Regex ItemConverterTodo();
 
     private static string ResolveTypeName(JsonSchema schema, string schemaFile)
     {

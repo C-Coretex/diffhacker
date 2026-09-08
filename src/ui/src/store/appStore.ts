@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type {
   AnalysisProgress,
+  AnalysisView,
   ChangesetResult,
   EnvironmentInfo,
   HostInfo,
@@ -18,6 +19,7 @@ export type RepositoryStatus = 'none' | 'opening' | 'open' | 'error';
 export type ProvidersStatus = 'loading' | 'ready' | 'error';
 export type ChangesetStatus = 'idle' | 'loading' | 'ready' | 'error';
 export type ProfileStatus = 'idle' | 'loading' | 'ready' | 'error';
+export type AnalysisStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 /** Whether a profile run is in flight. Separate from the profile's own load state. */
 export type ProfileRunStatus = 'idle' | 'running';
@@ -29,7 +31,7 @@ export type ProfileRunStatus = 'idle' | 'running';
  * asset resolver serves exact paths with no SPA fallback, so a URL would be state to keep in
  * sync for nothing. Revisit if a later iteration wants deep links into the graph.
  */
-export type Screen = 'welcome' | 'repository' | 'settings' | 'profile';
+export type Screen = 'welcome' | 'repository' | 'settings' | 'profile' | 'analysis';
 
 /**
  * How many tool-log rows a live run keeps.
@@ -93,6 +95,20 @@ interface AppState {
   profileRunEvents: ToolCallEvent[];
   profileRunLatest?: ToolCallEvent;
 
+  analysis: AnalysisStatus;
+  analysisView?: AnalysisView;
+  analysisError?: string;
+
+  /**
+   * The live analysis run, kept separately from the profile's for the same reason the two screens
+   * are separate: they are different pieces of work, and a reviewer who started one should not
+   * find the other's tool log underneath it.
+   */
+  analysisRun: ProfileRunStatus;
+  analysisRunProgress?: AnalysisProgress;
+  analysisRunEvents: ToolCallEvent[];
+  analysisRunLatest?: ToolCallEvent;
+
   setConnected(hostInfo: HostInfo): void;
   setDetached(): void;
   setConnectionError(message: string): void;
@@ -128,6 +144,15 @@ interface AppState {
   recordProfileProgress(progress: AnalysisProgress): void;
   recordProfileRunEvent(event: ToolCallEvent): void;
   endProfileRun(): void;
+
+  startLoadingAnalysis(): void;
+  setAnalysis(view: AnalysisView): void;
+  failAnalysis(message: string): void;
+
+  startAnalysisRun(): void;
+  recordAnalysisProgress(progress: AnalysisProgress): void;
+  recordAnalysisRunEvent(event: ToolCallEvent): void;
+  endAnalysisRun(): void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -151,6 +176,10 @@ export const useAppStore = create<AppState>((set) => ({
   profile: 'idle',
   profileRun: 'idle',
   profileRunEvents: [],
+
+  analysis: 'idle',
+  analysisRun: 'idle',
+  analysisRunEvents: [],
 
   setConnected: (hostInfo) => set({ connection: 'connected', hostInfo, connectionError: undefined }),
   setDetached: () => set({ connection: 'detached' }),
@@ -184,6 +213,14 @@ export const useAppStore = create<AppState>((set) => ({
       profileRunProgress: undefined,
       profileRunEvents: [],
       profileRunLatest: undefined,
+      // And so does the analysis: it describes one repository's uncommitted change and means
+      // nothing beside another's.
+      analysis: 'idle',
+      analysisView: undefined,
+      analysisError: undefined,
+      analysisRunProgress: undefined,
+      analysisRunEvents: [],
+      analysisRunLatest: undefined,
     }),
 
   failRepository: (message) => set({ repository: 'none', repositoryError: message }),
@@ -221,10 +258,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   recordProfileRunEvent: (event) =>
     set((state) => {
-      // Turn and usage events move the running totals without adding a row: the log is about what
-      // the model did, and "turn 14 started" is not something it did.
-      const isRow = event.kind === 'tool_started' || event.kind === 'tool_finished' || event.kind === 'retry';
-      const events = isRow ? [...state.profileRunEvents, event] : state.profileRunEvents;
+      const events = isToolLogRow(event) ? [...state.profileRunEvents, event] : state.profileRunEvents;
 
       return {
         profileRunEvents: events.length > TOOL_LOG_LIMIT ? events.slice(-TOOL_LOG_LIMIT) : events,
@@ -233,4 +267,40 @@ export const useAppStore = create<AppState>((set) => ({
     }),
 
   endProfileRun: () => set({ profileRun: 'idle' }),
+
+  startLoadingAnalysis: () => set({ analysis: 'loading', analysisError: undefined }),
+  setAnalysis: (analysisView) => set({ analysis: 'ready', analysisView, analysisError: undefined }),
+  failAnalysis: (message) => set({ analysis: 'error', analysisError: message }),
+
+  startAnalysisRun: () =>
+    set({
+      analysisRun: 'running',
+      analysisRunProgress: undefined,
+      analysisRunEvents: [],
+      analysisRunLatest: undefined,
+    }),
+
+  recordAnalysisProgress: (analysisRunProgress) => set({ analysisRunProgress }),
+
+  recordAnalysisRunEvent: (event) =>
+    set((state) => {
+      const events = isToolLogRow(event) ? [...state.analysisRunEvents, event] : state.analysisRunEvents;
+
+      return {
+        analysisRunEvents: events.length > TOOL_LOG_LIMIT ? events.slice(-TOOL_LOG_LIMIT) : events,
+        analysisRunLatest: event,
+      };
+    }),
+
+  endAnalysisRun: () => set({ analysisRun: 'idle' }),
 }));
+
+/**
+ * Whether an event earns a row in the tool log.
+ *
+ * Turn and usage events move the running totals without adding one: the log is about what the
+ * model did, and "turn 14 started" is not something it did.
+ */
+function isToolLogRow(event: ToolCallEvent): boolean {
+  return event.kind === 'tool_started' || event.kind === 'tool_finished' || event.kind === 'retry';
+}

@@ -8,19 +8,8 @@ namespace DiffHacker.Tools;
 /// </summary>
 internal static class ToolFormat
 {
-    /// <summary>
-    /// Git's own one-letter status codes. A model has seen millions of lines of
-    /// <c>git status --short</c>; there is nothing to gain by inventing new words for these.
-    /// </summary>
-    public static string Status(ChangeStatus status) => status switch
-    {
-        ChangeStatus.Added => "A",
-        ChangeStatus.Modified => "M",
-        ChangeStatus.Deleted => "D",
-        ChangeStatus.Renamed => "R",
-        ChangeStatus.Copied => "C",
-        _ => "?",
-    };
+    /// <inheritdoc cref="ChangedFileText.Status"/>
+    public static string Status(ChangeStatus status) => ChangedFileText.Status(status);
 
     /// <summary>The snapshot stamp every result header carries, so a stale answer is a legible one.</summary>
     public static string Timestamp(DateTimeOffset at) =>
@@ -42,79 +31,10 @@ internal static class ToolFormat
         return string.Create(CultureInfo.InvariantCulture, $"{bytes / (1024.0 * 1024.0):0.#} MB");
     }
 
-    /// <summary>One row of <c>list_changed_files</c>. Path last, so an odd path cannot shift a column.</summary>
-    /// <param name="file">The changed file.</param>
-    /// <param name="withheld">
-    /// Whether its content is withheld. Flagged rather than omitted: the file really did change,
-    /// and a reviewer who cannot see that it changed is worse off than one who can see it changed
-    /// but not how.
-    /// </param>
-    public static string ChangedRow(ChangedFile file, bool withheld = false)
-    {
-        var added = file.LinesAdded is { } a
-            ? string.Create(CultureInfo.InvariantCulture, $"+{a}")
-            : "+-";
+    /// <inheritdoc cref="ChangedFileText.Row"/>
+    public static string ChangedRow(ChangedFile file, bool withheld = false) =>
+        ChangedFileText.Row(file, withheld);
 
-        var removed = file.LinesRemoved is { } r
-            ? string.Create(CultureInfo.InvariantCulture, $"-{r}")
-            : "--";
-
-        var hunks = file.HunkCount is { } h
-            ? string.Create(CultureInfo.InvariantCulture, $"{h}h")
-            : "-h";
-
-        var row = string.Create(
-            CultureInfo.InvariantCulture,
-            $"{Status(file.Status)} {added} {removed} {hunks} {file.Language ?? "-"} {file.Project.Name} {file.Path}");
-
-        if (file.PreviousPath is { } previous)
-        {
-            row += string.Create(CultureInfo.InvariantCulture, $" (was {previous})");
-        }
-
-        foreach (var flag in Flags(file))
-        {
-            row += " [" + flag + "]";
-        }
-
-        if (withheld)
-        {
-            row += " [content withheld]";
-        }
-
-        return row;
-    }
-
-    /// <summary>The column key printed above a changed-file listing.</summary>
-    public const string ChangedRowLegend =
-        "columns: status  +added  -removed  hunks  language  project  path  [flags]\n"
-        + "[content withheld] means the file changed but may hold credentials, so it cannot be read or diffed.";
-
-    private static IEnumerable<string> Flags(ChangedFile file)
-    {
-        if (file.IsBinary)
-        {
-            yield return "binary";
-        }
-
-        if (file.IsUntracked)
-        {
-            yield return "untracked";
-        }
-
-        if (file.IsSubmodule)
-        {
-            yield return "submodule";
-        }
-
-        if (file.IsSymlink)
-        {
-            yield return "symlink";
-        }
-
-        if (file.IsNestedRepository)
-        {
-            yield return "nested repository";
-        }
-    }
+    /// <inheritdoc cref="ChangedFileText.Legend"/>
+    public const string ChangedRowLegend = ChangedFileText.Legend;
 }
