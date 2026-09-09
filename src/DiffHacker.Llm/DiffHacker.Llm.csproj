@@ -24,8 +24,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The bundled price table. See ModelPricing. -->
-    <EmbeddedResource Include="Pricing\model-prices.json" />
+    <!-- The bundled model table: prices and context windows. See ModelCatalog. -->
+    <EmbeddedResource Include="Catalog\model-catalog.json" />
   </ItemGroup>
 
   <ItemGroup>

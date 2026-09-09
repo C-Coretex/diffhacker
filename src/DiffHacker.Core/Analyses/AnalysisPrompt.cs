@@ -162,7 +162,25 @@ public static class AnalysisPrompt
           and no repeats.
         - The reading order lists every node once.
 
-        ## Writing
+        ## Writing — short, because of where it is read
+
+        Most of this is read inside a box on a diagram, roughly the size of a business card, with
+        three hundred others beside it. A paragraph in that box is a paragraph nobody reads: it is
+        clipped, and what survives is the least useful half of your sentence. Every field below has
+        a length that fits where it lands.
+
+        - node title: 60 characters. Not a sentence — a label, like a good commit subject.
+        - node whatChanged, whyItChanged, howItAffectsOthers, implementationNotes: 240 each.
+        - container title: 50. container summary: 200. container explanation: 600.
+        - the overall summary: 800. Each individual risk: 200.
+
+        Say the specific thing and stop. "Cache key now includes the tenant" is worth ten times
+        "This change modifies the caching behaviour of the system in order to account for tenancy",
+        and it is a third of the length. Cut the preamble, not the content: no "This file", no
+        "The purpose of this change is to", no restating the file's name back to the reader.
+
+        Going over is not rejected, and you should never drop a fact to fit. But a field that runs
+        to twice its length is recorded as too long, and the reviewer sees it truncated.
 
         - whyItChanged is what reviewers need and what models most often waste. "The method was
           updated" is not a reason. "Because the cache key now includes the tenant, every caller

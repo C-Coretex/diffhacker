@@ -26,7 +26,17 @@ public sealed record LlmBudget
 
     public int MaxTurns { get; init; } = 300;
 
-    /// <summary>Input plus output, across the whole run.</summary>
+    /// <summary>
+    /// Input plus output, across the whole run.
+    /// <para>
+    /// Ten million rather than the two million this started at, because two million cannot do what
+    /// <see cref="Default"/> promises. Every turn resends the whole conversation, so a run's total
+    /// is roughly turns × request size: at 300 turns and the ~30–80k tokens a request reaches once
+    /// <see cref="ToolResultRetentionBytes"/> of tool results are in it, a genuine 1000-file
+    /// exploration lands in the millions before it has done anything wrong. A guard that stops a
+    /// working run is not a runaway guard.
+    /// </para>
+    /// </summary>
     public long MaxTotalTokens { get; init; } = 10_000_000;
 
     /// <summary>

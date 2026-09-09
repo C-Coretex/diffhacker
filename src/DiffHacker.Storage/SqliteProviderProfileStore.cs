@@ -28,7 +28,8 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
                updated_at_utc    AS UpdatedAtUtc,
                model_suggestions AS ModelSuggestions,
                input_cost_per_million  AS InputCostPerMillion,
-               output_cost_per_million AS OutputCostPerMillion
+               output_cost_per_million AS OutputCostPerMillion,
+               context_window_tokens   AS ContextWindowTokens
         FROM provider_profiles
         """;
 
@@ -66,10 +67,10 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
             INSERT INTO provider_profiles
                 (id, provider_type, display_name, model, base_url,
                  created_at_utc, updated_at_utc, model_suggestions,
-                 input_cost_per_million, output_cost_per_million)
+                 input_cost_per_million, output_cost_per_million, context_window_tokens)
             VALUES (@Id, @ProviderType, @DisplayName, @Model, @BaseUrl,
                     @CreatedAtUtc, @UpdatedAtUtc, @ModelSuggestions,
-                    @InputCostPerMillion, @OutputCostPerMillion)
+                    @InputCostPerMillion, @OutputCostPerMillion, @ContextWindowTokens)
             ON CONFLICT(id) DO UPDATE SET
                 provider_type           = @ProviderType,
                 display_name            = @DisplayName,
@@ -78,7 +79,8 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
                 updated_at_utc          = @UpdatedAtUtc,
                 model_suggestions       = @ModelSuggestions,
                 input_cost_per_million  = @InputCostPerMillion,
-                output_cost_per_million = @OutputCostPerMillion;
+                output_cost_per_million = @OutputCostPerMillion,
+                context_window_tokens   = @ContextWindowTokens;
             """,
             ProviderProfileRow.From(profile),
             cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -154,6 +156,12 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
 
         public string? OutputCostPerMillion { get; init; }
 
+        /// <summary>
+        /// An INTEGER rather than text: a token count is a whole number and has none of the
+        /// rounding problem the two money columns above it do. Null when no override is set.
+        /// </summary>
+        public int? ContextWindowTokens { get; init; }
+
         public static ProviderProfileRow From(LlmProviderProfile profile) => new()
         {
             Id = profile.Id,
@@ -168,6 +176,7 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
                 : JsonSerializer.Serialize(profile.ModelSuggestions, StorageJson.Options),
             InputCostPerMillion = FormatMoney(profile.InputCostPerMillion),
             OutputCostPerMillion = FormatMoney(profile.OutputCostPerMillion),
+            ContextWindowTokens = profile.ContextWindowTokens,
         };
 
         public LlmProviderProfile ToProfile() => new()
@@ -184,6 +193,7 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
                 : JsonSerializer.Deserialize<List<string>>(ModelSuggestions, StorageJson.Options) ?? [],
             InputCostPerMillion = ParseMoney(InputCostPerMillion),
             OutputCostPerMillion = ParseMoney(OutputCostPerMillion),
+            ContextWindowTokens = ContextWindowTokens,
         };
 
         private static string? FormatMoney(decimal? value) =>

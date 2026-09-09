@@ -33,6 +33,44 @@
   --border: oklch(0.92 0.004 286);
   --input: oklch(0.92 0.004 286);
   --ring: oklch(0.55 0.22 264);
+
+/*
+  Project colours. Node fill encodes which project or module a file belongs to (Iteration 8
+  requirement 6), and the number of projects in a repository is unbounded — so colour never does
+  the work alone: every box also prints its project name, and the legend maps swatch to name.
+
+  Ten hues at roughly 35 degrees apart. Fills stay pale in light and deep in dark so black text
+  and white text respectively keep their contrast on every one of them; the -rail token is the
+  saturated version, used for the four-pixel edge of the box and the legend swatch, where it has
+  to be identifiable rather than merely present.
+
+  graph/palette.ts assigns them: projects sorted by node count, then handed out interleaved, so
+  the largest projects land furthest apart in hue and the red/green pair a protanope collapses is
+  never the first two given out. The eleventh project onward gets --project-other.
+*/
+
+  --project-1: oklch(0.955 0.035 25);
+  --project-1-rail: oklch(0.60 0.15 25);
+  --project-2: oklch(0.955 0.035 60);
+  --project-2-rail: oklch(0.60 0.15 60);
+  --project-3: oklch(0.955 0.035 100);
+  --project-3-rail: oklch(0.60 0.15 100);
+  --project-4: oklch(0.955 0.035 145);
+  --project-4-rail: oklch(0.60 0.15 145);
+  --project-5: oklch(0.955 0.035 185);
+  --project-5-rail: oklch(0.60 0.15 185);
+  --project-6: oklch(0.955 0.035 225);
+  --project-6-rail: oklch(0.60 0.15 225);
+  --project-7: oklch(0.955 0.035 264);
+  --project-7-rail: oklch(0.60 0.15 264);
+  --project-8: oklch(0.955 0.035 300);
+  --project-8-rail: oklch(0.60 0.15 300);
+  --project-9: oklch(0.955 0.035 330);
+  --project-9-rail: oklch(0.60 0.15 330);
+  --project-10: oklch(0.955 0.035 355);
+  --project-10-rail: oklch(0.60 0.15 355);
+  --project-other: oklch(0.96 0.002 286);
+  --project-other-rail: oklch(0.55 0.014 285.9);
 }
 
 .dark {
@@ -57,6 +95,29 @@
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 16%);
   --ring: oklch(0.68 0.17 264);
+
+  --project-1: oklch(0.27 0.04 25);
+  --project-1-rail: oklch(0.70 0.14 25);
+  --project-2: oklch(0.27 0.04 60);
+  --project-2-rail: oklch(0.70 0.14 60);
+  --project-3: oklch(0.27 0.04 100);
+  --project-3-rail: oklch(0.70 0.14 100);
+  --project-4: oklch(0.27 0.04 145);
+  --project-4-rail: oklch(0.70 0.14 145);
+  --project-5: oklch(0.27 0.04 185);
+  --project-5-rail: oklch(0.70 0.14 185);
+  --project-6: oklch(0.27 0.04 225);
+  --project-6-rail: oklch(0.70 0.14 225);
+  --project-7: oklch(0.27 0.04 264);
+  --project-7-rail: oklch(0.70 0.14 264);
+  --project-8: oklch(0.27 0.04 300);
+  --project-8-rail: oklch(0.70 0.14 300);
+  --project-9: oklch(0.27 0.04 330);
+  --project-9-rail: oklch(0.70 0.14 330);
+  --project-10: oklch(0.27 0.04 355);
+  --project-10-rail: oklch(0.70 0.14 355);
+  --project-other: oklch(0.27 0.008 286);
+  --project-other-rail: oklch(0.71 0.012 286);
 }
 
 @theme inline {
@@ -81,6 +142,29 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-project-1: var(--project-1);
+  --color-project-1-rail: var(--project-1-rail);
+  --color-project-2: var(--project-2);
+  --color-project-2-rail: var(--project-2-rail);
+  --color-project-3: var(--project-3);
+  --color-project-3-rail: var(--project-3-rail);
+  --color-project-4: var(--project-4);
+  --color-project-4-rail: var(--project-4-rail);
+  --color-project-5: var(--project-5);
+  --color-project-5-rail: var(--project-5-rail);
+  --color-project-6: var(--project-6);
+  --color-project-6-rail: var(--project-6-rail);
+  --color-project-7: var(--project-7);
+  --color-project-7-rail: var(--project-7-rail);
+  --color-project-8: var(--project-8);
+  --color-project-8-rail: var(--project-8-rail);
+  --color-project-9: var(--project-9);
+  --color-project-9-rail: var(--project-9-rail);
+  --color-project-10: var(--project-10);
+  --color-project-10-rail: var(--project-10-rail);
+  --color-project-other: var(--project-other);
+  --color-project-other-rail: var(--project-other-rail);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

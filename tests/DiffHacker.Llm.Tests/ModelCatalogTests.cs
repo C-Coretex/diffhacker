@@ -1,6 +1,6 @@
 using DiffHacker.Core.Llm;
 using DiffHacker.Core.Providers;
-using DiffHacker.Llm.Pricing;
+using DiffHacker.Llm.Catalog;
 
 namespace DiffHacker.Llm.Tests;
 
@@ -14,14 +14,14 @@ namespace DiffHacker.Llm.Tests;
 /// job is making cost predictable.
 /// </para>
 /// </summary>
-public sealed class ModelPricingTests
+public sealed class ModelCatalogTests
 {
-    private static readonly ModelPricing Pricing = new();
+    private static readonly ModelCatalog Catalog = new();
 
     [Fact]
     public void The_bundled_table_loads_and_says_how_old_it_is()
     {
-        Pricing.TableAsOf.Year.ShouldBeGreaterThanOrEqualTo(
+        Catalog.TableAsOf.Year.ShouldBeGreaterThanOrEqualTo(
             2025,
             "the date is shown beside every estimate, so a reader can judge how much to trust it.");
     }
@@ -34,7 +34,7 @@ public sealed class ModelPricingTests
     [InlineData(LlmProviderType.DeepSeek, "deepseek-chat")]
     public void A_known_model_has_a_rate(LlmProviderType type, string model)
     {
-        Pricing.TryGetRate(type, model, out var rate).ShouldBeTrue();
+        Catalog.TryGetRate(type, model, out var rate).ShouldBeTrue();
 
         rate.InputPerMillion.ShouldBeGreaterThan(0);
         rate.OutputPerMillion.ShouldBeGreaterThan(0);
@@ -44,7 +44,7 @@ public sealed class ModelPricingTests
     public void A_dated_model_identifier_resolves_to_its_family()
     {
         // Providers pin snapshots: users type gpt-4o-2024-08-06 and expect a price.
-        Pricing.TryGetRate(LlmProviderType.OpenAi, "gpt-4o-2024-08-06", out var rate).ShouldBeTrue();
+        Catalog.TryGetRate(LlmProviderType.OpenAi, "gpt-4o-2024-08-06", out var rate).ShouldBeTrue();
         rate.InputPerMillion.ShouldBe(2.50m);
     }
 
@@ -53,8 +53,8 @@ public sealed class ModelPricingTests
     {
         // gpt-4o-mini must not be priced as gpt-4o. This is the whole reason lookup is
         // longest-prefix rather than first-match.
-        Pricing.TryGetRate(LlmProviderType.OpenAi, "gpt-4o-mini", out var mini).ShouldBeTrue();
-        Pricing.TryGetRate(LlmProviderType.OpenAi, "gpt-4o", out var full).ShouldBeTrue();
+        Catalog.TryGetRate(LlmProviderType.OpenAi, "gpt-4o-mini", out var mini).ShouldBeTrue();
+        Catalog.TryGetRate(LlmProviderType.OpenAi, "gpt-4o", out var full).ShouldBeTrue();
 
         mini.InputPerMillion.ShouldBeLessThan(full.InputPerMillion);
     }
@@ -62,7 +62,7 @@ public sealed class ModelPricingTests
     [Fact]
     public void An_unknown_model_has_no_rate_rather_than_a_neighbours()
     {
-        Pricing.TryGetRate(LlmProviderType.OpenAi, "some-model-nobody-has-heard-of", out _)
+        Catalog.TryGetRate(LlmProviderType.OpenAi, "some-model-nobody-has-heard-of", out _)
             .ShouldBeFalse("a plausible-looking wrong number is worse than an honest blank.");
     }
 
@@ -70,13 +70,84 @@ public sealed class ModelPricingTests
     public void An_arbitrary_compatible_endpoint_has_no_prices_at_all()
     {
         // Correct: nobody can know what a user's own gateway charges.
-        Pricing.TryGetRate(LlmProviderType.OpenAiCompatible, "llama3.1", out _).ShouldBeFalse();
+        Catalog.TryGetRate(LlmProviderType.OpenAiCompatible, "llama3.1", out _).ShouldBeFalse();
     }
 
     [Fact]
     public void A_model_on_the_wrong_provider_is_not_priced()
     {
-        Pricing.TryGetRate(LlmProviderType.Anthropic, "gpt-4o", out _).ShouldBeFalse();
+        Catalog.TryGetRate(LlmProviderType.Anthropic, "gpt-4o", out _).ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(LlmProviderType.OpenAi, "gpt-4o")]
+    [InlineData(LlmProviderType.Anthropic, "claude-sonnet-4-5")]
+    [InlineData(LlmProviderType.Gemini, "gemini-2.5-pro")]
+    [InlineData(LlmProviderType.Grok, "grok-4")]
+    [InlineData(LlmProviderType.DeepSeek, "deepseek-chat")]
+    public void A_known_model_has_a_context_window(LlmProviderType type, string model)
+    {
+        // Iteration 8 requirement 16. The same table, the same lookup, one more fact per row.
+        Catalog.TryGetContextWindow(type, model, out var tokens).ShouldBeTrue();
+        tokens.ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public void A_context_window_resolves_by_prefix_the_way_a_rate_does()
+    {
+        Catalog.TryGetContextWindow(LlmProviderType.OpenAi, "gpt-4o-2024-08-06", out var dated)
+            .ShouldBeTrue();
+        Catalog.TryGetContextWindow(LlmProviderType.OpenAi, "gpt-4o", out var plain).ShouldBeTrue();
+
+        dated.ShouldBe(plain);
+    }
+
+    [Fact]
+    public void The_longest_matching_prefix_wins_for_a_window_too()
+    {
+        // gpt-4o-mini and gpt-4o share a window; gpt-5 and gpt-4.1 do not, which is what makes the
+        // distinction worth asserting.
+        Catalog.TryGetContextWindow(LlmProviderType.OpenAi, "gpt-4.1-mini", out var large)
+            .ShouldBeTrue();
+        Catalog.TryGetContextWindow(LlmProviderType.OpenAi, "gpt-4o-mini", out var small)
+            .ShouldBeTrue();
+
+        large.ShouldBeGreaterThan(small);
+    }
+
+    [Fact]
+    public void An_unknown_model_has_no_window_rather_than_a_neighbours()
+    {
+        // The window is shown as the denominator of a meter. A wrong denominator makes a meter that
+        // is confidently wrong, which is worse than one that admits it does not know.
+        Catalog.TryGetContextWindow(LlmProviderType.OpenAi, "some-model-nobody-has-heard-of", out _)
+            .ShouldBeFalse();
+
+        Catalog.TryGetContextWindow(LlmProviderType.OpenAiCompatible, "llama3.1", out _)
+            .ShouldBeFalse();
+
+        Catalog.TryGetContextWindow(LlmProviderType.Anthropic, "gpt-4o", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_profile_override_is_used_in_place_of_the_table()
+    {
+        var profile = new LlmProviderProfile
+        {
+            Id = "p1",
+            ProviderType = LlmProviderType.OpenAi,
+            DisplayName = "Test",
+            Model = "gpt-4o",
+            CreatedAtUtc = DateTimeOffset.UnixEpoch,
+            UpdatedAtUtc = DateTimeOffset.UnixEpoch,
+            ContextWindowTokens = 1_000_000,
+        };
+
+        profile.ContextWindowOverride.ShouldBe(1_000_000);
+
+        // And a profile with nothing set falls through to the table, exactly as one with no cost
+        // override already does.
+        (profile with { ContextWindowTokens = null }).ContextWindowOverride.ShouldBeNull();
     }
 
     [Fact]

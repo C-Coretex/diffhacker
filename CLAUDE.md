@@ -381,7 +381,15 @@ a real provider. **Iteration 7 reuses it** in
 [06-analysis-pipeline.spec.ts](tests/e2e/specs/06-analysis-pipeline.spec.ts), where
 `stubAnalysisResult` builds a valid answer for whichever files the fixture changed — the same
 spec drives a three-file change and a five-hundred-file one, and §0.2.5 means the answer has to
-name every path either way.
+name every path either way. **Iteration 8 adds
+[07-graph-rendering.spec.ts](tests/e2e/specs/07-graph-rendering.spec.ts)** — the only place the whole
+diagram stack is exercised together: a stored analysis, read over the real bridge, laid out by a real
+Web Worker in a real WebView, drawn, searched, collapsed and dragged.
+
+> The stub answers `stream: true` with server-sent events, because `LlmSession` streams every
+> request. A stub that only sent one JSON body read as a provider returning an empty message, and
+> that had been failing every analysis and profile journey in the suite. See
+> [docs/decisions.md](docs/decisions.md#the-stub-provider-speaks-server-sent-events).
 
 ### Dependencies beyond §0.3
 
@@ -403,6 +411,11 @@ file rather than a graph package, and the validator is plain LINQ over the model
 `DiffHacker.Core` gained the already-approved `Microsoft.Extensions.Logging.Abstractions` when the
 profile orchestrator landed there; the unified diff behind the export preview is sixty lines rather
 than a package, and Monaco stays in Iteration 10.
+
+**Iteration 8** added `@xyflow/react` and `elkjs`, both already named in §0.3, plus
+`@radix-ui/react-popover` — within the fixed shadcn/Radix stack, for the legend and the context
+breakdown. Nothing else: the palette is CSS variables, the layout worker is twenty lines of
+`postMessage`, and the search is `String.includes`.
 
 No resilience package (retry is ~60 lines in `RetryPolicy`). No package for the folder picker
 or secret store (PhotinoX's `ShowOpenFolder`; `[LibraryImport]` credential bindings — why
@@ -437,7 +450,7 @@ Other settled decisions:
   forbids half-built results anyway; Iteration 13 wants progress through turns, not characters).
 - **Structured output degrades in tiers:** native `json_schema` → strict `submit_result` tool
   call → `json_object` → prompting. Every tier validates against the schema, one repair round trip allowed.
-- **Budgets default to** 500 tool calls, 300 turns, 2,000,000 tokens, 10-minute request
+- **Budgets default to** 500 tool calls, 300 turns, 10,000,000 tokens, 10-minute request
   timeout, 5 retries. No cost ceiling by default — a mid-run kill wastes what's spent;
   Iteration 13's pre-run estimate is where an expensive run gets prevented.
 - **Pricing** from bundled `src/DiffHacker.Llm/Pricing/model-prices.json` (stamped `asOf`),

@@ -7,7 +7,8 @@ namespace DiffHacker.Host.Tests;
 /// <summary>
 /// A completed analysis to map onto the wire. Small enough to assert on field by field, and
 /// deliberately carrying the awkward parts: a state whose wire spelling differs from its C# name,
-/// a conceptual edge, a warning diagnostic, and a node the model marked as unchanged.
+/// a conceptual edge, a warning diagnostic, a node the model marked as unchanged, and a binary file
+/// whose line counts are absent rather than zero.
 /// </summary>
 internal static class AnalysisSamples
 {
@@ -80,6 +81,25 @@ internal static class AnalysisSamples
                 Language = "C#",
                 Project = new ProjectReference("DiffHacker", "src", "DiffHacker.csproj"),
             },
+            new ChangedFile
+            {
+                Path = "src/Caller.cs",
+                Status = ChangeStatus.Modified,
+                LinesAdded = 4,
+                LinesRemoved = 1,
+                IsBinary = false,
+                Language = "C#",
+                Project = new ProjectReference("DiffHacker", "src", "DiffHacker.csproj"),
+            },
+            new ChangedFile
+            {
+                // No line counts at all, deliberately. Absent is a different claim from zero, and
+                // this is the file that proves the difference survives to the renderer.
+                Path = "assets/icon.png",
+                Status = ChangeStatus.Deleted,
+                IsBinary = true,
+                Project = new ProjectReference("assets", "assets", null),
+            },
         };
 
         return new Analysis
@@ -112,6 +132,7 @@ internal static class AnalysisSamples
                     "src/Caller.cs",
                     "These nodes form a cycle in the reading flow: src/Caller.cs, src/Contract.cs."),
             ],
+            ChangedFiles = [.. changed.Select(ChangedFileFacts.From)],
             ToolCalls = [],
             ProgressMessages = ["Reading the contract"],
         };

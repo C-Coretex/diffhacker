@@ -99,6 +99,11 @@ public sealed class ProviderRpcTarget(
             // is a wrong number presented as an authoritative one.
             InputCostPerMillion = rate?.Input,
             OutputCostPerMillion = rate?.Output,
+
+            // Unlike the pair above, this stands alone: half a rate is a wrong number, half a
+            // context window is not a thing. Absent clears the override and falls back to the
+            // bundled table, exactly as an absent rate does.
+            ContextWindowTokens = ReadContextWindow(request),
         };
 
         await profiles.SaveAsync(profile, cancellationToken).ConfigureAwait(false);
@@ -228,6 +233,7 @@ public sealed class ProviderRpcTarget(
             isActive: isActive,
             model: profile.Model,
             modelSuggestions: profile.ModelSuggestions,
+            contextWindowTokens: profile.ContextWindowTokens,
             outputCostPerMillion: (double?)profile.OutputCostPerMillion,
             providerType: ProviderTypeWire.ToWire(profile.ProviderType));
 
@@ -254,5 +260,32 @@ public sealed class ProviderRpcTarget(
         }
 
         return ((decimal)input, (decimal)output);
+    }
+
+    /// <summary>
+    /// The optional context-window override, for the same reason the price override exists: the
+    /// bundled table is a snapshot, and a user on a model it has never heard of should be able to
+    /// say how big the window is rather than be told forever that it is unknown.
+    /// <para>
+    /// Rejected rather than clamped when it is not positive. A context window of zero or less is
+    /// not a smaller window, it is a typo, and silently turning it into "no override" would leave
+    /// the user looking at the table's number wondering why theirs did not take.
+    /// </para>
+    /// </summary>
+    private static int? ReadContextWindow(SaveProviderRequest request)
+    {
+        if (request.ContextWindowTokens is not { } tokens)
+        {
+            return null;
+        }
+
+        if (tokens <= 0)
+        {
+            throw RpcErrors.Failure(
+                "provider_invalid_context_window",
+                "A context window must be a positive number of tokens.");
+        }
+
+        return tokens;
     }
 }

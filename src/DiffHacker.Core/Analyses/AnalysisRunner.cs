@@ -215,6 +215,9 @@ public sealed partial class AnalysisRunner(
             RepairRounds = run.ResultRepairs,
             Document = candidate,
             Statistics = AnalysisStatistics.From(candidate, changeset.Statistics, graph),
+            // The changeset this answer was validated against, kept with it. Taken from the same
+            // object the run used, so the boxes can never disagree with the graph drawn on them.
+            ChangedFiles = [.. changeset.Files.Select(ChangedFileFacts.From)],
             Diagnostics = validation.Warnings,
             ToolCalls = session.ToolCalls,
             ProgressMessages = recorder.Messages,

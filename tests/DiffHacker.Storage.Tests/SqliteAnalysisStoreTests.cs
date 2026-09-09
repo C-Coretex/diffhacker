@@ -64,6 +64,35 @@ public sealed class SqliteAnalysisStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_changeset_the_run_was_made_from_is_stored_with_it()
+    {
+        // An analysis is a photograph of one changeset, and these are part of the photograph. Read
+        // back from the working tree instead, they would show today's numbers on a diagram of a
+        // change that has since moved on.
+        await _store.SaveAsync(Sample(), TestContext.Current.CancellationToken);
+
+        var stored = (await _store.GetLatestAsync("/repo", TestContext.Current.CancellationToken))
+            .ShouldNotBeNull();
+
+        stored.ChangedFiles.Select(static file => file.Path)
+            .ShouldBe(["src/Contract.cs", "assets/icon.png"]);
+
+        var contract = stored.ChangedFiles[0];
+        contract.Status.ShouldBe(ChangeStatus.Modified);
+        contract.LinesAdded.ShouldBe(12);
+        contract.LinesRemoved.ShouldBe(3);
+        contract.Language.ShouldBe("C#");
+        contract.Project.ShouldBe("DiffHacker");
+
+        // Absent, not zero, on the way back out too.
+        var icon = stored.ChangedFiles[1];
+        icon.IsBinary.ShouldBeTrue();
+        icon.LinesAdded.ShouldBeNull();
+        icon.LinesRemoved.ShouldBeNull();
+        icon.Language.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task Node_states_come_back_spelled_the_way_the_schema_spells_them()
     {
         // The states are an array of enums, which is the one shape the contract generator does not
@@ -260,6 +289,15 @@ public sealed class SqliteAnalysisStoreTests : IAsyncLifetime
                 Language = "C#",
                 Project = new ProjectReference("DiffHacker", "src", "DiffHacker.csproj"),
             },
+            new ChangedFile
+            {
+                // No line counts: the case that proves absent survives the round trip as absent
+                // rather than coming back as zero.
+                Path = "assets/icon.png",
+                Status = ChangeStatus.Deleted,
+                IsBinary = true,
+                Project = new ProjectReference("assets", "assets", null),
+            },
         };
 
         return new Analysis
@@ -285,6 +323,7 @@ public sealed class SqliteAnalysisStoreTests : IAsyncLifetime
                 document,
                 ChangesetStatistics.From(changed),
                 AnalysisGraph.Build(document.Nodes, document.Edges)),
+            ChangedFiles = [.. changed.Select(ChangedFileFacts.From)],
             Diagnostics =
             [
                 AnalysisDiagnostic.Warning(

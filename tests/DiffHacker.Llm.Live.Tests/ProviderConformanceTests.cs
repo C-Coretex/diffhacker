@@ -146,7 +146,7 @@ public sealed class ProviderConformanceTests
             httpClient,
             profile,
             LlmBudget.Default with { MaxTurns = 8, MaxToolCalls = 8 },
-            new Pricing.ModelPricing(),
+            new Catalog.ModelCatalog(),
             NullLogger<LlmSession>.Instance);
     }
 

@@ -45,6 +45,7 @@ public static class AnalysisValidator
         CheckReadingOrder(result, nodesById, diagnostics);
         CheckCycles(result, diagnostics);
         CheckReachability(result, diagnostics);
+        CheckFieldLengths(result, diagnostics);
 
         return new AnalysisValidation { Diagnostics = diagnostics };
     }
@@ -562,6 +563,71 @@ public static class AnalysisValidator
                 AnalysisDiagnosticCodes.Cycle,
                 cycle[0],
                 $"These nodes form a cycle in the reading flow: {string.Join(", ", cycle)}."));
+        }
+    }
+
+    /// <summary>
+    /// Fields that ran to more than twice the length they were asked for.
+    /// <para>
+    /// Warnings, always. The prompt states every budget in <see cref="AnalysisFieldBudgets"/>, and a
+    /// model that overshoots has still answered the question — the text is simply longer than the
+    /// box it is read in, and the renderer truncates it. Making this an error would send a
+    /// three-hundred-node document back to be rewritten because one sentence ran long, and that
+    /// repair round costs more than the verbosity does.
+    /// </para>
+    /// <para>
+    /// One diagnostic per offending field rather than one summary, so the subject names what to
+    /// shorten. The whole result is walked: capping the count would hide exactly the case worth
+    /// seeing, which is a model being verbose everywhere rather than once.
+    /// </para>
+    /// </summary>
+    private static void CheckFieldLengths(AnalysisResult result, List<AnalysisDiagnostic> diagnostics)
+    {
+        Report(string.Empty, "summary", result.Summary, AnalysisFieldBudgets.OverallSummary);
+
+        foreach (var risk in result.OverallRisks)
+        {
+            Report(string.Empty, "risk", risk, AnalysisFieldBudgets.Risk);
+        }
+
+        foreach (var container in result.Containers)
+        {
+            Report(container.Id, "title", container.Title, AnalysisFieldBudgets.ContainerTitle);
+            Report(container.Id, "summary", container.Summary, AnalysisFieldBudgets.ContainerSummary);
+            Report(container.Id, "explanation", container.Explanation, AnalysisFieldBudgets.ContainerExplanation);
+
+            foreach (var risk in container.Risks)
+            {
+                Report(container.Id, "risk", risk, AnalysisFieldBudgets.Risk);
+            }
+        }
+
+        foreach (var node in result.Nodes)
+        {
+            Report(node.Id, "title", node.Title, AnalysisFieldBudgets.NodeTitle);
+            Report(node.Id, "whatChanged", node.WhatChanged, AnalysisFieldBudgets.NodeProse);
+            Report(node.Id, "whyItChanged", node.WhyItChanged, AnalysisFieldBudgets.NodeProse);
+            Report(node.Id, "howItAffectsOthers", node.HowItAffectsOthers, AnalysisFieldBudgets.NodeProse);
+            Report(node.Id, "implementationNotes", node.ImplementationNotes, AnalysisFieldBudgets.NodeProse);
+
+            foreach (var risk in node.Risks)
+            {
+                Report(node.Id, "risk", risk, AnalysisFieldBudgets.Risk);
+            }
+        }
+
+        void Report(string subject, string field, string? value, int budget)
+        {
+            if (!AnalysisFieldBudgets.IsOverlong(value, budget))
+            {
+                return;
+            }
+
+            diagnostics.Add(AnalysisDiagnostic.Warning(
+                AnalysisDiagnosticCodes.VerboseField,
+                subject,
+                $"The {field} {(subject.Length == 0 ? "of the change as a whole" : $"of '{subject}'")} is "
+                    + $"{value!.Length} characters against a budget of {budget}. It will be shown truncated."));
         }
     }
 }

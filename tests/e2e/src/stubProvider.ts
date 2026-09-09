@@ -14,6 +14,11 @@ import type { AddressInfo } from 'node:net';
  * for the connection test, and `/chat/completions` for the run. The conversation is scripted as a
  * queue of turns; the last turn repeats if the model is asked again, so a test that produces one
  * more request than expected fails on its assertions rather than on a hang.
+ *
+ * **It answers `stream: true` with server-sent events**, because `LlmSession` streams every
+ * request — deliberately, so a long answer keeps bytes moving and an idle-timeout does not kill it.
+ * A stub that only knew how to send one JSON body looked like a provider returning an empty
+ * message: the run failed schema validation with "the response was empty" and no layer said why.
  */
 export class StubProvider {
   private readonly server: Server;
@@ -95,7 +100,8 @@ export class StubProvider {
       return send(response, 404, { error: { message: `no route for ${url}` } });
     }
 
-    this.requests.push(JSON.parse(body) as ChatRequest);
+    const request = JSON.parse(body) as ChatRequest;
+    this.requests.push(request);
 
     const turn = this.turns.length > 1 ? this.turns.shift()! : this.turns[0];
 
@@ -105,25 +111,28 @@ export class StubProvider {
       return;
     }
 
-    if (turn.kind === 'tools') {
-      return send(response, 200, completion({
-        finish_reason: 'tool_calls',
-        message: {
-          role: 'assistant',
-          content: null,
-          tool_calls: turn.calls.map((call, index) => ({
-            id: `call_${index}`,
-            type: 'function',
-            function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) },
-          })),
-        },
-      }));
-    }
+    const choice =
+      turn.kind === 'tools'
+        ? {
+            finish_reason: 'tool_calls',
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: turn.calls.map((call, index) => ({
+                id: `call_${index}`,
+                type: 'function',
+                function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) },
+              })),
+            },
+          }
+        : {
+            finish_reason: 'stop',
+            message: { role: 'assistant', content: turn.content },
+          };
 
-    return send(response, 200, completion({
-      finish_reason: 'stop',
-      message: { role: 'assistant', content: turn.content },
-    }));
+    return request.stream === true
+      ? sendStream(response, choice)
+      : send(response, 200, completion(choice));
   }
 }
 
@@ -137,6 +146,8 @@ interface ChatRequest {
   messages: { role: string; content?: unknown }[];
   tools?: { function: { name: string } }[];
   response_format?: { type: string };
+  stream?: boolean;
+  stream_options?: { include_usage?: boolean };
 }
 
 function completion(choice: Record<string, unknown>): Record<string, unknown> {
@@ -148,6 +159,77 @@ function completion(choice: Record<string, unknown>): Record<string, unknown> {
     choices: [{ index: 0, logprobs: null, ...choice }],
     usage: { prompt_tokens: 1200, completion_tokens: 240, total_tokens: 1440 },
   };
+}
+
+/**
+ * The same answer as server-sent events.
+ *
+ * Deliberately more than one chunk: a single frame carrying the whole message would let a bug that
+ * only reads the first delta pass. The shape follows the OpenAI streaming API — a role-only first
+ * delta, content or tool-call deltas after it, a finish_reason with empty choices for usage when it
+ * was asked for, and `[DONE]`.
+ */
+function sendStream(response: ServerResponse, choice: Record<string, unknown>): void {
+  response.writeHead(200, {
+    'content-type': 'text/event-stream',
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+  });
+
+  const frame = (payload: Record<string, unknown>): void => {
+    response.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
+    frame({
+      id: 'chatcmpl-stub',
+      object: 'chat.completion.chunk',
+      created: Math.floor(Date.now() / 1000),
+      model: 'stub-model',
+      choices: [{ index: 0, delta, logprobs: null, finish_reason: finish }],
+    });
+
+  const message = choice.message as {
+    content?: string | null;
+    tool_calls?: Record<string, unknown>[];
+  };
+
+  chunk({ role: 'assistant' });
+
+  if (message.tool_calls) {
+    message.tool_calls.forEach((call, index) => {
+      const fn = call.function as { name: string; arguments: string };
+      chunk({
+        tool_calls: [
+          {
+            index,
+            id: call.id,
+            type: 'function',
+            function: { name: fn.name, arguments: fn.arguments },
+          },
+        ],
+      });
+    });
+  } else if (typeof message.content === 'string') {
+    // Split down the middle, so the aggregation on the other side has two pieces to join.
+    const half = Math.ceil(message.content.length / 2);
+    chunk({ content: message.content.slice(0, half) });
+    chunk({ content: message.content.slice(half) });
+  }
+
+  chunk({}, choice.finish_reason as string);
+
+  frame({
+    id: 'chatcmpl-stub',
+    object: 'chat.completion.chunk',
+    created: Math.floor(Date.now() / 1000),
+    model: 'stub-model',
+    choices: [],
+    usage: { prompt_tokens: 1200, completion_tokens: 240, total_tokens: 1440 },
+  });
+
+  response.write('data: [DONE]\n\n');
+  response.end();
 }
 
 function send(response: ServerResponse, status: number, payload: unknown): void {
@@ -241,4 +323,80 @@ export function stubAnalysisResult(paths: readonly string[]) {
 export function stubAnalysisMissing(paths: readonly string[], omit: string) {
   const kept = paths.filter((path) => path !== omit);
   return stubAnalysisResult(kept);
+}
+
+/**
+ * The same files split across two clusters, with one edge crossing between them.
+ *
+ * Iteration 8's diagram only has anything to say once there is more than one cluster: collapsing,
+ * cross-container edges and bundling are all properties of a graph with a boundary in it, and the
+ * single-cluster answer above has none.
+ *
+ * The split is by index rather than by anything meaningful, because the fixture's files are not
+ * meaningfully different — what matters is that the shape reaches the renderer, not that a stub
+ * clusters well.
+ */
+export function stubTwoClusterResult(paths: readonly string[]) {
+  const half = Math.max(1, Math.ceil(paths.length / 2));
+  const first = paths.slice(0, half);
+  const second = paths.slice(half);
+
+  const base = stubAnalysisResult(paths);
+
+  const cluster = (id: string, title: string, order: number, members: readonly string[]) => ({
+    id,
+    title,
+    summary: `${members.length} file(s) that changed together.`,
+    explanation: `Everything in ${title} was edited for one reason.`,
+    risks: [],
+    displayOrder: order,
+    entryNodeId: members[0],
+    nodeIds: [...members],
+  });
+
+  return {
+    ...base,
+    containers:
+      second.length === 0
+        ? [cluster('first-half', 'The first half', 1, first)]
+        : [
+            cluster('first-half', 'The first half', 1, first),
+            cluster('second-half', 'The second half', 2, second),
+          ],
+    // Ranks restart inside each cluster, which is what the schema requires and what the boxes
+    // print.
+    nodes: base.nodes.map((node) => ({
+      ...node,
+      rank: (first.includes(node.filePath) ? first : second).indexOf(node.filePath) + 1,
+      states: node.filePath === first[0] || node.filePath === second[0]
+        ? ['changed', 'entry_point']
+        : ['changed'],
+    })),
+    edges: [
+      // One inside the first cluster, one crossing between them: the two kinds of line the
+      // diagram has to draw differently.
+      ...(first.length > 1
+        ? [
+            {
+              sourceNodeId: first[0],
+              targetNodeId: first[1],
+              kind: 'direct',
+              explanation: 'The second file reads from the first.',
+              risks: [],
+            },
+          ]
+        : []),
+      ...(second.length > 0
+        ? [
+            {
+              sourceNodeId: first[0],
+              targetNodeId: second[0],
+              kind: 'conceptual',
+              explanation: 'The second cluster only makes sense after the first.',
+              risks: [],
+            },
+          ]
+        : []),
+    ],
+  };
 }

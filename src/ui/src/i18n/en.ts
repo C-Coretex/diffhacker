@@ -168,6 +168,11 @@ export const en = {
     inputCostLabel: 'Input, $ per million tokens',
     outputCostLabel: 'Output, $ per million tokens',
     costPlaceholder: '0.00',
+    contextLegend: 'Context window (optional)',
+    contextHint:
+      'How large this model’s context is, shown live during a run so you can see a long exploration filling up. DiffHacker ships a table of these and it goes stale, so you can say. Leave it blank to use the table, or to leave the size unknown. It is never a limit: no run is stopped for exceeding it.',
+    contextWindowLabel: 'Context window, in tokens',
+    contextWindowPlaceholder: '200000',
     testFailed: 'The connection failed.',
     providerSaid: 'The provider said:',
     httpStatus: 'HTTP {status}',
@@ -305,13 +310,33 @@ export const en = {
     bytes: '{bytes} bytes',
     retry: 'Retrying (attempt {attempt}) in {delay}s',
     empty: 'No tool calls yet.',
+
+    context: 'Context',
+    contextLabel: 'How full the model’s context is',
+    contextOf: '{used} / {window} ({percent}%)',
+    contextUnknownWindow: '{used} tokens · window unknown',
+    contextUnreported: 'not reported by this provider',
+
+    contextBreakdown: 'What is filling the context',
+    contextUnits:
+      'The total above is in tokens, counted by the provider. The split below is in characters, counted here — exactly, but a different unit.',
+    contextInstructions: 'Instructions',
+    contextSchema: 'Answer schema',
+    contextTools: 'Tool definitions',
+    contextOpening: 'Opening message',
+    contextToolResults: 'Tool results',
+    contextAssistant: 'The model’s own replies',
+    contextReasoning: 'Reasoning',
+    contextNotReported: 'not reported',
+    contextPruned:
+      '{pruned} characters of older tool results have been dropped to make room. The model was told, and can call a tool again.',
   },
 
   /**
-   * The analysis itself: one run over the working tree, and the graph it produces.
+   * The analysis itself: one run over the working tree, and the diagram it produces.
    *
-   * Nothing here renders a diagram — that is Iteration 8. What these strings describe is the
-   * result existing: the clusters, the order to read them in, and the risks beside them.
+   * Iteration 7 added the result; Iteration 8 added the diagram it is drawn as. The `graph` group
+   * below is that diagram — the boxes, the lines between them, and the controls above them.
    */
   analysis: {
     heading: 'Analysis',
@@ -378,9 +403,61 @@ export const en = {
     statRisks: 'Risks recorded',
     statNone: 'none',
 
+    detailsHeading: 'Details',
+    detailsBody:
+      'Every cluster, file and link in full, in the model’s own words. The diagram above says the same thing more briefly.',
+
     diagnosticsHeading: 'What validation noticed',
     diagnosticsBody:
       'The result passed every rule that would have stopped it. These are the things worth knowing anyway.',
+
+    /** The diagram: the boxes, the lines between them, and the controls above them. */
+    graph: {
+      canvasLabel: 'The change as a diagram',
+      layingOut: 'Arranging the diagram…',
+      layoutFailed: 'The diagram could not be arranged. See log.txt for details.',
+
+      entryPoint: 'Start reading here',
+      risky: 'Carries a risk',
+      rankTitle: 'Position in this cluster’s reading order',
+      binary: 'binary',
+      noCounts: 'no line count',
+
+      fileCount: '{count} files',
+      startsAt: 'Starts at {file}',
+      collapseContainer: 'Collapse {title}',
+      expandContainer: 'Expand {title}',
+
+      fitView: 'Fit',
+      collapseAll: 'Collapse all',
+      expandAll: 'Expand all',
+      legend: 'Legend',
+      counts: '{containers} clusters · {nodes} files · {edges} links',
+
+      searchLabel: 'Find a file on the diagram',
+      searchPlaceholder: 'Find a file, node or cluster…',
+      searchClear: 'Clear the search',
+      searchNoResults: 'Nothing in this change matches “{query}”.',
+      searchByPath: 'Files',
+      searchByNodeTitle: 'Node titles',
+      searchByContainerTitle: 'Clusters',
+
+      legendEdges: 'Lines',
+      legendDirect: 'Direct — real code connects the two',
+      legendConceptual: 'Conceptual — connected by intent, not by code',
+      legendCrossContainer: 'Between clusters — drawn, but kept out of the layout',
+      legendBundle: 'Several links, folded into one by a collapsed cluster',
+
+      legendStates: 'Boxes',
+      legendStatesNote:
+        'A file can be several of these at once. Colour is the project it belongs to, never its state.',
+
+      legendProjects: 'Projects',
+      legendNoProjects: 'Nothing in this change was attributed to a project.',
+      legendOtherProjects: '{count} other projects',
+      legendPaletteFull:
+        'Only the {count} largest projects get a colour of their own; every box also prints its project name.',
+    },
 
     state: {
       changed: 'changed',
@@ -398,6 +475,8 @@ export const en = {
         'The model’s reading order left some files out, so cluster order and rank were used instead.',
       unreachable_node:
         'Nothing in its cluster leads to this file, so a reader arrives at it without being told why.',
+      verbose_field:
+        'The model wrote far more here than fits where it is read, so it is shown shortened.',
     },
   },
 
@@ -454,6 +533,8 @@ export const en = {
     provider_base_url_required: 'An OpenAI-compatible endpoint needs a base URL.',
     provider_invalid_base_url: 'That base URL is not a valid absolute URL.',
     provider_invalid_cost: 'A token price cannot be negative.',
+    provider_invalid_context_window:
+      'A context window must be a positive number of tokens.',
 
     secret_store_unavailable: 'Your API keys could not be read. See log.txt for details.',
     settings_store_unavailable: 'Your settings could not be read. See log.txt for details.',

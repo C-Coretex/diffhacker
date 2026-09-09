@@ -37,8 +37,28 @@ public sealed partial class RunEventNotifier(IRpcNotifier notifier, ILogger<RunE
             return;
         }
 
+        var context = value.Context;
+
         var payload = new ToolCallEvent(
             argumentsPreview: value.ArgumentsPreview,
+            // The provider's own count of the last request, and the window to measure it against.
+            // Both stay null when they are unknown: a zero here would read as an empty context, and
+            // a guessed window would make a meter that is confidently wrong.
+            contextTokens: value.ContextTokens is { } occupied
+                ? (int)Math.Min(occupied, int.MaxValue)
+                : null,
+            contextWindowTokens: value.ContextWindowTokens,
+
+            // The breakdown is ours and exact, in characters. Absent on the events raised before a
+            // request was ever built, which is why every one of these is nullable.
+            contextInstructionsCharacters: context?.InstructionCharacters,
+            contextSchemaCharacters: context?.SchemaCharacters,
+            contextToolDefinitionCharacters: context?.ToolDefinitionCharacters,
+            contextOpeningCharacters: context?.UserCharacters,
+            contextToolResultCharacters: context?.ToolResultCharacters,
+            contextPrunedCharacters: context?.PrunedCharacters,
+            contextAssistantCharacters: context?.AssistantCharacters,
+            contextReasoningCharacters: context?.ReasoningCharacters,
             costUsd: value.CumulativeUsage.EstimatedCostUsd is { } cost ? (double)cost : null,
             durationMs: value.Duration?.TotalMilliseconds,
             // Token counts are long in the domain and int on the wire. A run that overflowed an

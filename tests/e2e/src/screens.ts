@@ -210,12 +210,19 @@ export class SettingsScreen {
     return this.page.getByLabel(en.providers.outputCostLabel);
   }
 
+  /** Iteration 8 requirement 16: the context window, overridden the same way a price is. */
+  get contextWindowField(): Locator {
+    return this.page.getByLabel(en.providers.contextWindowLabel);
+  }
+
   async addProvider(details: {
     name: string;
     model: string;
     apiKey: string;
     /** The optional price override. Only takes effect as a pair. */
     cost?: { input: string; output: string };
+    /** The optional context-window override. Unlike a price, it stands alone. */
+    contextWindow?: string;
     /** Set to point at an OpenAI-compatible endpoint, which is how the stub provider is used. */
     baseUrl?: string;
   }): Promise<void> {
@@ -233,6 +240,10 @@ export class SettingsScreen {
     if (details.cost) {
       await this.inputCostField.fill(details.cost.input);
       await this.outputCostField.fill(details.cost.output);
+    }
+
+    if (details.contextWindow) {
+      await this.contextWindowField.fill(details.contextWindow);
     }
 
     await this.saveButton.click();
@@ -385,6 +396,46 @@ export class AnalysisScreen {
   /** The tool log's row for one tool. Several calls to the same tool give several rows. */
   toolRow(tool: string): Locator {
     return this.page.getByRole('row').filter({ hasText: tool });
+  }
+
+  // ---------------------------------------------------------------- Iteration 8: the diagram
+
+  /**
+   * The long-form result Iteration 7 rendered on the page, which Iteration 8 folded behind a
+   * disclosure — the diagram now says the same thing in a form that fits on one screen.
+   */
+  get detailsToggle(): Locator {
+    return this.page.getByRole('button', { name: en.analysis.detailsHeading, exact: true });
+  }
+
+  /** One box on the diagram, addressed by the node id — which is the file path (§0.6). */
+  graphNode(nodeId: string): Locator {
+    return this.page.getByTestId(`graph-node-${nodeId}`);
+  }
+
+  graphContainer(containerId: string): Locator {
+    return this.page.getByTestId(`graph-container-${containerId}`);
+  }
+
+  get graphSearch(): Locator {
+    return this.page.getByLabel(en.analysis.graph.searchLabel);
+  }
+
+  get collapseAllButton(): Locator {
+    return this.page.getByRole('button', { name: en.analysis.graph.collapseAll, exact: true });
+  }
+
+  get expandAllButton(): Locator {
+    return this.page.getByRole('button', { name: en.analysis.graph.expandAll, exact: true });
+  }
+
+  get legendButton(): Locator {
+    return this.page.getByRole('button', { name: en.analysis.graph.legend, exact: true });
+  }
+
+  /** The live context meter, on the run panel. */
+  get contextMeter(): Locator {
+    return this.page.getByRole('button', { name: en.toolLog.contextLabel });
   }
 }
 

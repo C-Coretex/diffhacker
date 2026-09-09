@@ -23,7 +23,7 @@ public sealed partial class AppDatabase : IAsyncDisposable
     /// Bumped whenever <see cref="MigrateAsync"/> gains a step. Stored in the file, so an older
     /// build opening a newer database can say so rather than misreading it.
     /// </summary>
-    private const int CurrentSchemaVersion = 4;
+    private const int CurrentSchemaVersion = 5;
 
     private readonly string _connectionString;
     private readonly ILogger<AppDatabase> _logger;
@@ -256,6 +256,34 @@ public sealed partial class AppDatabase : IAsyncDisposable
                 CREATE INDEX ix_analyses_model ON analyses (model);
 
                 CREATE INDEX ix_analyses_schema_version ON analyses (schema_version);
+                """,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+
+        if (version < 5)
+        {
+            // Iteration 8: two additions, both nullable, both readable by a build that predates
+            // them as "not set" rather than as a failure.
+            //
+            // files_json is the changeset the analysis was made from — status, line counts,
+            // language and project, one entry per file — because the node boxes draw those and
+            // joining a stored analysis against today's working tree would print today's numbers
+            // on yesterday's diagram. A row written by version 4 reads back as an empty list and
+            // its boxes simply show no counts; the analysis still opens.
+            //
+            // context_window_tokens is the per-profile override of the bundled model table, and it
+            // behaves exactly as the two cost overrides beside it do: null means "fall through to
+            // the table", and the table not knowing the model means unknown, never a guess. It is
+            // shown during a run and enforced nowhere — no budget consults it.
+            //
+            // The name says "tokens" for the same reason input_tokens does, and
+            // The_schema_has_no_column_that_looks_like_a_credential blanks it before scanning, so
+            // the guard keeps asking its real question without a column being renamed to something
+            // less true.
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                ALTER TABLE analyses ADD COLUMN files_json TEXT NULL;
+                ALTER TABLE provider_profiles ADD COLUMN context_window_tokens INTEGER NULL;
                 """,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
         }

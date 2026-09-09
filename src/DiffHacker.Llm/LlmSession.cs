@@ -29,7 +29,7 @@ internal sealed partial class LlmSession : ILlmSession
     private readonly HttpClient _httpClient;
     private readonly LlmProviderProfile _profile;
     private readonly LlmBudget _budget;
-    private readonly ITokenPricing _pricing;
+    private readonly IModelCatalog _pricing;
     private readonly ILogger<LlmSession> _logger;
     private readonly Func<double> _jitter;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
@@ -41,6 +41,19 @@ internal sealed partial class LlmSession : ILlmSession
     // of those have already been shrunk to a stub so a later pass does not redo the work.
     private readonly List<ToolMessageEntry> _toolMessageHistory = [];
     private readonly HashSet<int> _prunedMessageIndices = [];
+
+    // What is filling the context, in characters. Accumulated as messages are added rather than
+    // recomputed by walking the transcript, because the transcript is the thing that grows: a walk
+    // per turn would be quadratic in the run, and a run is up to three hundred turns.
+    private int _instructionCharacters;
+    private int _schemaCharacters;
+    private int _toolDefinitionCharacters;
+    private int _userCharacters;
+    private int _assistantCharacters;
+    private int _toolResultCharacters;
+    private int _prunedCharacters;
+    private int _reasoningCharacters;
+    private bool _reasoningReported;
 
     private LlmUsage _cumulative;
     private bool _hasRun;
@@ -55,7 +68,7 @@ internal sealed partial class LlmSession : ILlmSession
         HttpClient httpClient,
         LlmProviderProfile profile,
         LlmBudget budget,
-        ITokenPricing pricing,
+        IModelCatalog pricing,
         ILogger<LlmSession> logger,
         Func<double>? jitter = null,
         Func<TimeSpan, CancellationToken, Task>? delay = null)
@@ -103,6 +116,9 @@ internal sealed partial class LlmSession : ILlmSession
             new(ChatRole.User, conversation.UserMessage),
         };
 
+        MeasurePreamble(conversation, mode);
+        _userCharacters = conversation.UserMessage.Length;
+
         var turn = 0;
         var consecutiveToolFailures = 0;
         var repairsUsed = 0;
@@ -126,6 +142,13 @@ internal sealed partial class LlmSession : ILlmSession
                 Kind = LlmRunEventKind.TurnStarted,
                 Turn = turn,
                 CumulativeUsage = _cumulative,
+
+                // Carried on the two events a live view actually redraws on: the start of a turn,
+                // which is when the transcript has just grown or been pruned, and the arrival of
+                // usage, which is when the provider's own count of it becomes known.
+                ContextTokens = ContextTokens(),
+                ContextWindowTokens = ContextWindow(),
+                Context = ContextSnapshot(),
             });
 
             var attempt = await SendAsync(messages, conversation, tools.Values, mode, turn, progress, cancellationToken)
@@ -138,6 +161,10 @@ internal sealed partial class LlmSession : ILlmSession
                 FormatDowngraded(_logger, _profile.Id, mode.ToString(), weaker.ToString());
                 mode = weaker;
                 messages[0] = new ChatMessage(ChatRole.System, SystemPrompt(conversation, mode));
+
+                // A downgrade rewrites the system message and changes whether the schema is sent
+                // with the request at all, so the fixed part of the measurement is taken again.
+                MeasurePreamble(conversation, mode);
                 turn--;
                 continue;
             }
@@ -158,6 +185,7 @@ internal sealed partial class LlmSession : ILlmSession
 
             var response = attempt.Response!;
             messages.AddRange(response.Messages);
+            MeasureAssistant(response.Messages);
 
             var calls = response.Messages
                 .SelectMany(message => message.Contents)
@@ -183,6 +211,14 @@ internal sealed partial class LlmSession : ILlmSession
                     Kind = LlmRunEventKind.TurnFinished,
                     Turn = turn,
                     CumulativeUsage = _cumulative,
+
+                    // Measured again at the end of the turn, not only at its start. The model's
+                    // own reply has been added to the transcript since then, and on a turn that
+                    // dispatched tools their results have been added and the oldest ones pruned —
+                    // so this is the only point at which the whole of a turn's effect is visible.
+                    ContextTokens = ContextTokens(),
+                    ContextWindowTokens = ContextWindow(),
+                    Context = ContextSnapshot(),
                 });
 
                 if (ProviderErrorMapper.ClassifyFinishReason(response.FinishReason?.Value) is { } filtered)
@@ -216,7 +252,10 @@ internal sealed partial class LlmSession : ILlmSession
                         _resultRepairs++;
                         ResultRejected(_logger, _profile.Id, rejections.Count, _resultRepairs);
                         AcknowledgeSubmission(messages, submission);
-                        messages.Add(new ChatMessage(ChatRole.User, ResultRepairPrompt(rejections)));
+
+                        var resultRepair = ResultRepairPrompt(rejections);
+                        messages.Add(new ChatMessage(ChatRole.User, resultRepair));
+                        _userCharacters += resultRepair.Length;
                         continue;
                     }
 
@@ -242,7 +281,10 @@ internal sealed partial class LlmSession : ILlmSession
                     repairsUsed++;
                     ResponseInvalid(_logger, _profile.Id, errors.Count);
                     AcknowledgeSubmission(messages, submission);
-                    messages.Add(new ChatMessage(ChatRole.User, RepairPrompt(errors)));
+
+                    var schemaRepair = RepairPrompt(errors);
+                    messages.Add(new ChatMessage(ChatRole.User, schemaRepair));
+                    _userCharacters += schemaRepair.Length;
                     continue;
                 }
 
@@ -264,6 +306,7 @@ internal sealed partial class LlmSession : ILlmSession
                 : 0;
 
             messages.Add(new ChatMessage(ChatRole.Tool, [.. results.Select(result => result.Content)]));
+            _toolResultCharacters += results.Sum(result => ResultTextOf(result.Content).Length);
 
             _toolMessageHistory.Add(new ToolMessageEntry(
                 messages.Count - 1,
@@ -276,6 +319,9 @@ internal sealed partial class LlmSession : ILlmSession
                 Kind = LlmRunEventKind.TurnFinished,
                 Turn = turn,
                 CumulativeUsage = _cumulative,
+                ContextTokens = ContextTokens(),
+                ContextWindowTokens = ContextWindow(),
+                Context = ContextSnapshot(),
             });
 
             if (consecutiveToolFailures >= _budget.MaxConsecutiveToolFailures)
@@ -336,6 +382,9 @@ internal sealed partial class LlmSession : ILlmSession
                     Kind = LlmRunEventKind.UsageUpdated,
                     Turn = turn,
                     CumulativeUsage = _cumulative,
+                    ContextTokens = ContextTokens(),
+                    ContextWindowTokens = ContextWindow(),
+                    Context = ContextSnapshot(),
                 });
 
                 return new SendAttempt { Response = response };
@@ -537,12 +586,156 @@ internal sealed partial class LlmSession : ILlmSession
                 continue;
             }
 
+            var before = messages[entry.MessageIndex].Contents
+                .OfType<FunctionResultContent>()
+                .Sum(result => ResultTextOf(result).Length);
+
             messages[entry.MessageIndex] = new ChatMessage(
                 ChatRole.Tool,
                 [.. entry.Calls.Select(call => (AIContent)new FunctionResultContent(
                     call.CallId,
                     $"[pruned: {call.ToolName} because of the retained window. Call it again if you need it.]"))]);
+
+            // The stub is not free, so what left the context is the difference rather than the
+            // whole of what was there. Both halves move: what is gone is added to the running
+            // pruned total, and what remains stays counted as a tool result.
+            var after = messages[entry.MessageIndex].Contents
+                .OfType<FunctionResultContent>()
+                .Sum(result => ResultTextOf(result).Length);
+
+            _toolResultCharacters -= before - after;
+            _prunedCharacters += before - after;
         }
+    }
+
+    /// <summary>
+    /// The text of one tool result. Results are written as strings by <c>DispatchAsync</c>; the
+    /// fallback exists because <see cref="FunctionResultContent.Result"/> is typed as
+    /// <see cref="object"/> and a null one is a valid, if empty, result.
+    /// </summary>
+    private static string ResultTextOf(FunctionResultContent content) =>
+        content.Result as string ?? string.Empty;
+
+    /// <summary>
+    /// Measures the part of every request that does not change from turn to turn: the system
+    /// prompt, the response schema and the tool definitions.
+    /// <para>
+    /// This is the fixed toll a run pays on <i>every</i> turn — for the analysis prompt, roughly
+    /// seven thousand tokens before a single changed-file row — which is exactly why the repository
+    /// insists it be measured rather than eyeballed. Recomputed only when the structured-output
+    /// mode changes, because that is the only thing that alters it.
+    /// </para>
+    /// </summary>
+    private void MeasurePreamble(LlmConversation conversation, StructuredOutputMode mode)
+    {
+        _instructionCharacters = conversation.SystemPrompt.Length;
+
+        _toolDefinitionCharacters = conversation.Tools.Sum(tool =>
+            tool.Name.Length + tool.Description.Length + tool.ParametersSchemaJson.Length);
+
+        if (conversation.ResponseFormat is not { } format)
+        {
+            _schemaCharacters = 0;
+            return;
+        }
+
+        // The schema reaches the model twice in the stronger modes: once appended to the system
+        // prompt, and once as the response format or as the submit tool's parameters. Both copies
+        // are paid for on every turn, so both are counted.
+        var inTheRequest = mode is StructuredOutputMode.Native or StructuredOutputMode.ToolCall
+            ? format.SchemaJson.Length
+            : 0;
+
+        _schemaCharacters = StructuredOutput.PromptSuffix(format, mode).Length + inTheRequest;
+    }
+
+    /// <summary>
+    /// Adds what the model just said to the running totals. Assistant messages are never pruned,
+    /// so what goes in here stays in the context for the rest of the run.
+    /// </summary>
+    private void MeasureAssistant(IList<ChatMessage> produced)
+    {
+        foreach (var content in produced.SelectMany(message => message.Contents))
+        {
+            switch (content)
+            {
+                case TextContent text:
+                    _assistantCharacters += text.Text.Length;
+                    break;
+
+                case FunctionCallContent call:
+                    _assistantCharacters += call.Name.Length
+                        + (call.Arguments is null ? 0 : JsonSerializer.Serialize(call.Arguments).Length);
+                    break;
+
+                case TextReasoningContent reasoning:
+                    // Seen once is enough to know this provider surfaces reasoning at all, which is
+                    // the difference between reporting zero and reporting nothing.
+                    _reasoningReported = true;
+                    _reasoningCharacters += reasoning.Text.Length;
+                    break;
+
+                default:
+                    break;
+            }
+        }
+    }
+
+    /// <summary>The breakdown as it stands, for an event about to be raised.</summary>
+    private LlmContextBreakdown ContextSnapshot() => new()
+    {
+        InstructionCharacters = _instructionCharacters,
+        SchemaCharacters = _schemaCharacters,
+        ToolDefinitionCharacters = _toolDefinitionCharacters,
+        UserCharacters = _userCharacters,
+        ToolResultCharacters = _toolResultCharacters,
+        PrunedCharacters = _prunedCharacters,
+        AssistantCharacters = _assistantCharacters,
+        ReasoningCharacters = _reasoningReported ? _reasoningCharacters : null,
+    };
+
+    /// <summary>
+    /// The input tokens of the request just sent, as the provider counted them — the honest answer
+    /// to "how full is the context right now".
+    /// <para>
+    /// Null when no request has reported usage. A provider that reports none leaves this null for
+    /// the whole run, and the meter says the size is unknown rather than showing a zero that would
+    /// read as an empty context.
+    /// </para>
+    /// </summary>
+    private long? ContextTokens()
+    {
+        for (var i = _requestUsages.Count - 1; i >= 0; i--)
+        {
+            if (_requestUsages[i].IsReported)
+            {
+                return _requestUsages[i].InputTokens;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The model's context window: the profile's override first, then the bundled catalogue, then
+    /// unknown.
+    /// <para>
+    /// Resolution order is exactly the one cost already uses, and unknown genuinely means unknown —
+    /// the meter then shows an absolute count with no percentage rather than measuring against a
+    /// guess. Nothing here decides whether a run may continue; see
+    /// <see cref="LlmProviderProfile.ContextWindowTokens"/>.
+    /// </para>
+    /// </summary>
+    private int? ContextWindow()
+    {
+        if (_profile.ContextWindowOverride is { } overridden)
+        {
+            return overridden;
+        }
+
+        return _pricing.TryGetContextWindow(_profile.ProviderType, _profile.Model, out var tokens)
+            ? tokens
+            : null;
     }
 
     /// <summary>
@@ -559,16 +752,22 @@ internal sealed partial class LlmSession : ILlmSession
     /// request even though nothing else about the conversation changed.
     /// </para>
     /// </summary>
-    private static void AcknowledgeSubmission(List<ChatMessage> messages, FunctionCallContent? submission)
+    private void AcknowledgeSubmission(List<ChatMessage> messages, FunctionCallContent? submission)
     {
         if (submission is null)
         {
             return;
         }
 
+        const string acknowledgement = "Received; a correction was requested next.";
+
         messages.Add(new ChatMessage(
             ChatRole.Tool,
-            [new FunctionResultContent(submission.CallId, "Received; a correction was requested next.")]));
+            [new FunctionResultContent(submission.CallId, acknowledgement)]));
+
+        // Small, but it is a tool result in the transcript like any other, and the breakdown is
+        // only trustworthy if every message it contains is in exactly one category.
+        _toolResultCharacters += acknowledgement.Length;
     }
 
     private ChatOptions BuildOptions(

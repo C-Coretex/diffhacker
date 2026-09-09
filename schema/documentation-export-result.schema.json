@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.7/documentation-export-result.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.8/documentation-export-result.schema.json",
   "title": "DocumentationExportResult",
   "description": "What profile.exportDocumentation actually wrote. Reported back so the interface can name the files rather than saying 'done', and so a test can assert the set of paths written equals the set previewed.",
   "type": "object",

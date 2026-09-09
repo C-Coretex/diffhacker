@@ -32,7 +32,7 @@ public readonly record struct LlmUsage
 
     /// <summary>
     /// Estimated cost in US dollars, or null when no rate is known for the model. Never
-    /// defaulted to zero — see <c>ITokenPricing</c>.
+    /// defaulted to zero — see <c>IModelCatalog</c>.
     /// </summary>
     public decimal? EstimatedCostUsd { get; init; }
 

@@ -260,12 +260,14 @@ public sealed class SqliteProviderProfileStoreTests : IAsyncLifetime
         }
 
         // Iteration 6's run history counts LLM tokens, and "input_tokens" is the name for that in
-        // every provider's API. Blanking those two out before the scan keeps the guard's real
-        // question — is anything here named like a credential? — answerable, without renaming a
-        // column to something less true. Nothing else in the schema may say "token".
+        // every provider's API. Iteration 8's context-window override is measured in them too.
+        // Blanking those three out before the scan keeps the guard's real question — is anything
+        // here named like a credential? — answerable, without renaming a column to something less
+        // true. Nothing else in the schema may say "token".
         var sql = schema.ToString()
             .Replace("input_tokens", "input_count", StringComparison.Ordinal)
-            .Replace("output_tokens", "output_count", StringComparison.Ordinal);
+            .Replace("output_tokens", "output_count", StringComparison.Ordinal)
+            .Replace("context_window_tokens", "context_window_size", StringComparison.Ordinal);
 
         foreach (var forbidden in new[] { "api_key", "apikey", "secret", "password", "token", "credential" })
         {

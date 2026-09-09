@@ -43,6 +43,14 @@ public sealed record Analysis
     public required AnalysisStatistics Statistics { get; init; }
 
     /// <summary>
+    /// The changeset as it stood when the run happened, one entry per file. Stored with the result
+    /// rather than re-read, so a diagram opened next week still describes the change it was made
+    /// from. Empty on an analysis written by a build older than schema 1.8, in which case the node
+    /// boxes simply show no line counts — an old analysis opens rather than fails.
+    /// </summary>
+    public IReadOnlyList<ChangedFileFacts> ChangedFiles { get; init; } = [];
+
+    /// <summary>
     /// What validation observed. Only ever warnings: an error would have failed the run.
     /// </summary>
     public IReadOnlyList<AnalysisDiagnostic> Diagnostics { get; init; } = [];

@@ -8,11 +8,35 @@
 |---|---|
 | **Depends on** | [7](iteration-07-analysis-pipeline.md) |
 | **Blocks** | 9, 10, 11, 12 |
-| **Status** | Not started |
+| **Status** | Complete, apart from macOS and Linux — see **Where it stands** below |
 
 ## Goal
 
 Draw the diagram.
+
+## Where it stands
+
+Every numbered requirement is implemented. The decisions taken along the way — the rank-to-ELK
+mapping, the project palette, the node box, the collapsed container, the search scope and the shell
+layout — are recorded in [docs/decisions.md](../decisions.md#the-diagram), and the answers to
+**Raise before implementing** are with them.
+
+**Not verified: step 10.** WKWebView and WebKitGTK were not exercised. CI is deliberately deferred
+and this machine is Windows, so WebView2 is the only renderer the diagram has actually run on —
+reported rather than assumed, consistent with how the repository already treats the macOS/Linux gap.
+Fonts, borders and dashes are the things most likely to differ.
+
+**Not measured: the frame rate in step 8.** Layout time and collapse time are measured and recorded;
+frame rate while panning needs a real compositor and a hand on the mouse, so it is reported as
+unmeasured. `onlyRenderVisibleElements` stays off, as the fixed decisions require.
+
+Two things were fixed that Iteration 8 did not cause. `LlmBudget.MaxTotalTokens` disagreed with both
+its own test and CLAUDE.md; and the end-to-end suite's stub provider could not speak server-sent
+events, which had been failing every analysis and profile journey in it. Both are in
+[docs/decisions.md](../decisions.md).
+
+Requirements 14, 15 and 16 are not about the graph, and are described under
+[The diagram](../decisions.md#the-diagram) and in the schema descriptions rather than here.
 
 ## Context
 
@@ -57,6 +81,9 @@ The user arranges nothing. The LLM decided the ordering and the app respects it.
 12. **Snapshot-test the ELK layout output** for a fixed input graph so layout regressions are
     visible.
 13. Add a search fields, which would find (highlight and show) node with this file name (if it's in the changeset)
+14. Also show current context size in UI (during analysis) and on hover - statistics of what eats the context (reasoning, tools, messages...)
+15. Also in the prompts ask LLM to limit its character count in descriptions of summary of changes for nodes and graphs. THe user doesn't need boilerplate of text, he needs short and concise summary of what it is and what does it do.
+16. Also add context size (default + user override) the same as cost.
 
 ## Out of scope
 

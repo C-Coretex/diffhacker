@@ -37,14 +37,15 @@ test('a provider is configured, its key never leaves the host, and everything su
   // Recording starts before the key is ever typed, so every frame carrying it would be caught.
   await first.recordBridgeTraffic();
 
-  // The price override is entered here too. It is what stops the bundled price table going
-  // stale for a user whose model it has never heard of, so it has to survive a restart like
-  // everything else — and unlike the key, it must come back into the form.
+  // The two overrides are entered here too. Both are what stop the bundled model table going
+  // stale for a user whose model it has never heard of, so both have to survive a restart like
+  // everything else — and unlike the key, both must come back into the form.
   await settings.addProvider({
     name: 'E2E account',
     model: 'gpt-4.1-mini',
     apiKey,
     cost: { input: '1.75', output: '9.25' },
+    contextWindow: '750000',
   });
 
   const profile = settings.profile('E2E account');
@@ -112,12 +113,17 @@ test('a provider is configured, its key never leaves the host, and everything su
   await expect(restoredProfile.getByText(en.providers.keyStored)).toBeVisible();
   await second.shot('the provider survived a restart');
 
-  // The price override comes back into the form. The key deliberately does not.
+  // The overrides come back into the form. The key deliberately does not.
   await restoredProfile.getByRole('button', { name: en.providers.edit, exact: true }).click();
   await expect(restarted.settings.inputCostField).toHaveValue('1.75');
   await expect(restarted.settings.outputCostField).toHaveValue('9.25');
+
+  // Iteration 8 requirement 16, taking the same journey the price already takes. It is shown
+  // during a run and enforced nowhere — nothing stops a run for exceeding it.
+  await expect(restarted.settings.contextWindowField).toHaveValue('750000');
+
   await expect(restarted.settings.apiKeyField).toHaveValue('');
-  await second.shot('the price override survived a restart');
+  await second.shot('the price and context-window overrides survived a restart');
   await second.page.getByRole('button', { name: en.providers.cancel, exact: true }).click();
 
   // Still not readable, even from the store that kept it.

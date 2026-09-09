@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.7/tool-call-event.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.8/tool-call-event.schema.json",
   "title": "ToolCallEvent",
   "description": "Payload of the analysis.toolCall notification: one observable moment in a live run, pushed from host to renderer as it happens. Where analysis.progress carries the model's own sentence about what it is doing, this carries the mechanical traffic underneath it — which tool, with what arguments, for how long, and what came back. The two are separate methods so that a reviewer's view of the work is not interleaved with a debug log. One flat record with a discriminator rather than a family of shapes, because the contract generator cannot render a definition that references another definition.",
   "type": "object",
@@ -57,6 +57,46 @@
     "costUsd": {
       "type": "number",
       "description": "Running estimated cost in US dollars. Absent when the model has no entry in the price table — unknown is reported as unknown, never as zero."
+    },
+    "contextTokens": {
+      "type": "integer",
+      "description": "How much of the context window the last request occupied, in the provider's own input-token count. Not the same number as inputTokens, which is the running total for the whole run: this one rises and falls as tool results are pruned. Absent until a request has reported usage, and absent for a provider that reports none — never defaulted to zero."
+    },
+    "contextWindowTokens": {
+      "type": "integer",
+      "description": "The model's context window, from the profile's override or the bundled model table. Absent when neither knows the model, in which case contextTokens is shown as an absolute count with no percentage rather than measured against a guess. Carried on the event so the renderer needs no second lookup. Informational: no run is ever stopped for exceeding it."
+    },
+    "contextInstructionsCharacters": {
+      "type": "integer",
+      "description": "Characters of system instructions currently in the transcript. Set on the same events as contextTokens. The breakdown is counted in characters rather than tokens because the application can count characters exactly and can only estimate tokens, and an estimate presented beside the provider's exact total would be read as the same kind of number."
+    },
+    "contextSchemaCharacters": {
+      "type": "integer",
+      "description": "Characters of the response schema sent with every request, including the copy embedded in the prompt when structured output degraded to a prompted tier."
+    },
+    "contextToolDefinitionCharacters": {
+      "type": "integer",
+      "description": "Characters of the tool definitions — names, descriptions and parameter schemas — sent with every request."
+    },
+    "contextOpeningCharacters": {
+      "type": "integer",
+      "description": "Characters of everything the application has said as the user: the opening message — the changed-file list, the project profile and the reviewer's instructions — plus any correction it asked for afterwards."
+    },
+    "contextToolResultCharacters": {
+      "type": "integer",
+      "description": "Characters of tool results still in the transcript. The only category that is ever pruned."
+    },
+    "contextPrunedCharacters": {
+      "type": "integer",
+      "description": "Characters of tool results pruned from the transcript so far, counted cumulatively. Not part of the context any more; reported so a reader can see what retention is holding back rather than only what it kept."
+    },
+    "contextAssistantCharacters": {
+      "type": "integer",
+      "description": "Characters the model has written that are still in the transcript: its text and the arguments of its tool calls."
+    },
+    "contextReasoningCharacters": {
+      "type": "integer",
+      "description": "Characters of reasoning content the transcript carries separately from the model's text. Absent when the provider does not surface reasoning as its own content — which is not the same as the model having done none, and is shown as unreported rather than as zero."
     },
     "retryDelayMs": {
       "type": "number",

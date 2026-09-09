@@ -95,6 +95,14 @@ interface AppState {
   profileRunEvents: ToolCallEvent[];
   profileRunLatest?: ToolCallEvent;
 
+  /**
+   * The last event that carried a context measurement, kept apart from `profileRunLatest`.
+   *
+   * Only the turn-start and usage events measure the context; a tool_started arriving after one
+   * carries none, and reading the meter off "the latest event" would blank it every other row.
+   */
+  profileRunContext?: ToolCallEvent;
+
   analysis: AnalysisStatus;
   analysisView?: AnalysisView;
   analysisError?: string;
@@ -108,6 +116,28 @@ interface AppState {
   analysisRunProgress?: AnalysisProgress;
   analysisRunEvents: ToolCallEvent[];
   analysisRunLatest?: ToolCallEvent;
+
+  /** @see profileRunContext */
+  analysisRunContext?: ToolCallEvent;
+
+  /**
+   * How the graph is being looked at. UI state and nothing else: §0.6 rules out a persisted hand
+   * layout, and none of this describes the analysis — it describes this session's view of one.
+   * Reset whenever the analysis underneath it changes, because a collapsed-container id from one
+   * analysis means nothing in the next.
+   */
+  graphCollapsed: ReadonlySet<string>;
+  graphSearch: string;
+  graphFocusedNodeId?: string;
+  graphLegendOpen: boolean;
+  graphDetailsOpen: boolean;
+
+  /**
+   * `onlyRenderVisibleElements` on the React Flow surface. Off, and staying off: the iteration
+   * fixes that decision, and requirement 11 says to profile and fix what is slow rather than
+   * reach for this. Here so that profiling can turn it on to compare, not so that it can ship on.
+   */
+  graphOnlyRenderVisible: boolean;
 
   setConnected(hostInfo: HostInfo): void;
   setDetached(): void;
@@ -153,7 +183,24 @@ interface AppState {
   recordAnalysisProgress(progress: AnalysisProgress): void;
   recordAnalysisRunEvent(event: ToolCallEvent): void;
   endAnalysisRun(): void;
+
+  toggleContainerCollapsed(containerId: string): void;
+  setAllContainersCollapsed(collapsed: boolean, containerIds: readonly string[]): void;
+  setGraphSearch(query: string): void;
+  focusGraphNode(nodeId: string | undefined): void;
+  setGraphLegendOpen(open: boolean): void;
+  setGraphDetailsOpen(open: boolean): void;
+  setGraphOnlyRenderVisible(enabled: boolean): void;
 }
+
+/** The graph view's own state, in one place so both reset paths use the same words. */
+const graphDefaults = {
+  graphCollapsed: new Set<string>() as ReadonlySet<string>,
+  graphSearch: '',
+  graphFocusedNodeId: undefined,
+  graphLegendOpen: false,
+  graphDetailsOpen: false,
+} as const;
 
 export const useAppStore = create<AppState>((set) => ({
   connection: 'connecting',
@@ -180,6 +227,9 @@ export const useAppStore = create<AppState>((set) => ({
   analysis: 'idle',
   analysisRun: 'idle',
   analysisRunEvents: [],
+
+  ...graphDefaults,
+  graphOnlyRenderVisible: false,
 
   setConnected: (hostInfo) => set({ connection: 'connected', hostInfo, connectionError: undefined }),
   setDetached: () => set({ connection: 'detached' }),
@@ -213,6 +263,7 @@ export const useAppStore = create<AppState>((set) => ({
       profileRunProgress: undefined,
       profileRunEvents: [],
       profileRunLatest: undefined,
+      profileRunContext: undefined,
       // And so does the analysis: it describes one repository's uncommitted change and means
       // nothing beside another's.
       analysis: 'idle',
@@ -221,6 +272,8 @@ export const useAppStore = create<AppState>((set) => ({
       analysisRunProgress: undefined,
       analysisRunEvents: [],
       analysisRunLatest: undefined,
+      analysisRunContext: undefined,
+      ...graphDefaults,
     }),
 
   failRepository: (message) => set({ repository: 'none', repositoryError: message }),
@@ -252,6 +305,7 @@ export const useAppStore = create<AppState>((set) => ({
       profileRunProgress: undefined,
       profileRunEvents: [],
       profileRunLatest: undefined,
+      profileRunContext: undefined,
     }),
 
   recordProfileProgress: (profileRunProgress) => set({ profileRunProgress }),
@@ -263,13 +317,24 @@ export const useAppStore = create<AppState>((set) => ({
       return {
         profileRunEvents: events.length > TOOL_LOG_LIMIT ? events.slice(-TOOL_LOG_LIMIT) : events,
         profileRunLatest: event,
+        profileRunContext: carriesContext(event) ? event : state.profileRunContext,
       };
     }),
 
   endProfileRun: () => set({ profileRun: 'idle' }),
 
   startLoadingAnalysis: () => set({ analysis: 'loading', analysisError: undefined }),
-  setAnalysis: (analysisView) => set({ analysis: 'ready', analysisView, analysisError: undefined }),
+  setAnalysis: (analysisView) =>
+    set((state) => ({
+      analysis: 'ready',
+      analysisView,
+      analysisError: undefined,
+
+      // A different analysis is a different graph. Carrying the collapsed set across would hide
+      // clusters the reviewer never collapsed, using ids that happen to match; carrying the search
+      // across would highlight a file that is no longer in the change.
+      ...(state.analysisView?.analysisId === analysisView.analysisId ? {} : graphDefaults),
+    })),
   failAnalysis: (message) => set({ analysis: 'error', analysisError: message }),
 
   startAnalysisRun: () =>
@@ -278,6 +343,7 @@ export const useAppStore = create<AppState>((set) => ({
       analysisRunProgress: undefined,
       analysisRunEvents: [],
       analysisRunLatest: undefined,
+      analysisRunContext: undefined,
     }),
 
   recordAnalysisProgress: (analysisRunProgress) => set({ analysisRunProgress }),
@@ -288,11 +354,32 @@ export const useAppStore = create<AppState>((set) => ({
 
       return {
         analysisRunEvents: events.length > TOOL_LOG_LIMIT ? events.slice(-TOOL_LOG_LIMIT) : events,
+        analysisRunContext: carriesContext(event) ? event : state.analysisRunContext,
         analysisRunLatest: event,
       };
     }),
 
   endAnalysisRun: () => set({ analysisRun: 'idle' }),
+
+  toggleContainerCollapsed: (containerId) =>
+    set((state) => {
+      const next = new Set(state.graphCollapsed);
+      if (!next.delete(containerId)) next.add(containerId);
+      return { graphCollapsed: next };
+    }),
+
+  setAllContainersCollapsed: (collapsed, containerIds) =>
+    set({ graphCollapsed: collapsed ? new Set(containerIds) : new Set<string>() }),
+
+  setGraphSearch: (graphSearch) =>
+    // Clearing the box clears the focus with it. A ring left pulsing on a node nobody searched for
+    // any more is a highlight with no explanation on the screen.
+    set(graphSearch.length === 0 ? { graphSearch, graphFocusedNodeId: undefined } : { graphSearch }),
+
+  focusGraphNode: (graphFocusedNodeId) => set({ graphFocusedNodeId }),
+  setGraphLegendOpen: (graphLegendOpen) => set({ graphLegendOpen }),
+  setGraphDetailsOpen: (graphDetailsOpen) => set({ graphDetailsOpen }),
+  setGraphOnlyRenderVisible: (graphOnlyRenderVisible) => set({ graphOnlyRenderVisible }),
 }));
 
 /**
@@ -303,4 +390,15 @@ export const useAppStore = create<AppState>((set) => ({
  */
 function isToolLogRow(event: ToolCallEvent): boolean {
   return event.kind === 'tool_started' || event.kind === 'tool_finished' || event.kind === 'retry';
+}
+
+/**
+ * Whether an event measured the context.
+ *
+ * The instruction count is the tell: it is set on every event the host measured and absent on every
+ * event it did not, and unlike the token count it is never legitimately missing when a measurement
+ * did happen — a run always has a system prompt, and a provider that reports no usage still has one.
+ */
+function carriesContext(event: ToolCallEvent): boolean {
+  return event.contextInstructionsCharacters !== undefined;
 }

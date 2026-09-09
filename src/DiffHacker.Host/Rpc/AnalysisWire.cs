@@ -32,6 +32,7 @@ internal static class AnalysisWire
     /// <summary>What the renderer is shown when a repository has never been analysed.</summary>
     public static AnalysisView Empty(string repositoryPath) => new(
         analysisId: null,
+        changedFiles: [],
         containers: [],
         costUsd: null,
         createdAtUtc: null,
@@ -79,6 +80,17 @@ internal static class AnalysisWire
 
         return new AnalysisView(
             analysisId: analysis.Id,
+            changedFiles:
+            [
+                .. analysis.ChangedFiles.Select(static file => new ChangedFileFactsInfo(
+                    isBinary: file.IsBinary,
+                    language: file.Language,
+                    linesAdded: file.LinesAdded,
+                    linesRemoved: file.LinesRemoved,
+                    path: file.Path,
+                    project: file.Project,
+                    status: ToWire(file.Status))),
+            ],
             containers:
             [
                 .. document.Containers
@@ -215,6 +227,17 @@ internal static class AnalysisWire
         DomainEdgeKind.Direct => AnalysisEdgeInfoKind.Direct,
         DomainEdgeKind.Conceptual => AnalysisEdgeInfoKind.Conceptual,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unmapped edge kind."),
+    };
+
+    /// <inheritdoc cref="ToWire(DomainNodeState)"/>
+    private static ChangedFileFactsInfoStatus ToWire(ChangeStatus status) => status switch
+    {
+        ChangeStatus.Added => ChangedFileFactsInfoStatus.Added,
+        ChangeStatus.Modified => ChangedFileFactsInfoStatus.Modified,
+        ChangeStatus.Deleted => ChangedFileFactsInfoStatus.Deleted,
+        ChangeStatus.Renamed => ChangedFileFactsInfoStatus.Renamed,
+        ChangeStatus.Copied => ChangedFileFactsInfoStatus.Copied,
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unmapped change status."),
     };
 
     /// <inheritdoc cref="ToWire(DomainNodeState)"/>

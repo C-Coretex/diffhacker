@@ -15,7 +15,7 @@ namespace DiffHacker.Llm;
 /// </summary>
 public sealed partial class LlmSessionFactory(
     ISecretStore secrets,
-    ITokenPricing pricing,
+    IModelCatalog pricing,
     ILoggerFactory loggerFactory) : ILlmSessionFactory
 {
     public async ValueTask<ILlmSession> CreateAsync(

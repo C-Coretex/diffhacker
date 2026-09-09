@@ -55,6 +55,30 @@ public sealed record LlmProviderProfile
             ? new Llm.LlmModelRate { InputPerMillion = input, OutputPerMillion = output }
             : null;
 
+    /// <summary>
+    /// The model's context window in tokens, overriding the bundled model table.
+    /// <para>
+    /// The same escape hatch <see cref="InputCostPerMillion"/> is, for the same reason: the table
+    /// ships with the application and goes stale, and a user on a model it has never heard of
+    /// should be able to say how big the window is rather than be told it is unknown forever.
+    /// Unlike the cost pair this stands alone — half a rate bills the other half at zero, but half
+    /// a context window is not a thing.
+    /// </para>
+    /// <para>
+    /// <b>This is not a budget.</b> It is displayed during a run and consulted nowhere else.
+    /// <c>LlmBudget</c> does not know about it and <c>LlmSession</c> never stops a run for
+    /// exceeding it — wiring it into the budget is exactly the helpful-looking change a later
+    /// reader would make, and it would turn a meter into a kill switch the user never asked for.
+    /// </para>
+    /// </summary>
+    public int? ContextWindowTokens { get; init; }
+
+    /// <summary>
+    /// The override, or null when none is set and the bundled table should be consulted instead.
+    /// Named to read the same way <see cref="CostOverride"/> does at the call site.
+    /// </summary>
+    public int? ContextWindowOverride => ContextWindowTokens is > 0 ? ContextWindowTokens : null;
+
     /// <summary>Name this profile's API key is stored under in the secret store.</summary>
     public static string SecretName(string profileId) => "provider:" + profileId;
 }

@@ -65,7 +65,44 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         view.RepositoryPath.ShouldBe("/repo");
         view.Nodes.ShouldBeEmpty();
         view.Containers.ShouldBeEmpty();
+        view.ChangedFiles.ShouldBeEmpty();
         view.AnalysisId.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task The_changeset_the_run_was_made_from_travels_with_the_graph()
+    {
+        // Iteration 8 requirement 2: the node boxes draw line counts, a status word and a project,
+        // and none of the three is in the model's answer. They are recorded at run time and stored,
+        // never re-read — joining a stored analysis against today's working tree would print
+        // today's numbers on a diagram of yesterday's change.
+        var view = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        view.ChangedFiles.Select(static file => file.Path)
+            .ShouldBe(["src/Contract.cs", "src/Caller.cs", "assets/icon.png"]);
+
+        var contract = view.ChangedFiles[0];
+        contract.Status.ShouldBe(ChangedFileFactsInfoStatus.Modified);
+        contract.LinesAdded.ShouldBe(12);
+        contract.LinesRemoved.ShouldBe(3);
+        contract.Project.ShouldBe("DiffHacker");
+        contract.Language.ShouldBe("C#");
+    }
+
+    [Fact]
+    public async Task A_binary_file_reaches_the_renderer_with_no_line_counts_rather_than_zero()
+    {
+        // "We did not count" and "we counted nothing" are different claims. A box reading +0 −0
+        // makes the wrong one, so the absence has to survive every hop to the screen.
+        var view = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        var icon = view.ChangedFiles.Single(static file => file.Path == "assets/icon.png");
+
+        icon.IsBinary.ShouldBeTrue();
+        icon.LinesAdded.ShouldBeNull();
+        icon.LinesRemoved.ShouldBeNull();
+        icon.Language.ShouldBeNull();
+        icon.Status.ShouldBe(ChangedFileFactsInfoStatus.Deleted);
     }
 
     [Fact]

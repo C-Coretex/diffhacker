@@ -3,6 +3,7 @@ import type { AnalysisProgress, AnalysisProgressPhase, ToolCallEvent } from '@/c
 import { formatCount } from '@/i18n/format';
 import { useT } from '@/i18n/useT';
 import { useAppStore } from '@/store/appStore';
+import { ContextMeter } from './ContextMeter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,6 +20,11 @@ interface RunPanelProps {
   progress?: AnalysisProgress;
   events: readonly ToolCallEvent[];
   latest?: ToolCallEvent;
+  /**
+   * The last event that measured the context, which is usually not the last event at all — only
+   * the turn-start and usage events carry a measurement.
+   */
+  context?: ToolCallEvent;
   onCancel(): void;
 }
 
@@ -34,7 +40,7 @@ interface RunPanelProps {
  * application that look exactly like this — profiling a repository and analysing a change — and
  * they keep their own slices so that neither can show the other's log.
  */
-export function RunPanel({ progress, events, latest, onCancel }: RunPanelProps) {
+export function RunPanel({ progress, events, latest, context, onCancel }: RunPanelProps) {
   const t = useT();
 
   return (
@@ -75,6 +81,11 @@ export function RunPanel({ progress, events, latest, onCancel }: RunPanelProps) 
                 ? t('toolLog.costUnknown')
                 : t('toolLog.cost', { cost: latest.costUsd.toFixed(4) })}
             </span>
+
+            {/* Requirements 14 and 16. Mounted here rather than on the analysis screen so that
+                profiling a repository gets the same meter for free — it is the same tool loop,
+                filling the same context. */}
+            <ContextMeter event={context} />
           </div>
         )}
 
@@ -91,6 +102,7 @@ export function ProfileRunPanel({ onCancel }: { onCancel(): void }) {
       progress={useAppStore((state) => state.profileRunProgress)}
       events={useAppStore((state) => state.profileRunEvents)}
       latest={useAppStore((state) => state.profileRunLatest)}
+      context={useAppStore((state) => state.profileRunContext)}
       onCancel={onCancel}
     />
   );
@@ -103,6 +115,7 @@ export function AnalysisRunPanel({ onCancel }: { onCancel(): void }) {
       progress={useAppStore((state) => state.analysisRunProgress)}
       events={useAppStore((state) => state.analysisRunEvents)}
       latest={useAppStore((state) => state.analysisRunLatest)}
+      context={useAppStore((state) => state.analysisRunContext)}
       onCancel={onCancel}
     />
   );

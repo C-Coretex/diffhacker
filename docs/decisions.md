@@ -502,3 +502,105 @@ It is a warning rather than an error on purpose. The node may genuinely belong t
 connection merely left unstated, and failing the run would spend a repair round buying an edge the
 model might invent rather than find. Cross-container edges do not count as a way in: §0.6 keeps them
 out of the layout, so they are not something a reader follows to arrive somewhere.
+
+---
+
+## The diagram
+
+### The LLM decides hierarchy and ranking; ELK decides pixels
+
+Never coordinates from the model — the iteration fixes that, and this is how the model's two ordering
+claims reach a layout engine that only understands edges.
+
+**Containers** are React Flow parent nodes, laid out one per sub-graph. The root packs them with
+`rectpacking` in `displayOrder`; the layered algorithm would string thirty clusters out in a single
+very long row, which is unreadable at any zoom.
+
+**The entry node** carries `elk.layered.layering.layerConstraint: FIRST`. Verification step 2 — the
+starting point is at the top of its cluster — then holds by construction rather than by hope. Without
+it, an entry node with an incoming edge from one of its own consequences is placed *below* that
+consequence, which is exactly backwards from how the answer is meant to be read.
+
+**Rank within a layer** is the order children are emitted in, plus
+`considerModelOrder.strategy: NODES_AND_EDGES` and `crossingMinimization.forceNodeModelOrder: true`.
+Without those two the ranking reaches ELK and is then discarded in favour of fewer crossings.
+
+**Rank that edges cannot express** gets a synthetic edge from the rank−1 node, tagged with the
+`rank:` prefix so `flowGraph` never draws it. A node the model ranked third with nothing pointing at
+it would otherwise float into the first layer and read as a second starting point. The edge is a
+statement about reading order, not about dependency, so drawing it would be the diagram claiming
+something the model did not — and the fidelity gap is made visible rather than hidden: **every box
+prints its rank**, so a reader who sees 3 beside 2 knows the ordering is the model's.
+
+### Cross-container edges are absent from the ELK input, not down-weighted
+
+§0.6 says they are excluded from layout influence. Absent is the only version of that which can be
+*checked*: `elkGraph.test.ts` asserts the ids are in neither sub-graph, which is what verification
+step 6 asks for — "in the ELK input, not by eye". A weight low enough to look right in one graph is
+a weight that misbehaves in another, and nobody would notice.
+
+React Flow draws them afterwards with bezier routing, which also makes them look different from the
+ELK-routed orthogonal intra-container edges: the two are separable by shape as well as by opacity,
+and shape is what survives being zoomed out.
+
+### Ten project colours, handed out interleaved
+
+Fill encodes project (requirement 6) and the number of projects is unbounded, so colour never does
+the work alone: every box prints its project name and the legend maps swatch → name → count.
+
+Ten hues about 35° apart, defined as `oklch` tokens in `index.css` like every other colour. Projects
+are sorted by node count descending, ties broken by name so the assignment is stable across re-opens
+— a reviewer who learned that green is the host should not have to relearn it on a re-run. They are
+then handed out in the order `0,4,8,2,6,1,5,9,3,7`: the two largest projects cover most of the
+diagram and are the pair most worth telling apart, and slots 1 and 4 are the red/green a protanope
+collapses, so they are never the first two given out.
+
+The eleventh project onward shares a neutral colour, and the legend collapses them behind "N other
+projects". Past ten hues, another colour is not another *distinguishable* colour, and a legend of
+forty swatches is one nobody reads.
+
+### Requirement 11: the numbers, measured
+
+`src/ui/src/graph/layout.bench.test.ts` measures 300 nodes across 12 clusters, with a chain through
+each and a cross-container edge out of every one:
+
+| | |
+|---|---|
+| ELK layout, warm | ~70 ms |
+| ELK layout, first call (includes loading the ELK bundle) | ~290 ms |
+| `toFlowGraph` over the result | a few ms |
+| Collapsing one container (a full relayout) | ~70 ms |
+
+Nothing needed fixing, and `onlyRenderVisibleElements` stays **off** — the iteration's fixed decision
+is to profile and fix what is slow rather than reach for it, and nothing here is slow. It is behind
+`graphOnlyRenderVisible` in the store so a future profiling session can turn it on to compare.
+
+The end-to-end suite renders a real 500-node analysis in the real WebView. **Frame rate while panning
+is not measured** — it needs a real compositor and a hand on the mouse — so it is reported as
+unmeasured rather than assumed.
+
+### The layout worker is a seam, and it falls back
+
+`runLayout.ts` has two implementations: a Web Worker for the application, and an in-process one for
+tests. Requirement 12's snapshot test uses the second, because the coordinates do not depend on which
+thread produced them and a worker in jsdom is a fight with the test environment rather than a test of
+the layout.
+
+The worker is a **classic** bundle (`worker.format: 'iife'` in `vite.config.ts`), not a module one.
+WebView2 refuses to start a module worker whose script comes from the custom `diffhacker://` scheme:
+the constructor succeeds and the worker dies immediately afterwards, which reached the screen as "the
+diagram could not be arranged" with nothing in any log to explain it. An IIFE bundle has no import
+statements to resolve and starts everywhere.
+
+And when a worker dies for any other reason, everything waiting on it is laid out on the main thread
+instead, with a console warning. A diagram that arrives a moment late is worth far more than one that
+does not arrive.
+
+### The stub provider speaks server-sent events
+
+Not a decision about the product, but a trap worth recording. `LlmSession` streams every request —
+deliberately, so a long answer keeps bytes moving past an idle timeout. `tests/e2e/src/stubProvider.ts`
+originally answered every request with one plain JSON body, which the OpenAI SDK read as *no content
+at all*: the run then failed schema validation with "the response was empty", and no layer said why.
+The stub now emits proper `text/event-stream` chunks. This was breaking every analysis and profile
+journey in the end-to-end suite before Iteration 8 touched anything.

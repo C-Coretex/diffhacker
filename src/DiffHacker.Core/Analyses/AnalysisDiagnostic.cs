@@ -98,4 +98,16 @@ public static class AnalysisDiagnosticCodes
     /// </para>
     /// </summary>
     public const string UnreachableNode = "unreachable_node";
+
+    /// <summary>
+    /// A written field that ran to more than twice its <see cref="AnalysisFieldBudgets"/> length.
+    /// <para>
+    /// A warning, and deliberately never an error. The alternative — a <c>maxLength</c> in the
+    /// result schema — would be enforced by the provider, and a document three hundred nodes long
+    /// would be rejected and rewritten because one sentence ran long. Nothing about the answer is
+    /// wrong; it just will not fit in the box it is read in, so the renderer truncates it and this
+    /// records that it had to.
+    /// </para>
+    /// </summary>
+    public const string VerboseField = "verbose_field";
 }

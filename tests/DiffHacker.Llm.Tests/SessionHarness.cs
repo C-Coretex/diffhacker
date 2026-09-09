@@ -25,14 +25,14 @@ internal sealed class SessionHarness
 
     public LlmProviderProfile Profile { get; set; } = ProfileFor(LlmProviderType.OpenAi);
 
-    public ITokenPricing Pricing { get; set; } = new StubPricing();
+    public IModelCatalog Catalog { get; set; } = new StubCatalog();
 
     public LlmSession Build() => new(
         Provider,
         new HttpClient(),
         Profile,
         Budget,
-        Pricing,
+        Catalog,
         NullLogger<LlmSession>.Instance,
         jitter: () => 0.5,
         delay: (duration, _) =>
@@ -114,8 +114,12 @@ internal sealed class SessionHarness
         public void Report(LlmRunEvent value) => events.Add(value);
     }
 
-    /// <summary>Prices everything at a round number so cost assertions read as arithmetic.</summary>
-    private sealed class StubPricing : ITokenPricing
+    /// <summary>
+    /// Prices everything at a round number so cost assertions read as arithmetic, and gives every
+    /// model a round context window for the same reason. <c>unpriced-model</c> and
+    /// <c>unknown-window-model</c> are the two ways a catalogue can say it does not know.
+    /// </summary>
+    private sealed class StubCatalog : IModelCatalog
     {
         public DateOnly TableAsOf => new(2026, 1, 1);
 
@@ -123,6 +127,12 @@ internal sealed class SessionHarness
         {
             rate = new LlmModelRate { InputPerMillion = 1_000m, OutputPerMillion = 2_000m };
             return model != "unpriced-model";
+        }
+
+        public bool TryGetContextWindow(LlmProviderType providerType, string model, out int tokens)
+        {
+            tokens = 100_000;
+            return model != "unknown-window-model";
         }
     }
 }

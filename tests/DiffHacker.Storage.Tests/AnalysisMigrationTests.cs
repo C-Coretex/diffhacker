@@ -1,10 +1,15 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DiffHacker.Storage.Tests;
 
 /// <summary>
-/// The v3 to v4 upgrade, which a fresh database never exercises.
+/// The upgrades a fresh database never exercises: v3 to v4, and v4 to v5.
+/// <para>
+/// Each builds the older schema by hand rather than by running the current migration with the
+/// version number rewound — that would test nothing, because the columns would already be there.
+/// </para>
 /// </summary>
 public sealed class AnalysisMigrationTests : IDisposable
 {
@@ -36,6 +41,94 @@ public sealed class AnalysisMigrationTests : IDisposable
                 .ShouldNotBeNull().UserNotes.ShouldBe("kept across the upgrade");
         }
 
+        SqliteConnection.ClearAllPools();
+    }
+
+    [Fact]
+    public async Task An_analysis_stored_before_the_per_file_facts_existed_still_opens()
+    {
+        // The half of a migration that matters most here. An analysis written by Iteration 7 has no
+        // files_json, and the only acceptable behaviour is that it opens with no line counts on its
+        // boxes — not that it fails to open, and not that today's working tree is read instead.
+        await BuildVersion4DatabaseAsync(TestContext.Current.CancellationToken);
+
+        await using (var database = new AppDatabase(_directory.DatabaseFile, NullLogger<AppDatabase>.Instance))
+        {
+            var store = new SqliteAnalysisStore(database);
+
+            var stored = (await store.GetLatestAsync("/repo", TestContext.Current.CancellationToken))
+                .ShouldNotBeNull();
+
+            stored.Id.ShouldBe("old-analysis");
+            stored.SchemaVersion.ShouldBe("1.7.0");
+            stored.Document.Nodes.ShouldNotBeEmpty();
+
+            // The point: no per-file facts, and the analysis opens anyway.
+            stored.ChangedFiles.ShouldBeEmpty();
+
+            // And a new analysis saved into the upgraded database carries its facts as normal.
+            await store.SaveAsync(SqliteAnalysisStoreTests.Sample(), TestContext.Current.CancellationToken);
+
+            (await store.FindAsync("analysis1", TestContext.Current.CancellationToken))
+                .ShouldNotBeNull().ChangedFiles.ShouldNotBeEmpty();
+        }
+
+        SqliteConnection.ClearAllPools();
+    }
+
+    [Fact]
+    public async Task A_provider_saved_before_context_windows_existed_has_no_override()
+    {
+        await BuildVersion4DatabaseAsync(TestContext.Current.CancellationToken);
+
+        await using (var database = new AppDatabase(_directory.DatabaseFile, NullLogger<AppDatabase>.Instance))
+        {
+            var profiles = new SqliteProviderProfileStore(database);
+
+            var profile = (await profiles.FindAsync("p1", TestContext.Current.CancellationToken))
+                .ShouldNotBeNull();
+
+            // Null, so the bundled table is consulted — exactly what a profile with no cost
+            // override already does.
+            profile.ContextWindowTokens.ShouldBeNull();
+            profile.ContextWindowOverride.ShouldBeNull();
+        }
+
+        SqliteConnection.ClearAllPools();
+    }
+
+    /// <summary>
+    /// The schema exactly as Iteration 7 left it, with one analysis and one provider already in it.
+    /// </summary>
+    private async Task BuildVersion4DatabaseAsync(CancellationToken cancellationToken)
+    {
+        await BuildVersion3DatabaseAsync(cancellationToken);
+
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = _directory.DatabaseFile,
+            Mode = SqliteOpenMode.ReadWrite,
+        }.ToString();
+
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        // The two documents are serialised by the same code the store uses rather than written out
+        // by hand: a hand-written blob that no longer deserialises would fail this test for a
+        // reason that has nothing to do with the migration under test.
+        var sample = SqliteAnalysisStoreTests.Sample();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = Version4Schema;
+        command.Parameters.AddWithValue(
+            "@documentJson",
+            JsonSerializer.Serialize(sample.Document, StorageJson.Options));
+        command.Parameters.AddWithValue(
+            "@statisticsJson",
+            JsonSerializer.Serialize(sample.Statistics, StorageJson.Options));
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        await connection.CloseAsync();
         SqliteConnection.ClearAllPools();
     }
 
@@ -133,4 +226,53 @@ public sealed class AnalysisMigrationTests : IDisposable
         await connection.CloseAsync();
         SqliteConnection.ClearAllPools();
     }
+
+    /// <summary>
+    /// What Iteration 7's migration added, plus one row in each of the two tables Iteration 8
+    /// alters — so the upgrade has something to preserve rather than only something to create.
+    /// </summary>
+    private const string Version4Schema =
+        """
+        UPDATE schema_version SET version = 4;
+
+        CREATE TABLE analyses (
+            id               TEXT PRIMARY KEY,
+            repository_path  TEXT NOT NULL,
+            schema_version   TEXT NOT NULL,
+            created_at_utc   TEXT NOT NULL,
+            head_commit      TEXT NULL,
+            provider_name    TEXT NOT NULL,
+            model            TEXT NOT NULL,
+            input_tokens     INTEGER NOT NULL,
+            output_tokens    INTEGER NOT NULL,
+            cost_usd         TEXT NULL,
+            duration_ms      INTEGER NOT NULL,
+            repair_rounds    INTEGER NOT NULL,
+            document_json    TEXT NOT NULL,
+            statistics_json  TEXT NOT NULL,
+            diagnostics_json TEXT NOT NULL,
+            trace_json       TEXT NOT NULL
+        );
+
+        CREATE INDEX ix_analyses_repository
+            ON analyses (repository_path, created_at_utc DESC);
+
+        CREATE INDEX ix_analyses_model ON analyses (model);
+
+        CREATE INDEX ix_analyses_schema_version ON analyses (schema_version);
+
+        INSERT INTO analyses
+            (id, repository_path, schema_version, created_at_utc, head_commit, provider_name,
+             model, input_tokens, output_tokens, cost_usd, duration_ms, repair_rounds,
+             document_json, statistics_json, diagnostics_json, trace_json)
+        VALUES ('old-analysis', '/repo', '1.7.0', '2026-05-01T00:00:00.0000000+00:00',
+                'head0001', 'Test', 'gpt-4o', 1000, 200, '0.25', 42000, 0,
+                @documentJson, @statisticsJson, '[]',
+                '{"toolCalls":[],"progressMessages":[]}');
+
+        INSERT INTO provider_profiles
+            (id, provider_type, display_name, model, base_url, created_at_utc, updated_at_utc)
+        VALUES ('p1', 'openai', 'Old profile', 'gpt-4o', NULL,
+                '2026-05-01T00:00:00.0000000+00:00', '2026-05-01T00:00:00.0000000+00:00');
+        """;
 }

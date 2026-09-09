@@ -42,6 +42,7 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                document_json    AS DocumentJson,
                statistics_json  AS StatisticsJson,
                diagnostics_json AS DiagnosticsJson,
+               files_json       AS FilesJson,
                trace_json       AS TraceJson
           FROM analyses
         """;
@@ -58,10 +59,10 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
             INSERT INTO analyses
                 (id, repository_path, schema_version, created_at_utc, head_commit, provider_name,
                  model, input_tokens, output_tokens, cost_usd, duration_ms, repair_rounds,
-                 document_json, statistics_json, diagnostics_json, trace_json)
+                 document_json, statistics_json, diagnostics_json, files_json, trace_json)
             VALUES (@id, @repositoryPath, @schemaVersion, @createdAtUtc, @headCommit, @providerName,
                     @model, @inputTokens, @outputTokens, @costUsd, @durationMs, @repairRounds,
-                    @documentJson, @statisticsJson, @diagnosticsJson, @traceJson);
+                    @documentJson, @statisticsJson, @diagnosticsJson, @filesJson, @traceJson);
             """,
             new
             {
@@ -83,6 +84,7 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                 documentJson = JsonSerializer.Serialize(analysis.Document, StorageJson.Options),
                 statisticsJson = JsonSerializer.Serialize(analysis.Statistics, StorageJson.Options),
                 diagnosticsJson = JsonSerializer.Serialize(analysis.Diagnostics, StorageJson.Options),
+                filesJson = JsonSerializer.Serialize(analysis.ChangedFiles, StorageJson.Options),
                 traceJson = JsonSerializer.Serialize(
                     new AnalysisTrace(analysis.ToolCalls, analysis.ProgressMessages),
                     StorageJson.Options),
@@ -201,6 +203,12 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
 
         public required string DiagnosticsJson { get; init; }
 
+        /// <summary>
+        /// Null on a row written before schema 5, which is why it is not <c>required</c>: an
+        /// analysis from an older build opens with no per-file facts rather than not at all.
+        /// </summary>
+        public string? FilesJson { get; init; }
+
         public required string TraceJson { get; init; }
 
         public Analysis ToAnalysis()
@@ -232,6 +240,9 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                 Statistics = JsonSerializer.Deserialize<AnalysisStatistics>(StatisticsJson, StorageJson.Options)!,
                 Diagnostics =
                     JsonSerializer.Deserialize<List<AnalysisDiagnostic>>(DiagnosticsJson, StorageJson.Options) ?? [],
+                ChangedFiles = FilesJson is null
+                    ? []
+                    : JsonSerializer.Deserialize<List<ChangedFileFacts>>(FilesJson, StorageJson.Options) ?? [],
                 ToolCalls = trace?.ToolCalls ?? [],
                 ProgressMessages = trace?.ProgressMessages ?? [],
             };

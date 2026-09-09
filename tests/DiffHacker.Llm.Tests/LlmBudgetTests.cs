@@ -153,7 +153,11 @@ public sealed class LlmBudgetTests
 
         budget.MaxToolCalls.ShouldBe(500);
         budget.MaxTurns.ShouldBe(300);
-        budget.MaxTotalTokens.ShouldBe(2_000_000);
+        budget.MaxTotalTokens.ShouldBe(
+            10_000_000,
+            "every turn resends the conversation, so 300 turns of a 1000-file exploration reaches "
+            + "the millions without anything having gone wrong; a guard that stops a working run "
+            + "is not a runaway guard.");
         budget.MaxRetryAttempts.ShouldBe(5);
         budget.MaxConsecutiveToolFailures.ShouldBe(3);
         budget.RequestTimeout.ShouldBe(TimeSpan.FromMinutes(10));

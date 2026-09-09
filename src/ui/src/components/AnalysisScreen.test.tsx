@@ -18,6 +18,7 @@ function emptyView(): AnalysisView {
     nodes: [],
     edges: [],
     diagnostics: [],
+    changedFiles: [],
   };
 }
 
@@ -217,22 +218,45 @@ describe('AnalysisScreen', () => {
     await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.run'));
     transport.respond(analysedView());
 
+    // The rail: what the change does, and the numbers the application counted rather than ones the
+    // model claimed.
     expect(
       await screen.findByText('The contract grew a tenant field and its caller followed.'),
     ).toBeInTheDocument();
-
-    // Every cluster, and every file inside one. Each path appears twice — once as a node and once
-    // as an end of the edge between them — so both are asserted as present rather than as unique.
-    expect(screen.getByText('The contract and its caller')).toBeInTheDocument();
-    expect(screen.getAllByText('src/Contract.cs').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('src/Caller.cs').length).toBeGreaterThan(0);
-    expect(screen.getByText('The changed contract')).toBeInTheDocument();
-    expect(screen.getByText('The updated caller')).toBeInTheDocument();
-    expect(screen.getByText('Start here')).toBeInTheDocument();
-
-    // The statistics the application counted, not ones the model claimed.
     expect(screen.getByText('Longest chain')).toBeInTheDocument();
     expect(screen.getByText('Analyse again')).toBeInTheDocument();
+
+    // And the diagram beside it — one box per file, which is what Iteration 8 added.
+    await waitFor(() =>
+      expect(screen.getByTestId('graph-node-src/Contract.cs')).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('graph-node-src/Caller.cs')).toBeInTheDocument();
+    expect(screen.getByTestId('graph-container-core')).toBeInTheDocument();
+  });
+
+  it('keeps the model’s full text a click away rather than on screen by default', async () => {
+    // Iteration 7 rendered all of this on the page. It is behind a disclosure now because the
+    // diagram says the same thing in a form that fits on one screen — but it is still the only
+    // place the model's own words can be read, so it is still there.
+    const transport = new FakeTransport();
+    renderScreen(transport);
+
+    await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.get'));
+    transport.respond(analysedView());
+
+    expect(await screen.findByRole('button', { name: 'Details' })).toBeInTheDocument();
+
+    // Titles are on the diagram's boxes either way — the four prose fields are what only the
+    // long-form view has room for, so they are what distinguishes it.
+    expect(screen.queryByText('A tenant field was added.')).not.toBeInTheDocument();
+    expect(screen.queryByText('The caller constructs the contract.')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Details' }));
+
+    expect(screen.getByText('A tenant field was added.')).toBeInTheDocument();
+    expect(screen.getByText('Every caller now has to pass one.')).toBeInTheDocument();
+    expect(screen.getByText('The caller constructs the contract.')).toBeInTheDocument();
+    expect(screen.getByText('Start here')).toBeInTheDocument();
   });
 
   it('keeps risks out of the explanations and in a column of their own', async () => {
@@ -243,6 +267,10 @@ describe('AnalysisScreen', () => {
     transport.respond(analysedView());
 
     const overall = await screen.findByText('Nothing was added to the tests.');
+
+    // The container and node risks live in the long-form detail, so it has to be open to see them.
+    await userEvent.click(screen.getByRole('button', { name: 'Details' }));
+
     const explanation = screen.getByText(
       'The contract is the decision; the caller is the consequence.',
     );

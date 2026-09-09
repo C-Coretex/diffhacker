@@ -82,6 +82,10 @@ test('a change is analysed, validated, stored, and reopened without running agai
     await expect(app.page.getByText(en.progress.phase.exploring)).toBeVisible();
     await expect(analysis.toolRow('get_file_diff').first()).toBeVisible();
 
+    // Iteration 8 requirement 14: how full the context is, live, measured by the host and carried
+    // on the same notification channel as everything else here.
+    await expect(analysis.contextMeter).toBeVisible();
+
     // §0.2.8: no part of the result is on screen while the run is still going.
     await expect(analysis.summaryHeading).toHaveCount(0);
 
@@ -91,12 +95,16 @@ test('a change is analysed, validated, stored, and reopened without running agai
 
     await expect(analysis.rerunButton).toBeVisible({ timeout: 30_000 });
     await expect(analysis.summaryHeading).toBeVisible();
-    await expect(analysis.entryBadge).toBeVisible();
 
     // §0.2.5 as an assertion: every changed file is in the result, including the deleted one.
+    // Read off the diagram, which is where Iteration 8 put it — a box per file, keyed by node id.
     for (const path of changed) {
-      await expect(app.page.getByText(path, { exact: true }).first()).toBeVisible();
+      await expect(analysis.graphNode(path)).toBeVisible({ timeout: 30_000 });
     }
+
+    // And the model's own words are still reachable, one click away.
+    await analysis.detailsToggle.click();
+    await expect(analysis.entryBadge.first()).toBeVisible();
 
     // The risks are their own column, never folded into the summary.
     await expect(app.page.getByText(en.analysis.risksHeading, { exact: true }).first()).toBeVisible();
@@ -191,7 +199,7 @@ test('a result that drops a file is sent back with the file named, and repaired'
 
     // And the stored result is the repaired one: every file covered.
     for (const path of changed) {
-      await expect(app.page.getByText(path, { exact: true }).first()).toBeVisible();
+      await expect(analysis.graphNode(path)).toBeVisible({ timeout: 30_000 });
     }
 
     await app.shot('an analysis that was repaired before it validated');
@@ -332,6 +340,12 @@ test('a five-hundred-file change completes and validates', async ({ diffhacker, 
 
     await expect(analysis.rerunButton).toBeVisible({ timeout: 60_000 });
     await expect(analysis.summaryHeading).toBeVisible();
+
+    // Requirement 11's scale, drawn rather than only stored: the first and last of five hundred
+    // boxes both exist. Whether it is *fast* is measured by hand and recorded in docs/decisions.md;
+    // what this asserts is that nothing was dropped on the way to the canvas.
+    await expect(analysis.graphNode('internal/file0.cs')).toBeVisible({ timeout: 60_000 });
+    await expect(analysis.graphNode('internal/file499.cs')).toBeVisible();
 
     // The whole file list went out in one prompt, and still carried no file content.
     const opening = JSON.stringify(provider.requests[0]?.messages ?? []);

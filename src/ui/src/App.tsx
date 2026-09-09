@@ -110,30 +110,44 @@ export function App() {
         </nav>
       </header>
 
-      <main className="flex-1 overflow-auto px-8 py-6">
-        {/*
-          The repository screen gets the whole window; welcome and settings stay in a reading
-          column. A changed-file list wants room for its path, status, line counts, language and
-          project on one row, and Iteration 8's graph will want more than that. Forms read badly
-          stretched, so they keep the narrow measure.
-        */}
-        <div
-          className={
-            screen === 'repository' || screen === 'analysis'
-              ? 'flex flex-col gap-6'
-              : 'mx-auto flex max-w-3xl flex-col gap-6'
-          }
-        >
-          <GitMissingBanner />
+      {/*
+        Three widths, and the analysis screen is the one that changed in Iteration 8. The graph is
+        a canvas: it has to be given a height and told not to scroll, because a canvas inside a
+        scrolling column is a canvas the reviewer scrolls past instead of panning. So the analysis
+        screen gets the window with no padding and no scrollbar of its own, and manages its own
+        regions — a rail that scrolls, a diagram that does not.
 
-          {connection !== 'connected' && <HostPanel />}
+        The repository screen gets the full width but keeps its padding: a changed-file list wants
+        room for path, status, line counts, language and project on one row. Forms read badly
+        stretched, so welcome and settings keep the narrow measure.
+      */}
+      <main
+        className={
+          screen === 'analysis'
+            ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
+            : 'flex-1 overflow-auto px-8 py-6'
+        }
+      >
+        {screen === 'analysis' ? (
+          <AnalysisScreen />
+        ) : (
+          <div
+            className={
+              screen === 'repository'
+                ? 'flex flex-col gap-6'
+                : 'mx-auto flex max-w-3xl flex-col gap-6'
+            }
+          >
+            <GitMissingBanner />
 
-          {screen === 'welcome' && <WelcomeScreen />}
-          {screen === 'repository' && <RepositoryScreen />}
-          {screen === 'settings' && <SettingsScreen />}
-          {screen === 'profile' && <ProfileScreen />}
-          {screen === 'analysis' && <AnalysisScreen />}
-        </div>
+            {connection !== 'connected' && <HostPanel />}
+
+            {screen === 'welcome' && <WelcomeScreen />}
+            {screen === 'repository' && <RepositoryScreen />}
+            {screen === 'settings' && <SettingsScreen />}
+            {screen === 'profile' && <ProfileScreen />}
+          </div>
+        )}
       </main>
     </div>
   );

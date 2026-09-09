@@ -620,6 +620,82 @@ public sealed class AnalysisValidatorTests
     }
 
     [Fact]
+    public void A_field_that_runs_far_past_its_budget_is_a_warning_and_never_an_error()
+    {
+        // Iteration 8 requirement 15. The model was asked for a length; overshooting is worth
+        // recording and is never worth a repair round on a three-hundred-node document. Making this
+        // an error — or a maxLength in the schema, which the provider would enforce — would have the
+        // whole answer rewritten because one sentence ran long.
+        var result = AnalysisFixtures.Valid();
+        var verbose = result with
+        {
+            Nodes =
+            [
+                result.Nodes[0] with { Title = new string('x', AnalysisFieldBudgets.NodeTitle * 3) },
+                result.Nodes[1],
+                result.Nodes[2],
+            ],
+        };
+
+        var validation = AnalysisFixtures.Check(verbose);
+
+        validation.IsValid.ShouldBeTrue("a long sentence is not a reason to reject an answer.");
+        validation.Warnings.ShouldContain(d =>
+            d.Code == AnalysisDiagnosticCodes.VerboseField && d.Subject == result.Nodes[0].Id);
+    }
+
+    [Fact]
+    public void A_field_a_little_over_its_budget_is_left_alone()
+    {
+        // The budgets are what fits comfortably, not a hard edge. A diagnostic on every slight
+        // overshoot is one nobody reads, so nothing is said until twice the length.
+        var result = AnalysisFixtures.Valid();
+        var slightlyLong = result with
+        {
+            Nodes =
+            [
+                result.Nodes[0] with { Title = new string('x', AnalysisFieldBudgets.NodeTitle + 20) },
+                result.Nodes[1],
+                result.Nodes[2],
+            ],
+        };
+
+        AnalysisFixtures.Check(slightlyLong).Warnings
+            .ShouldNotContain(d => d.Code == AnalysisDiagnosticCodes.VerboseField);
+    }
+
+    [Fact]
+    public void An_overlong_summary_risk_and_container_field_are_all_reported()
+    {
+        // Every written field has a budget, not only the ones on a node.
+        var result = AnalysisFixtures.Valid();
+        var verbose = result with
+        {
+            Summary = new string('x', AnalysisFieldBudgets.OverallSummary * 3),
+            OverallRisks = [new string('x', AnalysisFieldBudgets.Risk * 3)],
+            Containers =
+            [
+                result.Containers[0] with
+                {
+                    Explanation = new string('x', AnalysisFieldBudgets.ContainerExplanation * 3),
+                },
+                result.Containers[1],
+            ],
+        };
+
+        var warnings = AnalysisFixtures.Check(verbose).Warnings
+            .Where(d => d.Code == AnalysisDiagnosticCodes.VerboseField)
+            .ToList();
+
+        warnings.Count.ShouldBe(3);
+
+        // The two about the change as a whole carry no subject; the container one names itself, so
+        // a reader knows what to shorten.
+        warnings.Count(d => d.Subject.Length == 0).ShouldBe(2);
+        warnings.ShouldContain(d => d.Subject == result.Containers[0].Id);
+    }
+
+    [Fact]
     public void A_result_describing_a_changeset_it_was_not_given_fails_on_every_file()
     {
         var result = AnalysisFixtures.Valid();

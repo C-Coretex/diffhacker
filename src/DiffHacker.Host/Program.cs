@@ -14,7 +14,7 @@ using DiffHacker.Host.Logging;
 using DiffHacker.Host.Rpc;
 using DiffHacker.Host.Shell;
 using DiffHacker.Llm;
-using DiffHacker.Llm.Pricing;
+using DiffHacker.Llm.Catalog;
 using DiffHacker.Storage;
 using DiffHacker.Storage.Secrets;
 using DiffHacker.Tools;
@@ -153,7 +153,7 @@ internal static class Program
         // nothing above it ever holds one, and it gives each session its own HttpClient rather
         // than the singleton above — a finished run must not close connections the settings
         // screen is still using.
-        services.AddSingleton<ITokenPricing, ModelPricing>();
+        services.AddSingleton<IModelCatalog, ModelCatalog>();
         services.AddSingleton<ILlmSessionFactory, LlmSessionFactory>();
 
         // The repository knowledge base. StoredProjectProfileSource is what Iteration 5 cut the

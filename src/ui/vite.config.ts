@@ -11,6 +11,14 @@ export default defineConfig({
   // Assets are served from diffhacker://app/, so every URL the bundle emits must be relative
   // to the document rather than rooted at '/'.
   base: './',
+  worker: {
+    // A classic worker, not a module one. WebView2 refuses to start a module worker whose script
+    // comes from the custom `diffhacker://` scheme — the constructor succeeds and the worker dies
+    // immediately after, which reaches the screen as "the diagram could not be arranged" with
+    // nothing in any log to say why. An IIFE bundle has no import statements to resolve and starts
+    // everywhere; ELK is inlined into it, which is what a layout worker wants anyway.
+    format: 'iife',
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,

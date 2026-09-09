@@ -45,6 +45,9 @@ public sealed class PersistenceAcrossRestartTests : IDisposable
                 new Contracts.SaveProviderRequest(
                     apiKey: ApiKey,
                     baseUrl: null,
+                    // An override of the bundled catalogue, so the restart has one more thing to
+                    // get wrong. Not a budget: nothing stops a run for exceeding it.
+                    contextWindowTokens: 123_456,
                     displayName: "Work account",
                     id: null,
                     inputCostPerMillion: null,
@@ -60,6 +63,7 @@ public sealed class PersistenceAcrossRestartTests : IDisposable
                 new Contracts.SaveProviderRequest(
                     apiKey: "sk-second-provider-key-0000000000",
                     baseUrl: null,
+                    contextWindowTokens: null,
                     displayName: "Personal",
                     id: null,
                     inputCostPerMillion: null,
@@ -93,6 +97,10 @@ public sealed class PersistenceAcrossRestartTests : IDisposable
             providers.Profiles.Count.ShouldBe(2);
             providers.ActiveProfileId.ShouldBe(profileId, "The chosen provider must survive a restart.");
             providers.Profiles.Single(p => p.Id == profileId).IsActive.ShouldBeTrue();
+
+            var work = providers.Profiles.Single(p => p.DisplayName == "Work account");
+            work.ContextWindowTokens.ShouldBe(123_456, "A context-window override is settings, and settings survive.");
+            providers.Profiles.Single(p => p.DisplayName == "Personal").ContextWindowTokens.ShouldBeNull();
 
             foreach (var profile in providers.Profiles)
             {

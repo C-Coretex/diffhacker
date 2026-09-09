@@ -97,6 +97,44 @@ public sealed class AnalysisAgreementTests
     }
 
     [Fact]
+    public void The_per_file_facts_agree_with_the_changeset_they_were_taken_from()
+    {
+        // A third duplicated shape, and the same reasoning: ChangedFileFactsInfo is the subset of
+        // ChangedFileInfo that a node box and the project legend draw, recorded with the analysis
+        // rather than re-read. A subset rather than a copy, so this checks that every field it does
+        // carry means the same thing on both sides.
+        var facts = Shape<ChangedFileFactsInfo>().Where(static entry => entry.Name != "status");
+        var source = Shape<ChangedFileInfo>().ToDictionary(entry => entry.Name, entry => entry.Type);
+
+        foreach (var (name, type) in facts)
+        {
+            source.ShouldContainKey(
+                name,
+                $"'{name}' has no counterpart on ChangedFileInfo, so the facts stored with an "
+                + "analysis would mean something the changeset never said.");
+
+            source[name].ShouldBe(type, $"'{name}' has a different type on each side.");
+        }
+
+        // Status is compared by value rather than by type: the two enums are generated with
+        // different names for the same wire strings, exactly as the node-state pair is.
+        WireValues<ChangedFileFactsInfoStatus>().ShouldBe(
+            WireValues<ChangedFileInfoStatus>(),
+            ignoreOrder: true);
+    }
+
+    [Fact]
+    public void The_per_file_facts_are_the_ones_the_node_boxes_were_written_against()
+    {
+        // Pinned, so dropping one is a decision rather than an accident. Every one of these is on a
+        // box: the path it is matched by, the status word, the two line counts, the binary flag
+        // that explains their absence, the language, and the project that picks the fill colour.
+        Names<ChangedFileFactsInfo>().ShouldBe(
+            ["path", "status", "linesAdded", "linesRemoved", "isBinary", "language", "project"],
+            ignoreOrder: true);
+    }
+
+    [Fact]
     public void Every_diagnostic_severity_the_host_can_report_has_a_wire_value()
     {
         WireValues<AnalysisDiagnosticInfoSeverity>().ShouldBe(["error", "warning"], ignoreOrder: true);

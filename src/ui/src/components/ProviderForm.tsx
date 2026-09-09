@@ -52,6 +52,18 @@ function parseRate(input: string, output: string): { input: number; output: numb
   return { input: parsedInput, output: parsedOutput };
 }
 
+/**
+ * The context-window override, or undefined for "no override, use the bundled table".
+ *
+ * A whole positive number of tokens. Anything else is dropped rather than sent — the host rejects a
+ * non-positive window with an error, and there is no sense making the user submit a typo to find
+ * that out. A window is never fractional, so a decimal is a mistake too.
+ */
+function parseWindow(value: string): number | undefined {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 interface ProviderFormProps {
   /** The profile being edited, or undefined when adding a new one. */
   profile?: ProviderProfile;
@@ -74,12 +86,14 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
   const [apiKey, setApiKey] = useState('');
   const [inputCost, setInputCost] = useState(format(profile?.inputCostPerMillion));
   const [outputCost, setOutputCost] = useState(format(profile?.outputCostPerMillion));
+  const [contextWindow, setContextWindow] = useState(format(profile?.contextWindowTokens));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
 
   const baseUrlRequired = providerType === 'openai_compatible';
   const suggestionsId = `${fieldId}-models`;
   const rate = parseRate(inputCost, outputCost);
+  const contextWindowTokens = parseWindow(contextWindow);
 
   const submit = useCallback(
     async (event: FormEvent) => {
@@ -102,6 +116,9 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
           // Sent only as a complete pair. Half a rate would bill the other half at zero, so
           // the host ignores a lone value and this does not send one.
           ...(rate ? { inputCostPerMillion: rate.input, outputCostPerMillion: rate.output } : {}),
+          // Unlike the rate, this stands alone: half a rate is a wrong number, half a context
+          // window is not a thing. Omitted when blank, which clears any override.
+          ...(contextWindowTokens === undefined ? {} : { contextWindowTokens }),
         });
 
         setProviders([...result.profiles], result.activeProfileId);
@@ -112,7 +129,20 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
         setSaving(false);
       }
     },
-    [client, profile, providerType, displayName, model, baseUrl, apiKey, rate, t, setProviders, onDone],
+    [
+      client,
+      profile,
+      providerType,
+      displayName,
+      model,
+      baseUrl,
+      apiKey,
+      rate,
+      contextWindowTokens,
+      t,
+      setProviders,
+      onDone,
+    ],
   );
 
   return (
@@ -242,6 +272,29 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
                   onChange={(event) => setOutputCost(event.target.value)}
                 />
               </div>
+            </div>
+          </fieldset>
+
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-sm font-medium">{t('providers.contextLegend')}</legend>
+            <p className="text-muted-foreground text-xs">{t('providers.contextHint')}</p>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={`${fieldId}-context`}>{t('providers.contextWindowLabel')}</Label>
+              <Input
+                id={`${fieldId}-context`}
+                type="number"
+                inputMode="numeric"
+                min="1"
+                // step="1" rather than a friendlier 1000. The browser validates a number against
+                // min *and* step, and refuses to submit the form when it does not line up — so a
+                // step of 1000 would make 200,000 valid and 128,000 not, and the only symptom is a
+                // Save button that quietly does nothing.
+                step="1"
+                value={contextWindow}
+                autoComplete="off"
+                placeholder={t('providers.contextWindowPlaceholder')}
+                onChange={(event) => setContextWindow(event.target.value)}
+              />
             </div>
           </fieldset>
 

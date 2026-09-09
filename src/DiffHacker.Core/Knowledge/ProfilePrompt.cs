@@ -86,6 +86,10 @@ public static class ProfilePrompt
         repository, so length here is paid for many times over. Spend it on specifics; cut anything
         generic.
 
+        Cut the preamble, not the content. No "This repository", no "The purpose of this section
+        is to", no restating a heading back to the reader. "Contracts are generated from /schema
+        and never hand-edited" is worth ten times a paragraph that works up to saying it.
+
         Answer with the structured document alone.
         """;
 

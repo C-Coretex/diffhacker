@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using DiffHacker.Core.Analyses;
 using DiffHacker.Core.Changes;
@@ -119,6 +120,56 @@ public sealed partial class AnalysisPromptTests
         prompt.ShouldContain("Only tool results are pruned");
         prompt.ShouldContain("state it clearly and concisely in your reasoning");
         prompt.ShouldContain("call the tool again");
+    }
+
+    [Fact]
+    public void The_prompt_says_why_the_answer_has_to_be_short_and_not_only_that_it_does()
+    {
+        // Iteration 8 requirement 15. A model told "be concise" writes the same paragraph with
+        // fewer adjectives; a model told where the text lands writes a label instead.
+        var prompt = Prompt();
+
+        prompt.ShouldContain("the size of a business card");
+        prompt.ShouldContain("three hundred others beside it");
+        prompt.ShouldContain("Cut the preamble, not the content");
+    }
+
+    [Fact]
+    public void The_prompt_states_every_length_budget_the_validator_measures_against()
+    {
+        // Three readers of one set of numbers: this prompt, AnalysisValidator's warning, and the
+        // renderer's truncation. A budget changed in AnalysisFieldBudgets and not here would have
+        // the model asked for one length and reported against another.
+        var prompt = Prompt();
+
+        foreach (var budget in new[]
+        {
+            AnalysisFieldBudgets.NodeTitle,
+            AnalysisFieldBudgets.NodeProse,
+            AnalysisFieldBudgets.ContainerTitle,
+            AnalysisFieldBudgets.ContainerSummary,
+            AnalysisFieldBudgets.ContainerExplanation,
+            AnalysisFieldBudgets.OverallSummary,
+            AnalysisFieldBudgets.Risk,
+        })
+        {
+            prompt.ShouldContain(
+                budget.ToString(CultureInfo.InvariantCulture),
+                Case.Sensitive,
+                $"the prompt has to state the {budget}-character budget the validator measures against");
+        }
+    }
+
+    [Fact]
+    public void The_length_budgets_are_asked_for_rather_than_enforced()
+    {
+        // The distinction requirement 15 lives or dies on. A model that believes overshooting is
+        // fatal drops facts to fit, which is worse than a long sentence — and the schema carries no
+        // maxLength precisely so that overshooting costs nothing.
+        var prompt = Prompt();
+
+        prompt.ShouldContain("Going over is not rejected");
+        prompt.ShouldContain("never drop a fact to fit");
     }
 
     [Fact]

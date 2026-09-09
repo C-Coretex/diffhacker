@@ -57,6 +57,37 @@ public sealed record LlmRunEvent
     /// <summary>Running totals. Carried on every event so a view never has to accumulate.</summary>
     public LlmUsage CumulativeUsage { get; init; }
 
+    /// <summary>
+    /// How much of the context window the last request occupied, in the provider's own input-token
+    /// count.
+    /// <para>
+    /// A different number from <see cref="LlmUsage.InputTokens"/> on
+    /// <see cref="CumulativeUsage"/>, which is the run's running total and only ever rises. This
+    /// one is the size of a single request, and it falls when tool results are pruned.
+    /// </para>
+    /// <para>
+    /// Null until a request has reported usage, and null for the whole run against a provider that
+    /// reports none. Never zero standing in for unknown.
+    /// </para>
+    /// </summary>
+    public long? ContextTokens { get; init; }
+
+    /// <summary>
+    /// The model's context window, from the profile's override or the bundled catalogue, or null
+    /// when neither knows the model. Carried alongside <see cref="ContextTokens"/> so a view has
+    /// both halves of the fraction without a lookup of its own.
+    /// <para>
+    /// Informational. Nothing consults it to decide whether a run may continue.
+    /// </para>
+    /// </summary>
+    public int? ContextWindowTokens { get; init; }
+
+    /// <summary>
+    /// What is filling the context, measured locally in characters. Null on events raised before
+    /// the first request was built.
+    /// </summary>
+    public LlmContextBreakdown? Context { get; init; }
+
     /// <summary>Set on <see cref="LlmRunEventKind.RetryScheduled"/>: how long before the next try.</summary>
     public TimeSpan? RetryDelay { get; init; }
 

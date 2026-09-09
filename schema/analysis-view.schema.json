@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.7/analysis-view.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.8/analysis-view.schema.json",
   "title": "AnalysisView",
   "description": "Everything the renderer is given about the stored analysis of one repository: the model's graph, the provenance of the run that produced it, the statistics the application computed alongside it, and the diagnostics validation raised. Returned by every analysis.* method, so the renderer replaces its state wholesale rather than merging. The document's fields are hoisted to the root rather than nested under an analysis object, because the contract generator cannot render a definition that references another definition and the container list needs one — the same flattening profile-state.schema.json applies. The container, node and edge shapes duplicate the ones in analysis-result.schema.json, because a schema here cannot reference one there; AnalysisAgreementTests holds the two copies together.",
   "type": "object",
@@ -14,7 +14,8 @@
     "containers",
     "nodes",
     "edges",
-    "diagnostics"
+    "diagnostics",
+    "changedFiles"
   ],
   "properties": {
     "repositoryPath": {
@@ -114,6 +115,13 @@
       "description": "What validation observed about the stored result. A stored analysis only ever carries warnings — anything that failed validation was repaired or the run failed, and a failed run is not stored.",
       "items": {
         "$ref": "#/$defs/analysisDiagnosticInfo"
+      }
+    },
+    "changedFiles": {
+      "type": "array",
+      "description": "The changeset as it stood when the run happened, one entry per file. Kept beside the graph rather than folded onto each node because one file may yield several nodes, and because the legend needs the whole list; the renderer indexes it by path. Recorded at run time and stored, never re-read from the working tree — today's line counts on yesterday's analysis would be a different change.",
+      "items": {
+        "$ref": "#/$defs/changedFileFactsInfo"
       }
     },
     "statistics": {
@@ -346,6 +354,44 @@
         "subject": {
           "type": "string",
           "description": "The node id, container id, edge or file path the diagnostic is about. Empty when it is about the result as a whole."
+        }
+      }
+    },
+    "changedFileFactsInfo": {
+      "title": "ChangedFileFactsInfo",
+      "description": "What git said about one changed file at the moment the run happened. A subset of ChangedFileInfo in changeset-result.schema.json — the fields a node box and the project legend draw — recorded with the analysis rather than re-read, and held to that shape by AnalysisAgreementTests. Line counts are absent rather than zero wherever they are not knowable, because 'we did not count' and 'we counted nothing' are different claims.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "status", "isBinary", "project"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Repository-relative path with forward slashes, exactly as git spells it. What a node's filePath is matched against."
+        },
+        "status": {
+          "type": "string",
+          "description": "What happened to the file. A type change and an unmerged file are both reported as modified: to a reviewer they are files that are different now.",
+          "enum": ["added", "modified", "deleted", "renamed", "copied"]
+        },
+        "linesAdded": {
+          "type": "integer",
+          "description": "Lines added, absent when the number is not knowable — a binary file or a submodule pointer."
+        },
+        "linesRemoved": {
+          "type": "integer",
+          "description": "Lines removed, absent for the same reasons as linesAdded."
+        },
+        "isBinary": {
+          "type": "boolean",
+          "description": "True when git treats the content as binary and will not produce a text diff."
+        },
+        "language": {
+          "type": "string",
+          "description": "Detected language, absent when the filename is unrecognised."
+        },
+        "project": {
+          "type": "string",
+          "description": "Project or module the file belongs to. What node fill colour encodes; empty when nothing attributed it."
         }
       }
     },
