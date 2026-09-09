@@ -26,6 +26,20 @@ async function boxes() {
   await waitFor(() => expect(screen.getByTestId('graph-node-src/Contract.cs')).toBeInTheDocument());
 }
 
+/**
+ * A pointer that will click inside a hover card.
+ *
+ * Radix keeps a popper invisible and inert until floating-ui has positioned it, and floating-ui
+ * never finishes in a document where every element measures zero — so in jsdom the card's own
+ * controls inherit `pointer-events: none` and nothing inside it has an accessible name. The card is
+ * in the DOM and correct; jsdom simply cannot place it, which is also why everything in it is
+ * queried by label rather than by role here. The end-to-end suite hovers, pins and copies in a real
+ * window, where none of this applies.
+ */
+function insideTheCard() {
+  return userEvent.setup({ pointerEventsCheck: 0 });
+}
+
 describe('AnalysisGraph', () => {
   beforeEach(() => {
     useAppStore.setState({
@@ -219,6 +233,211 @@ describe('AnalysisGraph', () => {
       expect(wrapper).not.toBeNull();
       expect(wrapper?.classList.contains('draggable')).toBe(false);
     }
+  });
+
+  // ---------------------------------------------------------------- Iteration 9: hover cards
+
+  it('explains a node on hover, with its risks in a column of their own', async () => {
+    // Requirement 1 and verification step 5. The four prose fields are on one side, the risks are
+    // on the other, and the separation is structural rather than a matter of how the model wrote
+    // the sentences.
+    const view = twoContainerView();
+    render(
+      <AnalysisGraph
+        view={{
+          ...view,
+          nodes: view.nodes.map((node) =>
+            node.id === 'src/Contract.cs'
+              ? {
+                  ...node,
+                  howItAffectsOthers: 'The caller has to pass a tenant now.',
+                  implementationNotes: 'The order of the two writes matters.',
+                  risks: ['Older clients will not send the new field.'],
+                }
+              : node,
+          ),
+        }}
+      />,
+    );
+
+    await boxes();
+    await userEvent.hover(screen.getByTestId('graph-node-src/Contract.cs'));
+
+    const card = await screen.findByTestId('graph-hover-card');
+
+    expect(within(card).getByText('Something changed.')).toBeInTheDocument();
+    expect(within(card).getByText('Because of a decision upstream.')).toBeInTheDocument();
+    expect(within(card).getByText('The caller has to pass a tenant now.')).toBeInTheDocument();
+    expect(within(card).getByText('The order of the two writes matters.')).toBeInTheDocument();
+
+    // The change statistics requirement 1 also asks for.
+    expect(within(card).getByText(/\+12 −3 · modified/)).toBeInTheDocument();
+
+    // And the risk, inside the risk column rather than loose in the prose.
+    const risks = within(card).getByTestId('risk-column');
+    expect(within(risks).getByText('Older clients will not send the new field.')).toBeInTheDocument();
+  });
+
+  it('explains a cluster on hover, with its own risks beside it', async () => {
+    // Requirement 3.
+    const view = twoContainerView();
+    render(
+      <AnalysisGraph
+        view={{
+          ...view,
+          containers: view.containers.map((container) =>
+            container.id === 'core'
+              ? { ...container, risks: ['The whole cluster lands in one release.'] }
+              : container,
+          ),
+        }}
+      />,
+    );
+
+    await boxes();
+    await userEvent.hover(screen.getByTestId('graph-container-core'));
+
+    const card = await screen.findByTestId('graph-hover-card');
+
+    expect(within(card).getByText('What core is about.')).toBeInTheDocument();
+    expect(within(card).getByText('The longer account of core.')).toBeInTheDocument();
+    expect(
+      within(within(card).getByTestId('risk-column')).getByText(
+        'The whole cluster lands in one release.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps a card open when the node is clicked, and puts it away on the background', async () => {
+    // The gesture that matters: hovering is for glancing, clicking is for reading. Without it the
+    // card is only ever available while a hand is held still, which is no use for scrolling it or
+    // selecting a path out of it.
+    const user = insideTheCard();
+
+    renderGraph();
+    await boxes();
+
+    await user.click(screen.getByTestId('graph-node-src/Contract.cs'));
+
+    const card = await screen.findByTestId('graph-hover-card');
+    expect(card).toHaveAttribute('data-pinned', 'true');
+    expect(within(card).getByText('src/Contract.cs')).toBeInTheDocument();
+
+    // The pointer moving away no longer takes it with it.
+    await user.unhover(screen.getByTestId('graph-node-src/Contract.cs'));
+    expect(screen.getByTestId('graph-hover-card')).toBeInTheDocument();
+
+    // Clicking another box moves the card there rather than being refused.
+    await user.click(screen.getByTestId('graph-node-src/Caller.cs'));
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('graph-hover-card')).getByText('src/Caller.cs'),
+      ).toBeInTheDocument(),
+    );
+
+    // Clicking the same box again puts it away — the gesture that opened it closes it.
+    await user.click(screen.getByTestId('graph-node-src/Caller.cs'));
+    await waitFor(() => expect(screen.queryByTestId('graph-hover-card')).not.toBeInTheDocument());
+
+    // And so does clicking the empty canvas.
+    await user.click(screen.getByTestId('graph-node-src/Caller.cs'));
+    await waitFor(() => expect(screen.getByTestId('graph-hover-card')).toBeInTheDocument());
+
+    await user.click(document.querySelector('.react-flow__pane')!);
+    await waitFor(() => expect(screen.queryByTestId('graph-hover-card')).not.toBeInTheDocument());
+  });
+
+  it('expands a cluster without pinning its card over the top', async () => {
+    // The chevron is inside the container node, so its click reaches the surface unless it is
+    // stopped — and a card pinned open by the act of folding a cluster is a card nobody asked for.
+    const user = insideTheCard();
+
+    renderGraph();
+    await boxes();
+
+    await user.click(screen.getByRole('button', { name: 'Collapse Cluster core' }));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId('graph-node-src/Contract.cs')).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId('graph-hover-card')).not.toBeInTheDocument();
+  });
+
+  it('pins a card so it survives the pointer leaving, and unpins it again', async () => {
+    // Requirement 4. Click is reserved for Iteration 10's diff viewer, so the gesture is a button
+    // on the card itself — a click on the card, never on the node.
+    renderGraph();
+    await boxes();
+
+    const user = insideTheCard();
+
+    await user.hover(screen.getByTestId('graph-node-src/Contract.cs'));
+    const card = await screen.findByTestId('graph-hover-card');
+
+    await user.click(within(card).getByLabelText('Pin this card'));
+    expect(screen.getByTestId('graph-hover-card')).toHaveAttribute('data-pinned', 'true');
+
+    // The pointer moving to another box no longer changes what is on the card.
+    await user.unhover(screen.getByTestId('graph-node-src/Contract.cs'));
+    await user.hover(screen.getByTestId('graph-node-src/Caller.cs'));
+
+    expect(screen.getByTestId('graph-hover-card')).toHaveAttribute('data-pinned', 'true');
+    expect(within(screen.getByTestId('graph-hover-card')).getByText('src/Contract.cs')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Unpin this card'));
+    await waitFor(() => expect(screen.queryByTestId('graph-hover-card')).not.toBeInTheDocument());
+  });
+
+  it('copies the exact repository-relative path from a node', async () => {
+    // Requirement 7 and verification step 9. The path git spells, not the basename and not the id
+    // with a disambiguator appended.
+    // `userEvent.setup` installs its own clipboard stand-in on `navigator`, so this goes through
+    // the real `copyText` and comes back out of a real read.
+    const user = insideTheCard();
+
+    renderGraph();
+    await boxes();
+
+    await user.hover(screen.getByTestId('graph-node-src/Contract.cs'));
+    const card = await screen.findByTestId('graph-hover-card');
+
+    await user.click(within(card).getByLabelText('Copy path'));
+
+    expect(await navigator.clipboard.readText()).toBe('src/Contract.cs');
+    expect(await within(card).findByText('Path copied')).toBeInTheDocument();
+  });
+
+  it('fades a node the model called trivial, without shrinking or hiding it', async () => {
+    // Requirement 6, held against §0.2.5. The emphasis differs; the box does not.
+    const view = twoContainerView();
+    render(
+      <AnalysisGraph
+        view={{
+          ...view,
+          nodes: view.nodes.map((node) =>
+            node.id === 'src/Contract.cs'
+              ? { ...node, importance: 5 }
+              : node.id === 'src/Caller.cs'
+                ? { ...node, importance: 1 }
+                : node,
+          ),
+        }}
+      />,
+    );
+
+    await boxes();
+
+    const important = screen.getByTestId('graph-node-src/Contract.cs');
+    const trivial = screen.getByTestId('graph-node-src/Caller.cs');
+
+    expect(important).toHaveAttribute('data-emphasis', 'high');
+    expect(trivial).toHaveAttribute('data-emphasis', 'low');
+    expect(trivial.className).toContain('opacity-70');
+
+    // Still the same box, still on the diagram, and still able to come back to full strength.
+    expect(trivial.style.width).toBe(important.style.width);
+    expect(trivial.style.height).toBe(important.style.height);
+    expect(trivial.className).toContain('hover:opacity-100');
   });
 
   it('explains the lines and the colours in a legend', async () => {

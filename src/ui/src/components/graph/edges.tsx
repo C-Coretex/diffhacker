@@ -20,24 +20,48 @@ import type { ReadingEdgeData } from '@/graph/flowGraph';
  * Requirement 4 wants direct and conceptual separable at a glance and at low zoom, so the
  * difference is stroke pattern and not colour: a dash survives being three pixels tall, and a hue
  * difference does not, particularly for a colour-blind reader.
+ *
+ * **Every line is wider than it looks.** Iteration 9 puts an explanation on hovering an edge, and a
+ * one-and-a-half pixel line is not a hover target — least of all the faint cross-container ones,
+ * which are deliberately the hardest to see. `interactionWidth` is React Flow's own answer: a
+ * transparent stroke over the drawn one, rendered by the library, no extra element of ours. The
+ * faint lines get the wider one because they are the ones that need it.
  */
 
 const ARROW = 'url(#reading-arrow)';
 const FAINT_ARROW = 'url(#faint-arrow)';
 
+/** How wide the invisible hit area is, in pixels of graph space. */
+const HIT_WIDTH = 20;
+const FAINT_HIT_WIDTH = 28;
+
+/**
+ * An edge the pointer is on reads at full strength.
+ *
+ * Not decoration: the card that follows describes *one* relationship, and on a dense diagram the
+ * reviewer has to be able to see which of several nearby lines they actually caught before they
+ * start reading about it.
+ */
+function hoverStyle(hovered: boolean | undefined, base: number, opacity?: number) {
+  return hovered
+    ? { stroke: 'var(--primary)', strokeWidth: base + 1, strokeOpacity: 1 }
+    : { stroke: 'var(--muted-foreground)', strokeWidth: base, strokeOpacity: opacity };
+}
+
 /** An edge ELK routed, inside one container. */
 export function ReadingEdge({ data, ...props }: EdgeProps) {
   const [path] = getSmoothStepPath(props);
-  const conceptual = (data as ReadingEdgeData | undefined)?.kind === 'conceptual';
+  const edge = data as ReadingEdgeData | undefined;
+  const conceptual = edge?.kind === 'conceptual';
 
   return (
     <BaseEdge
       id={props.id}
       path={path}
       markerEnd={ARROW}
+      interactionWidth={HIT_WIDTH}
       style={{
-        stroke: 'var(--muted-foreground)',
-        strokeWidth: 1.5,
+        ...hoverStyle(edge?.isHovered, 1.5),
         strokeDasharray: conceptual ? '6 4' : undefined,
       }}
     />
@@ -53,17 +77,17 @@ export function ReadingEdge({ data, ...props }: EdgeProps) {
  */
 export function CrossContainerEdge({ data, ...props }: EdgeProps) {
   const [path] = getBezierPath(props);
-  const conceptual = (data as ReadingEdgeData | undefined)?.kind !== 'direct';
+  const edge = data as ReadingEdgeData | undefined;
+  const conceptual = edge?.kind !== 'direct';
 
   return (
     <BaseEdge
       id={props.id}
       path={path}
       markerEnd={FAINT_ARROW}
+      interactionWidth={FAINT_HIT_WIDTH}
       style={{
-        stroke: 'var(--muted-foreground)',
-        strokeWidth: 1,
-        strokeOpacity: 0.35,
+        ...hoverStyle(edge?.isHovered, 1, 0.35),
         strokeDasharray: conceptual ? '4 6' : undefined,
       }}
     />
@@ -79,7 +103,8 @@ export function CrossContainerEdge({ data, ...props }: EdgeProps) {
  */
 export function BundleEdge({ data, ...props }: EdgeProps) {
   const [path, labelX, labelY] = getBezierPath(props);
-  const count = (data as ReadingEdgeData | undefined)?.count ?? 2;
+  const edge = data as ReadingEdgeData | undefined;
+  const count = edge?.count ?? 2;
 
   return (
     <>
@@ -87,7 +112,8 @@ export function BundleEdge({ data, ...props }: EdgeProps) {
         id={props.id}
         path={path}
         markerEnd={FAINT_ARROW}
-        style={{ stroke: 'var(--muted-foreground)', strokeWidth: 2.5, strokeOpacity: 0.45 }}
+        interactionWidth={FAINT_HIT_WIDTH}
+        style={hoverStyle(edge?.isHovered, 2.5, 0.45)}
       />
       <EdgeLabelRenderer>
         <div

@@ -266,7 +266,7 @@ test('the long-form result is a click away rather than gone', async ({ diffhacke
     await analysis.runButton.click();
     await expect(analysis.rerunButton).toBeVisible({ timeout: 30_000 });
 
-    // The rail carries the summary and the risks whether or not the detail is open.
+    // The band carries the summary and the risks whether or not anything is open.
     await expect(analysis.summaryHeading).toBeVisible();
     await expect(
       app.page.getByText('The fixture has no tests, so nothing proves the change works.'),
@@ -275,12 +275,90 @@ test('the long-form result is a click away rather than gone', async ({ diffhacke
     const prose = app.page.getByText('A line was added to src/cache.ts.');
     await expect(prose).toHaveCount(0);
 
+    // Two disclosures deep since Iteration 9: the overview band, then the long-form result inside
+    // it. Folded, not gone — it is still the only place the model's whole answer reads as prose.
+    await analysis.overviewToggle.click();
     await analysis.detailsToggle.click();
 
     await expect(prose).toBeVisible();
     await expect(analysis.entryBadge.first()).toBeVisible();
 
     await app.shot('the long-form result behind its disclosure');
+  } finally {
+    await provider.stop();
+  }
+});
+
+test('the legend stays inside the window however many projects there are', async ({
+  diffhacker,
+  repos,
+}) => {
+  const provider = await StubProvider.start();
+
+  try {
+    // The project list is the one part of the legend with no natural length: one entry per project
+    // in the change, and a repository can have as many as it likes. A `Makefile` is enough to make
+    // a directory a project (`ProjectLocator`), so this is fourteen of them.
+    const repo = repos.clean();
+    const modules = Array.from({ length: 14 }, (_, index) => `module${index}`);
+
+    for (const module of modules) {
+      repo.write(`${module}/Makefile`, 'all:\n\techo built\n');
+      repo.write(`${module}/main.ts`, 'export const value = 0;\n');
+    }
+
+    repo.commitAll('a baseline across many projects');
+
+    for (const module of modules) {
+      repo.write(`${module}/main.ts`, 'export const value = 1;\n');
+    }
+
+    const app = await diffhacker.launch();
+    const { welcome, settings, analysis } = screens(app.page);
+
+    await settings.openButton.click();
+    await settings.addProvider({
+      name: 'Stub provider',
+      model: 'stub-model',
+      apiKey,
+      baseUrl: provider.baseUrl,
+    });
+    await settings.backButton.click();
+
+    await welcome.open(repo.root);
+    await analysis.openButton.click();
+    await expect(analysis.emptyNotice).toBeVisible();
+
+    provider.answers(stubTwoClusterResult(modules.map((module) => `${module}/main.ts`)));
+
+    await analysis.runButton.click();
+    await expect(analysis.rerunButton).toBeVisible({ timeout: 30_000 });
+    await expect(analysis.graphNode('module0/main.ts')).toBeVisible({ timeout: 30_000 });
+
+    await analysis.legendButton.click();
+
+    const legend = app.page.locator('[data-radix-popper-content-wrapper]').last().locator('> *');
+    await expect(legend).toBeVisible();
+
+    const box = (await legend.boundingBox())!;
+    const windowHeight = await app.page.evaluate(() => window.innerHeight);
+
+    // It is longer than the room it has — which is what makes the rest of this worth asserting.
+    const overflowing = await legend.evaluate((el) => el.scrollHeight > el.clientHeight + 1);
+    expect(overflowing, 'the fixture did not make the legend long enough to overflow').toBe(true);
+
+    // And it is inside the window anyway, rather than running off the bottom with the projects
+    // nobody can reach.
+    expect(box.y + box.height).toBeLessThanOrEqual(windowHeight);
+
+    // The end of the list is reachable by scrolling. Ten projects get a colour of their own and
+    // the rest collapse behind one row, so this is the note that says so.
+    await legend.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    await expect(
+      app.page.getByText(fill(en.analysis.graph.legendOtherProjects, { count: 4 })),
+    ).toBeVisible();
+
+    await app.shot('a legend with more projects than fit');
   } finally {
     await provider.stop();
   }

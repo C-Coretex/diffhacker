@@ -50,6 +50,32 @@ export function GraphLegend({ colours }: { colours: readonly ProjectColour[] }) 
         <p className="mt-2 text-[11px] text-muted-foreground">{t('analysis.graph.legendStatesNote')}</p>
       </section>
 
+      {/*
+        Iteration 9's sixth channel. A reviewer who notices that some boxes are fainter than others
+        will otherwise guess at why, and the likeliest guess — that the faint ones are somehow less
+        real, or filtered out — is exactly the one §0.2.5 says is wrong.
+      */}
+      <section>
+        <h3 className="mb-2 font-semibold">{t('analysis.graph.legendImportance')}</h3>
+        <ul className="space-y-1.5 text-muted-foreground">
+          <LegendLine
+            sample={<Box className="border-solid font-bold" />}
+            label={t('analysis.graph.legendImportanceHigh')}
+          />
+          <LegendLine
+            sample={<Box className="border-solid" />}
+            label={t('analysis.graph.legendImportanceNormal')}
+          />
+          <LegendLine
+            sample={<Box className="border-solid opacity-70" />}
+            label={t('analysis.graph.legendImportanceLow')}
+          />
+        </ul>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          {t('analysis.graph.legendImportanceNote')}
+        </p>
+      </section>
+
       <section>
         <h3 className="mb-2 font-semibold">{t('analysis.graph.legendProjects')}</h3>
 

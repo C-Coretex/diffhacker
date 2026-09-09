@@ -32,17 +32,25 @@ import { basename, clamp, directoryContext } from '@/graph/truncate';
  *
  * State is border style plus a corner badge, never colour, because fill already encodes project
  * (§0.6) and because states co-occur — a node can be added and risky and the entry point at once.
+ *
+ * **Importance is the sixth channel**, added in Iteration 9: a box the model ranked 1 or 2 fades and
+ * its text mutes; one ranked 4 or 5 gets a heavier name and a wider rail. Nothing changes size, so
+ * ELK never sees it, and the fade has a floor — §0.2.5 says every changed file is on the diagram,
+ * and a box nobody can read is not really on it. It goes back to full the moment the pointer is on
+ * it, the search matches it, or a jump lands on it.
  */
 export function FileNode({ data }: NodeProps<Node<FileNodeData>>) {
   const { node, facts, colourSlot, isEntry, isMatch, isFocused } = data;
   const colour = projectColourStyle(colourSlot);
   const states = new Set(node.states);
+  const emphasis = emphasisFor(node.importance, isMatch || isFocused);
 
   return (
     <div
       className={cn(
-        'relative flex flex-col overflow-hidden rounded-md border-2 text-card-foreground shadow-sm',
+        'group relative flex flex-col overflow-hidden rounded-md border-2 text-card-foreground shadow-sm',
         borderFor(states),
+        emphasis.box,
         isMatch && 'ring-2 ring-ring ring-offset-1',
         isFocused && 'ring-4 ring-primary ring-offset-2',
       )}
@@ -55,11 +63,16 @@ export function FileNode({ data }: NodeProps<Node<FileNodeData>>) {
       data-testid={`graph-node-${node.id}`}
       data-node-id={node.id}
       data-entry={isEntry ? 'true' : undefined}
+      data-emphasis={emphasis.level}
     >
       {/* The saturated edge of the project colour. Colour never carries the category alone —
           the project name is printed in the footer and repeated in the legend — but this is what
           makes two boxes from the same project group at a glance. */}
-      <span aria-hidden className="absolute inset-y-0 left-0 w-1" style={{ background: colour.rail }} />
+      <span
+        aria-hidden
+        className={cn('absolute inset-y-0 left-0', emphasis.rail)}
+        style={{ background: colour.rail }}
+      />
 
       <Handle type="target" position={Position.Top} className="!h-1 !w-1 !border-0 !bg-transparent" />
 
@@ -70,7 +83,7 @@ export function FileNode({ data }: NodeProps<Node<FileNodeData>>) {
             aria-label={t('analysis.graph.entryPoint')}
           />
         )}
-        <span className="min-w-0 flex-1 truncate text-xs font-semibold" title={node.filePath}>
+        <span className={cn('min-w-0 flex-1 truncate text-xs', emphasis.fileName)} title={node.filePath}>
           {basename(node.filePath)}
         </span>
         {states.has('risky') && (
@@ -91,7 +104,10 @@ export function FileNode({ data }: NodeProps<Node<FileNodeData>>) {
         {directoryContext(node.filePath)}
       </div>
 
-      <div className="mt-0.5 line-clamp-2 flex-1 pl-3 pr-2 text-[11px] leading-tight" title={node.title}>
+      <div
+        className={cn('mt-0.5 line-clamp-2 flex-1 pl-3 pr-2 text-[11px] leading-tight', emphasis.title)}
+        title={node.title}
+      >
         {clamp(node.title, 60)}
       </div>
 
@@ -139,6 +155,40 @@ function Stats({
       {removed !== undefined && <span className="text-rose-700 dark:text-rose-400">−{removed}</span>}
     </span>
   );
+}
+
+/**
+ * How loudly a box speaks, from the model's importance rank (requirement 6).
+ *
+ * The floor is the point. §0.2.5 says every changed file appears in the graph, so "de-emphasised"
+ * can only mean *quieter*, never smaller, never hidden, never harder to find — the box keeps its
+ * size, its border style, its badges and its project colour, all of which §0.6 already spent on
+ * something else. What is left is opacity and weight, and 70 % is where the fade stops: enough that
+ * a screen of thirty boxes visibly sorts itself, little enough that a faded box is still readable
+ * without doing anything.
+ *
+ * `lifted` — a search match or a jump — and `group-hover` both restore full strength, so looking at
+ * a trivial node is never a worse experience than looking at an important one.
+ */
+function emphasisFor(
+  importance: number,
+  lifted: boolean,
+): { level: string; box: string; rail: string; fileName: string; title: string } {
+  if (!lifted && importance <= 2) {
+    return {
+      level: 'low',
+      box: 'opacity-70 transition-opacity hover:opacity-100',
+      rail: 'w-1',
+      fileName: 'font-medium',
+      title: 'text-muted-foreground',
+    };
+  }
+
+  if (importance >= 4) {
+    return { level: 'high', box: '', rail: 'w-1.5', fileName: 'font-bold', title: 'font-medium' };
+  }
+
+  return { level: 'normal', box: '', rail: 'w-1', fileName: 'font-semibold', title: '' };
 }
 
 /**

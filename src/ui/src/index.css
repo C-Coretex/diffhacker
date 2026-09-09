@@ -2,9 +2,9 @@
 @import 'tw-animate-css';
 
 /*
-  Dark mode is driven by a `dark` class on <html>, which useSystemTheme keeps in step with the
-  OS setting. A class rather than the bare media query, so a user-facing override can be added
-  later without touching every component.
+  Dark mode is driven by a `dark` class on <html>, which `theme/useTheme.ts` keeps in step with the
+  user's choice — light, dark, or whatever the OS is asking for. A class rather than the bare media
+  query, which is exactly what let that override be added without touching a single component.
 */
 @custom-variant dark (&:where(.dark, .dark *));
 

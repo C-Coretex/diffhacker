@@ -38,7 +38,11 @@ export function CollapsedContainerNode({ data }: NodeProps<Node<CollapsedContain
 
       <button
         type="button"
-        onClick={() => toggle(container.id)}
+        // @see ContainerNode: the chevron expands the cluster, it does not pin its card.
+        onClick={(event) => {
+          event.stopPropagation();
+          toggle(container.id);
+        }}
         className="flex items-center gap-2 px-3 py-2 text-left hover:bg-accent/50"
         aria-expanded={false}
         aria-label={t('analysis.graph.expandContainer', { title: container.title })}

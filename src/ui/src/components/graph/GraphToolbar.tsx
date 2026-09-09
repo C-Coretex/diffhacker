@@ -77,7 +77,16 @@ export function GraphToolbar({
             <Popover.Content
               align="end"
               sideOffset={6}
-              className="z-50 rounded-md border border-border bg-popover p-4 text-popover-foreground shadow-md"
+              collisionPadding={16}
+              /*
+                The project list is unbounded — one entry per project in the change, plus whatever
+                is behind "N other projects" — so the legend has no natural height, and on a
+                repository with enough modules it ran off the bottom of the window with the rest
+                unreachable. Capped to the room Radix measured between the trigger and the window
+                edge, and scrolled inside that.
+              */
+              style={{ maxHeight: 'var(--radix-popover-content-available-height, 32rem)' }}
+              className="z-50 overflow-y-auto rounded-md border border-border bg-popover p-4 text-popover-foreground shadow-md"
             >
               <GraphLegend colours={colours} />
               <Popover.Arrow className="fill-popover" />

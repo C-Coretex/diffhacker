@@ -212,7 +212,12 @@ export function bundledEdges(
     const existing = bundles.get(key);
 
     if (existing) {
-      bundles.set(key, { ...existing, count: existing.count + 1, kind: null });
+      bundles.set(key, {
+        ...existing,
+        count: existing.count + 1,
+        kind: null,
+        members: [...existing.members, edge],
+      });
       continue;
     }
 
@@ -222,7 +227,7 @@ export function bundledEdges(
       target,
       count: 1,
       kind: edge.kind,
-      explanation: edge.explanation,
+      members: [edge],
     });
   }
 
@@ -238,5 +243,13 @@ export interface BundledEdge {
   readonly count: number;
   /** The kind, or null once two or more edges merged — a bundle is neither. */
   readonly kind: AnalysisEdgeInfo['kind'] | null;
-  readonly explanation?: string;
+  /**
+   * The model's own edges this line stands for, whole rather than summarised.
+   *
+   * Iteration 9's hover card has to show an explanation *and* the risks *and* whether the
+   * relationship crosses a boundary, and a bundle has to show all of that for each edge it folded
+   * up. Carrying the records themselves means the card reads the model's answer rather than a copy
+   * of two of its fields.
+   */
+  readonly members: readonly AnalysisEdgeInfo[];
 }

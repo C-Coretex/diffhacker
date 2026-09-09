@@ -81,3 +81,39 @@ test('the host and the renderer agree on the contract version', async ({ diffhac
   await expect(app.page.getByText(en.host.heading)).toHaveCount(0);
   await expect(app.page.getByText('contract', { exact: false })).toHaveCount(0);
 });
+
+/**
+ * The colour scheme is a property of the shell, so it is checked here.
+ *
+ * Tailwind's dark variant is wired to a `dark` class on `<html>` and the document's own
+ * `color-scheme` decides what the WebView paints behind the page — scrollbars, form controls, the
+ * ground under a slow first paint. Both have to move together, and only a real engine can say
+ * whether they did.
+ *
+ * The choice is remembered in `localStorage`, which lives in the WebView's own profile rather than
+ * in the `--data-dir` this suite throws away. So this test puts it back to following the system
+ * before it finishes: nothing of ours is left in the developer's browser profile.
+ */
+test('the colour scheme can be chosen, and reaches the document', async ({ diffhacker }) => {
+  const app = await diffhacker.launch();
+
+  const scheme = () =>
+    app.page.evaluate(() => ({
+      dark: document.documentElement.classList.contains('dark'),
+      colorScheme: document.documentElement.style.colorScheme,
+    }));
+
+  try {
+    await app.page.getByRole('button', { name: en.theme.dark }).click();
+    expect(await scheme()).toEqual({ dark: true, colorScheme: 'dark' });
+
+    await app.shot('the dark colour scheme');
+
+    await app.page.getByRole('button', { name: en.theme.light }).click();
+    expect(await scheme()).toEqual({ dark: false, colorScheme: 'light' });
+
+    await app.shot('the light colour scheme');
+  } finally {
+    await app.page.getByRole('button', { name: en.theme.system }).click();
+  }
+});

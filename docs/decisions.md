@@ -604,3 +604,199 @@ originally answered every request with one plain JSON body, which the OpenAI SDK
 at all*: the run then failed schema validation with "the response was empty", and no layer said why.
 The stub now emits proper `text/event-stream` chunks. This was breaking every analysis and profile
 journey in the end-to-end suite before Iteration 8 touched anything.
+
+## Explanations
+
+Iteration 9's answers to what its **Raise before implementing** section asked, and the two things
+that turned out to matter that it did not.
+
+### The overview moved from a rail to a band
+
+Iteration 8 put the summary, the risks, the statistics and the long-form detail in a left rail, and
+noted that Iteration 9 would replace its contents. It replaced the rail instead.
+
+Two reasons, both about width. The diagram is the product and at three hundred boxes it wants every
+pixel; and Iteration 10 adds a diff panel that can expand to full width, which would have spent the
+rest of that session arguing with a rail for the same space. A band above both fights neither.
+
+What is *permanently* on screen is what a reviewer needs permanently: what the change does, and what
+it risks — side by side, because §0.2 keeps those two apart from the schema down and the top of the
+screen is where that shows first. The heading carries the total risk count, so even folded the band
+answers "how much danger is in here".
+
+The summary and the risk column **fold away too**, independently of the overview below them. Prose a
+reviewer has already read is the first thing that should give the canvas its height back, and what
+survives the fold is the risk count — the part you want without asking for it.
+
+Everything else requirement 5 asks for — reading order, the clusters and their sizes, the statistics,
+the register of every risk, the run's provenance, the diagnostics, and Iteration 7's long-form
+result — is behind one toggle, capped at 45 % of the window and scrolling inside itself. Laid out as
+two rows of three grouped by *shape*: three lists, then three tables. A grid row is as tall as its
+tallest column, and mixing a ten-row table into a row of short lists left most of the band empty and
+pushed the risk register out of sight, which is the one thing in there that must not be.
+
+The register is counted by walking the document — overall, then each container, each node, each edge —
+rather than read from `statistics.riskCount`, so the number beside the heading and the list behind
+the toggle cannot disagree. A change-wide risk therefore appears twice when the overview is open,
+once in the band's column and once in the register. That is deliberate: "all flagged risks collected
+in one place" means the register is complete, not that the column is emptied.
+
+### Hover timing, and clicking to keep a card
+
+250 ms before the first card, no delay at all between adjacent ones, 500 ms of grace on leaving.
+The middle number is the one that decides how the diagram feels: re-serving the wait for every
+neighbour makes reading across a cluster feel like arguing with the screen.
+
+**Clicking anything on the diagram keeps its card open** — a node, an edge, a cluster — and
+**clicking the same thing again closes it**. The gesture that opened something is the one a hand
+reaches for to close it, and a control that only goes one way is one people press twice and then go
+looking for the exit. Escape and a click on the empty canvas also put it away, and the card carries
+a pin button.
+
+Only a *kept* card toggles: clicking what you are merely hovering keeps it, because that is how you
+keep it. And the identity compared is the kind as well as the id — a cluster id and a node id come
+from different namespaces and nothing stops them matching.
+
+That was not the first answer. The card originally had only the pin button, on the reasoning that
+Iteration 10 owns click-on-a-node and this iteration must not spend the gesture. In use that was
+wrong twice over: 150 ms of grace was not enough for a hand that does not travel straight to the
+card, so the thing you were reaching for vanished on the way; and reaching for a button to keep
+something you are already looking at is a step nobody should have to take. Hovering is for glancing.
+The moment a reviewer wants to *read* — scroll the card, select a path out of it — clicking is the
+gesture they already reached for.
+
+**This changes what Iteration 10 has to do.** Click now keeps a card, so opening the diff needs
+either a button on the card (the natural place — the explanation and the risks are already there,
+which is that iteration's requirement 4) or a double-click. It is not a free gesture any more.
+
+A pinned card ignores the *pointer* entirely — it is the reviewer's, and having it swap because the
+pointer crossed another box on the way to its scrollbar is the worst version of this feature — but
+never the reviewer: clicking a second box moves the card there.
+
+One card is mounted, not one per node — a controlled Radix popover anchored to a `position: fixed`
+box carrying the hovered element's client rect. Measuring the real element is what keeps the card
+correct at every zoom without this code knowing anything about React Flow's viewport transform, and
+Radix's collision handling is what keeps it beside its node rather than over it.
+
+**Radix's own outside-click dismissal is turned off** (`onInteractOutside` prevented), and this is
+not tidying. Radix dismisses on a *deferred* pointer-down outside the card; clicking a second box is
+exactly that, so the click pinned the new card and the deferred dismissal then closed it again — a
+kept card could never be moved from one node to the next. The surface already knows what an outside
+click means: another node keeps its own card, the background puts the card away. Escape still closes
+through `onOpenChange`.
+
+One card is mounted, not one per node — a controlled Radix popover anchored to a `position: fixed`
+box carrying the hovered element's client rect. Measuring the real element is what keeps the card
+correct at every zoom without this code knowing anything about React Flow's viewport transform, and
+Radix's collision handling is what keeps it beside its node rather than over it.
+
+### De-emphasis stops at 70 %, and never at the size
+
+Requirement 6 wants trivial changes visibly quieter; §0.2.5 says every changed file is in the graph.
+Both hold because the *only* channels importance uses are opacity and type weight: importance 1–2
+fades to 70 % with muted text, 4–5 gets a heavier name and a wider project rail, and everything else
+about the box — its size, its border style, its badges, its project colour — is untouched, because
+§0.6 already spent those on state and project.
+
+Nothing changes size, so ELK never sees any of this and the layout snapshot is unaffected. And the
+fade lifts to full on hover, on a search match and on a jump, so looking at a trivial node is never a
+worse experience than looking at an important one. The legend says so too — a reviewer who notices
+that some boxes are fainter will otherwise guess, and the likeliest guess is that the faint ones were
+filtered out.
+
+### Edges are wider than they look
+
+`interactionWidth`: a transparent 20-pixel stroke over each drawn line, 28 for the faint
+cross-container ones, which are deliberately the hardest to see and so the ones that need it. React
+Flow renders it itself, so nothing is added to the DOM. Hovering also brightens the real stroke,
+because on a dense diagram the reviewer has to see *which* line they caught before they start reading
+about it.
+
+`08-explanations.spec.ts` hovers six pixels off the line, measured perpendicular to the path with
+`getPointAtLength` and `getScreenCTM` — a miss for a one-and-a-half pixel stroke, a hit only because
+of the interaction width. Drop it and that test fails.
+
+### The legend is capped to the room it has
+
+Iteration 8's legend had no height limit, and its project list is the one part with no natural
+length: one row per project in the change, and a repository can have as many as it likes. On a
+repository with a dozen modules it ran off the bottom of the window and the projects at the end were
+unreachable. Iteration 9's emphasis section made it taller still.
+
+Capped to `--radix-popover-content-available-height` — the room Radix measured between the trigger
+and the window edge — and scrolled inside that, with a fixed fallback for the frame before the
+popover has been positioned. The end-to-end test builds fourteen projects (a `Makefile` is enough to
+make a directory one, per `ProjectLocator`) and asserts both halves: that the content really is
+longer than its box, and that the box is inside the window anyway. Remove the cap and the first
+assertion fails, so the test cannot pass for the wrong reason.
+
+### Cost when the model was not priced
+
+Nothing new: `costUsd` is absent rather than zero, and the screen says **cost unknown**, exactly as
+Iteration 4 decided and as the header has said since Iteration 7. An unrated model cost an unknown
+amount; reporting nothing spent would be a claim the application cannot make.
+
+### jsdom cannot place a popover, and cannot draw an edge
+
+Two limits found while testing this, both recorded because the next person will hit them.
+
+React Flow renders **no edges at all** in jsdom: a node has to be measured before it is edge-worthy
+and jsdom measures everything as zero. So the edge card is tested as a component in
+`hoverCards.test.tsx`, and hovering a real line only happens end to end.
+
+Radix keeps a popover invisible and inert until floating-ui has positioned it, which never completes
+in that same zero-sized document. Inside the card nothing has an accessible name and everything
+inherits `pointer-events: none`, so the component tests query by label and use
+`userEvent.setup({ pointerEventsCheck: 0 })`. The card is in the DOM and correct; jsdom simply cannot
+place it, and the end-to-end suite hovers, pins, scrolls and copies in a real window where none of it
+applies.
+
+### The unhandled error the graph tests could not stop throwing
+
+`vite.config.ts` filters exactly one unhandled error, and it predates this iteration.
+
+A mouse event in a browser always carries a `view`. `@testing-library/user-event` builds its events
+by defining `view` as a **non-configurable** own property from an init object that has none, so it is
+fixed at `null` before dispatch and cannot be redefined afterwards — patching `UIEvent.prototype` in
+`setup.ts` does nothing, because an own property shadows it. React Flow pans with d3-zoom, whose
+mousedown handler calls `dragDisable(event.view)` and immediately reads `view.document`. So every
+click that reached the pane — collapsing a cluster, expanding one, choosing a search hit — threw a
+TypeError inside a DOM listener, asynchronously and outside any assertion. The tests passed and the
+run still reported three errors nobody could act on, attributed to whichever test happened to be
+running.
+
+`onUnhandledError` matches that one error by type, message and `d3-drag` in the stack. Anything else
+still fails the run.
+
+### The clipboard has a fallback because the scheme is not `https:`
+
+`copyText` tries `navigator.clipboard.writeText` and falls back to a hidden textarea and
+`document.execCommand('copy')`. Whether `diffhacker://app` counts as a secure context is up to the
+host that registered the scheme, and where it does not, `navigator.clipboard` is `undefined` rather
+than failing — there is nothing to catch. WebView2, WKWebView and WebKitGTK need not agree, and only
+one of the three has been exercised. The end-to-end test reads the path back out of the real
+clipboard, so it proves whichever branch actually ran; on WebView2 that is the first one.
+
+### The colour scheme is chosen, not merely detected
+
+The interface followed `prefers-color-scheme` and nothing else, which is not a preference — it is a
+guess about the room you are sitting in. There is now a three-way control in the header: follow the
+system, light, dark. Three buttons rather than one that cycles, because cycling makes the current
+state something you infer and the next state something you guess at, and there are only three.
+
+The choice lives in **`localStorage`**, not in SQLite through the host. Every other setting goes to
+the host because it is a secret, a piece of repository state, or something the analysis needs; a
+colour scheme is none of those. It has to be applied on the first paint, before any bridge call has
+resolved, and putting it behind JSON-RPC would mean a schema, a method, a handler and a table for a
+value one word long. §0.2.13's "pure renderer" rule is about network, filesystem and secrets —
+browser storage is none of those either. Every read and write is wrapped, because a context with
+site data blocked throws on access rather than returning null; following the OS is the fallback.
+
+The media query is still watched while an explicit choice is in force. Switching back to "system"
+has to resolve against what the OS is asking for *now* rather than against whatever it said when the
+window opened, and `useTheme.test.ts` pins that.
+
+One consequence worth knowing: `localStorage` lives in the WebView's own profile, which
+`--data-dir` does not redirect — so unlike everything else the end-to-end suite touches, a theme it
+sets is written into the developer's real browser profile. The one test that changes it puts it back
+to "follow the system" in a `finally`.

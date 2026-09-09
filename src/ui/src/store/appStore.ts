@@ -11,6 +11,7 @@ import type {
   RepositoryInfo,
   ToolCallEvent,
 } from '@/contracts';
+import { rememberPreference, storedPreference, type ThemePreference } from '@/theme/useTheme';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'detached' | 'error';
 export type EnvironmentStatus = 'checking' | 'ready' | 'error';
@@ -48,6 +49,15 @@ interface AppState {
   connectionError?: string;
 
   screen: Screen;
+
+  /**
+   * Light, dark, or whatever the operating system is asking for.
+   *
+   * Here rather than local to the header because two things need it — the control that sets it and
+   * the hook that applies it to `<html>` — and they are on opposite sides of the tree. Remembered
+   * in `localStorage`; see `theme/useTheme.ts` for why that rather than the host.
+   */
+  themePreference: ThemePreference;
 
   environment: EnvironmentStatus;
   environmentInfo?: EnvironmentInfo;
@@ -133,6 +143,25 @@ interface AppState {
   graphDetailsOpen: boolean;
 
   /**
+   * Whether the overview band is expanded past its summary and risk column.
+   *
+   * Closed by default. What a reviewer needs on screen at all times is what the change does and
+   * what it risks; the reading order, the cluster list, the numbers, the risk register and the
+   * run's provenance are worth a toggle each time they are wanted, and the diagram is worth the
+   * two hundred pixels they would otherwise take.
+   */
+  graphOverviewOpen: boolean;
+
+  /**
+   * Whether the band's summary and risk column are showing.
+   *
+   * Open to begin with — the first thing a reviewer wants is what the change does — and foldable,
+   * because prose you have already read is the first thing that should give the diagram its height
+   * back. Folded, the strip still carries the risk count.
+   */
+  graphBandOpen: boolean;
+
+  /**
    * `onlyRenderVisibleElements` on the React Flow surface. Off, and staying off: the iteration
    * fixes that decision, and requirement 11 says to profile and fix what is slow rather than
    * reach for this. Here so that profiling can turn it on to compare, not so that it can ship on.
@@ -144,6 +173,7 @@ interface AppState {
   setConnectionError(message: string): void;
 
   showScreen(screen: Screen): void;
+  setThemePreference(preference: ThemePreference): void;
 
   setEnvironment(info: EnvironmentInfo): void;
   failEnvironment(message: string): void;
@@ -188,8 +218,11 @@ interface AppState {
   setAllContainersCollapsed(collapsed: boolean, containerIds: readonly string[]): void;
   setGraphSearch(query: string): void;
   focusGraphNode(nodeId: string | undefined): void;
+  revealGraphNode(nodeId: string, containerId: string): void;
   setGraphLegendOpen(open: boolean): void;
   setGraphDetailsOpen(open: boolean): void;
+  setGraphOverviewOpen(open: boolean): void;
+  setGraphBandOpen(open: boolean): void;
   setGraphOnlyRenderVisible(enabled: boolean): void;
 }
 
@@ -200,12 +233,15 @@ const graphDefaults = {
   graphFocusedNodeId: undefined,
   graphLegendOpen: false,
   graphDetailsOpen: false,
+  graphOverviewOpen: false,
+  graphBandOpen: true,
 } as const;
 
 export const useAppStore = create<AppState>((set) => ({
   connection: 'connecting',
 
   screen: 'welcome',
+  themePreference: storedPreference(),
 
   environment: 'checking',
 
@@ -236,6 +272,11 @@ export const useAppStore = create<AppState>((set) => ({
   setConnectionError: (message) => set({ connection: 'error', connectionError: message }),
 
   showScreen: (screen) => set({ screen }),
+
+  setThemePreference: (themePreference) => {
+    rememberPreference(themePreference);
+    set({ themePreference });
+  },
 
   setEnvironment: (environmentInfo) =>
     set({ environment: 'ready', environmentInfo, environmentError: undefined }),
@@ -377,8 +418,21 @@ export const useAppStore = create<AppState>((set) => ({
     set(graphSearch.length === 0 ? { graphSearch, graphFocusedNodeId: undefined } : { graphSearch }),
 
   focusGraphNode: (graphFocusedNodeId) => set({ graphFocusedNodeId }),
+
+  // Expanding first is not a nicety: centring on a node inside a folded cluster pans to an empty
+  // patch of canvas and looks broken. Every way of saying "take me to this file" — the search box,
+  // the reading order, the cluster list, the risk register — goes through here so all of them
+  // behave the same.
+  revealGraphNode: (nodeId, containerId) =>
+    set((state) => {
+      const next = new Set(state.graphCollapsed);
+      next.delete(containerId);
+      return { graphCollapsed: next, graphFocusedNodeId: nodeId };
+    }),
   setGraphLegendOpen: (graphLegendOpen) => set({ graphLegendOpen }),
   setGraphDetailsOpen: (graphDetailsOpen) => set({ graphDetailsOpen }),
+  setGraphOverviewOpen: (graphOverviewOpen) => set({ graphOverviewOpen }),
+  setGraphBandOpen: (graphBandOpen) => set({ graphBandOpen }),
   setGraphOnlyRenderVisible: (graphOnlyRenderVisible) => set({ graphOnlyRenderVisible }),
 }));
 

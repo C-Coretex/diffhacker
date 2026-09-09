@@ -384,7 +384,11 @@ spec drives a three-file change and a five-hundred-file one, and §0.2.5 means t
 name every path either way. **Iteration 8 adds
 [07-graph-rendering.spec.ts](tests/e2e/specs/07-graph-rendering.spec.ts)** — the only place the whole
 diagram stack is exercised together: a stored analysis, read over the real bridge, laid out by a real
-Web Worker in a real WebView, drawn, searched, collapsed and dragged.
+Web Worker in a real WebView, drawn, searched, collapsed and dragged. **Iteration 9 adds
+[08-explanations.spec.ts](tests/e2e/specs/08-explanations.spec.ts)**, which is not a nicety either:
+jsdom draws no React Flow edges at all and never finishes positioning a Radix popover, so hovering a
+line, a card staying beside its node rather than over it, and the clipboard working from a custom
+scheme are all things only a real window can show.
 
 > The stub answers `stream: true` with server-sent events, because `LlmSession` streams every
 > request. A stub that only sent one JSON body read as a provider returning an empty message, and
@@ -416,6 +420,11 @@ than a package, and Monaco stays in Iteration 10.
 `@radix-ui/react-popover` — within the fixed shadcn/Radix stack, for the legend and the context
 breakdown. Nothing else: the palette is CSS variables, the layout worker is twenty lines of
 `postMessage`, and the search is `String.includes`.
+
+**Iteration 9 added none.** The hover cards reuse `@radix-ui/react-popover` for anchoring and
+collision handling rather than pulling in a hover-card or floating-ui package; the hover timing is a
+forty-line hook; the edge hit areas are React Flow's own `interactionWidth`; and copying a path is
+`navigator.clipboard` with an `execCommand` fallback.
 
 No resilience package (retry is ~60 lines in `RetryPolicy`). No package for the folder picker
 or secret store (PhotinoX's `ShowOpenFolder`; `[LibraryImport]` credential bindings — why

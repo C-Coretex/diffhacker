@@ -102,14 +102,17 @@ test('a change is analysed, validated, stored, and reopened without running agai
       await expect(analysis.graphNode(path)).toBeVisible({ timeout: 30_000 });
     }
 
-    // And the model's own words are still reachable, one click away.
+    // And the model's own words are still reachable — inside the overview band since Iteration 9.
+    await analysis.overviewToggle.click();
     await analysis.detailsToggle.click();
     await expect(analysis.entryBadge.first()).toBeVisible();
 
-    // The risks are their own column, never folded into the summary.
+    // The risks are their own column, never folded into the summary. `.first()` because with the
+    // overview open a change-wide risk is deliberately in two places: the band's own column, and
+    // the register that collects every risk in the result into one list.
     await expect(app.page.getByText(en.analysis.risksHeading, { exact: true }).first()).toBeVisible();
     await expect(
-      app.page.getByText('The fixture has no tests, so nothing proves the change works.'),
+      app.page.getByText('The fixture has no tests, so nothing proves the change works.').first(),
     ).toBeVisible();
 
     await app.shot('a stored analysis');
@@ -355,7 +358,9 @@ test('a five-hundred-file change completes and validates', async ({ diffhacker, 
     expect(opening).not.toContain('// baseline 0\n// edited');
 
     // Five hundred nodes in one cluster, counted by the application rather than claimed by the
-    // model — and the run would have failed validation had any of them been missing.
+    // model — and the run would have failed validation had any of them been missing. The count
+    // moved into the overview band with the rest of the statistics in Iteration 9.
+    await analysis.overviewToggle.click();
     await expect(app.page.getByText(en.analysis.statNodes, { exact: true })).toBeVisible();
 
     await app.shot('a five-hundred-file analysis');

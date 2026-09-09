@@ -10,32 +10,35 @@ import { useAppStore } from '@/store/appStore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AnalysisOverviewRail } from './AnalysisOverviewRail';
+import { AnalysisOverviewBand } from './AnalysisOverviewBand';
 import { AnalysisGraph } from './graph/AnalysisGraph';
 import { AnalysisRunPanel } from './ProfileRunPanel';
 
 /**
  * The analysed change, as a diagram.
  *
- * The layout is chosen once here for Iterations 8, 9 and 10, because retrofitting a resizable
- * panel around a canvas is how a canvas ends up with no height:
- *
  * ```
  * ┌────────────────────────────────────────────────────────────┐
- * │ run controls                                               │
- * ├──────────────┬───────────────────────────────┬─────────────┤
- * │ SUMMARY      │ [search] [fit] [collapse all] │  diff panel │
- * │ risks        ├───────────────────────────────┤  (Iter 10,  │
- * │ statistics   │                               │  resizable, │
- * │ diagnostics  │          G R A P H            │  not mounted│
- * │ ▸ Details    │                    ┌────────┐ │  yet)       │
- * └──────────────┴────────────────────┴────────┴─┴─────────────┘
- *      ↑ Iteration 9 replaces the rail's contents with its overview panel
+ * │ run controls · model · tokens · cost · duration            │
+ * ├──────────────────────────────────┬─────────────────────────┤
+ * │ SUMMARY                          │ ⚠ RISKS                 │
+ * │ ▸ Overview  (order, clusters, numbers, every risk, run)    │
+ * ├───────────────────────────────────────────┬────────────────┤
+ * │ [search] [fit] [collapse all]    [legend] │  diff panel    │
+ * ├───────────────────────────────────────────┤  (Iter 10,     │
+ * │                                           │  resizable,    │
+ * │              G R A P H         ┌────────┐ │  not mounted   │
+ * └───────────────────────────────┴────────┴──┴────────────────┘
  * ```
  *
- * The screen owns its own scrolling: the rail scrolls, the diagram never does — a canvas inside a
- * scrolling page is one the reviewer scrolls past instead of panning. `App.tsx` gives this screen
- * the window with no padding for exactly that reason.
+ * Iteration 8 put the summary in a left rail. Iteration 9 moved it across the top, which is what
+ * makes the two things after it possible: the diagram gets the whole width it wants at three
+ * hundred boxes, and Iteration 10's diff panel — which can expand to full width — has a side of
+ * the screen to expand into without arguing with a rail for it.
+ *
+ * The screen owns its own scrolling: the band scrolls inside itself, the diagram never does — a
+ * canvas inside a scrolling page is one the reviewer scrolls past instead of panning. `App.tsx`
+ * gives this screen the window with no padding for exactly that reason.
  *
  * Nothing of the result appears until the whole run has finished (§0.2.8). While one is going, the
  * only thing on screen is the live panel and a way to stop it.
@@ -177,9 +180,12 @@ export function AnalysisScreen() {
       )}
 
       {analysed && view && (
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(18rem,22rem)_1fr]">
-          <AnalysisOverviewRail view={view} />
-          <AnalysisGraph view={view} />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <AnalysisOverviewBand view={view} />
+
+          <div className="min-h-0 flex-1">
+            <AnalysisGraph view={view} />
+          </div>
         </div>
       )}
 

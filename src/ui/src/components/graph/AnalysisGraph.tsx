@@ -6,13 +6,14 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
+  type Edge,
   type Node,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { AnalysisView } from '@/contracts';
 import { useT } from '@/i18n/useT';
 import { buildElkGraph } from '@/graph/elkGraph';
-import { toFlowGraph, type FlowGraph } from '@/graph/flowGraph';
+import { toFlowGraph, type FlowGraph, type ReadingEdgeData } from '@/graph/flowGraph';
 import { NODE_HEIGHT, NODE_WIDTH } from '@/graph/elkOptions';
 import { projectColourStyle } from '@/graph/palette';
 import { createWorkerLayout, inProcessLayout, type LayoutRunner } from '@/graph/runLayout';
@@ -22,7 +23,10 @@ import { CollapsedContainerNode } from './CollapsedContainerNode';
 import { ContainerNode } from './ContainerNode';
 import { BundleEdge, CrossContainerEdge, EdgeMarkers, ReadingEdge } from './edges';
 import { FileNode } from './FileNode';
+import { GraphHoverCard } from './GraphHoverCard';
 import { GraphToolbar } from './GraphToolbar';
+import { ContainerHoverCard, EdgeHoverCard, NodeHoverCard } from './hoverCards';
+import { useHoverTarget, type HoverTarget } from './useHoverTarget';
 
 /**
  * The diagram. Iteration 8's whole point, and CLAUDE.md's "the diagram is the product".
@@ -58,8 +62,7 @@ function GraphSurface({ view }: { view: AnalysisView }) {
   const collapsed = useAppStore((state) => state.graphCollapsed);
   const search = useAppStore((state) => state.graphSearch);
   const focusedNodeId = useAppStore((state) => state.graphFocusedNodeId);
-  const focusGraphNode = useAppStore((state) => state.focusGraphNode);
-  const toggleCollapsed = useAppStore((state) => state.toggleContainerCollapsed);
+  const revealNode = useAppStore((state) => state.revealGraphNode);
   const onlyRenderVisible = useAppStore((state) => state.graphOnlyRenderVisible);
 
   const { setCenter, fitView } = useReactFlow();
@@ -67,6 +70,8 @@ function GraphSurface({ view }: { view: AnalysisView }) {
   const [graph, setGraph] = useState<FlowGraph>(EMPTY_GRAPH);
   const [layoutError, setLayoutError] = useState<string | null>(null);
   const [laidOutOnce, setLaidOutOnce] = useState(false);
+
+  const hover = useHoverTarget();
 
   // One worker for the life of the surface. Building an ELK instance is not cheap and collapsing a
   // container has to feel immediate.
@@ -131,15 +136,47 @@ function GraphSurface({ view }: { view: AnalysisView }) {
   const focusNode = useCallback(
     (nodeId: string) => {
       const node = view.nodes.find((candidate) => candidate.id === nodeId);
-      if (!node) return;
-
-      // Expand first: centring on a node inside a folded cluster would pan to an empty patch of
-      // canvas and look broken.
-      if (collapsed.has(node.containerId)) toggleCollapsed(node.containerId);
-      focusGraphNode(nodeId);
+      if (node) revealNode(nodeId, node.containerId);
     },
-    [view.nodes, collapsed, toggleCollapsed, focusGraphNode],
+    [view.nodes, revealNode],
   );
+
+  /**
+   * The pointer arrived on something. React Flow hands over the element it decorated, and its
+   * client rectangle is what the card is drawn beside — measured rather than derived from the
+   * viewport transform, so it is right at every zoom level without this code knowing the zoom.
+   */
+  const enter = useCallback(
+    (kind: HoverTarget['kind'], id: string, event: { currentTarget: Element }) => {
+      hover.show({ kind, id, rect: event.currentTarget.getBoundingClientRect() });
+    },
+    [hover],
+  );
+
+  /** The same thing, kept. Clicking is how a reviewer says "I want to read this, not glance at it". */
+  const keep = useCallback(
+    (kind: HoverTarget['kind'], id: string, event: { currentTarget: Element }) => {
+      hover.pinTo({ kind, id, rect: event.currentTarget.getBoundingClientRect() });
+    },
+    [hover],
+  );
+
+  // A card anchored to a box that has since moved, folded away or been laid out again is a card
+  // pointing at nothing. A pinned one survives — `hide` declines while pinned — because a reviewer
+  // reading a pinned card while they collapse a neighbouring cluster has not asked to lose it.
+  useEffect(() => {
+    hover.hide();
+    // Only when the arrangement itself changed. `hover` is stable enough to depend on, but adding
+    // it would fire this on every pointer move.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elkGraph, collapsed]);
+
+  // Brightening the hovered line, the same way `applyHighlight` re-labels nodes: no coordinate is
+  // touched, and edges whose state did not change keep their object identity.
+  useEffect(() => {
+    const hoveredId = hover.target?.kind === 'edge' ? hover.target.id : null;
+    setGraph((current) => ({ ...current, edges: applyEdgeHover(current.edges, hoveredId) }));
+  }, [hover.target]);
 
   // Centring happens after the node exists in the laid-out graph, which — when the container had
   // to be expanded first — is a relayout later than the click.
@@ -204,6 +241,24 @@ function GraphSurface({ view }: { view: AnalysisView }) {
           proOptions={{ hideAttribution: false }}
           onlyRenderVisibleElements={onlyRenderVisible}
           aria-label={t('analysis.graph.canvasLabel')}
+          // Iteration 9's whole interaction. Hovering costs nothing but a lookup in the view the
+          // screen already holds — no call of any kind leaves the renderer because a pointer moved.
+          onNodeMouseEnter={(event, node) =>
+            enter(node.type === 'file' ? 'node' : 'container', node.id, event)
+          }
+          onNodeMouseLeave={() => hover.hide()}
+          onEdgeMouseEnter={(event, edge) => enter('edge', edge.id, event)}
+          onEdgeMouseLeave={() => hover.hide()}
+          // And clicking keeps the card. Hovering is for glancing; anyone who wants to read the
+          // explanation, scroll it or select out of it should not have to hold a hand still.
+          onNodeClick={(event, node) =>
+            keep(node.type === 'file' ? 'node' : 'container', node.id, event)
+          }
+          onEdgeClick={(event, edge) => keep('edge', edge.id, event)}
+          // Clicking the background is how you put the card away again.
+          onPaneClick={() => hover.unpin()}
+          // Panning or zooming moves the diagram out from under an anchored card.
+          onMoveStart={() => hover.hide()}
         >
           <Background gap={24} className="!bg-background" />
           <Controls showInteractive={false} />
@@ -215,9 +270,65 @@ function GraphSurface({ view }: { view: AnalysisView }) {
             className="!bg-card"
           />
         </ReactFlow>
+
+        <GraphHoverCard controller={hover}>
+          <HoverContent view={view} target={hover.target} edges={graph.edges} />
+        </GraphHoverCard>
       </div>
     </div>
   );
+}
+
+/**
+ * Which card the pointer earned.
+ *
+ * Every branch reads the analysis the screen already has. There is no loading state here because
+ * there is nothing to load — §0.2.8 produced the whole result before any of it was shown, and this
+ * is the iteration that finally spends it.
+ */
+function HoverContent({
+  view,
+  target,
+  edges,
+}: {
+  view: AnalysisView;
+  target: HoverTarget | null;
+  edges: readonly Edge[];
+}) {
+  if (!target) return null;
+
+  if (target.kind === 'container') {
+    const container = view.containers.find((candidate) => candidate.id === target.id);
+    return container ? <ContainerHoverCard container={container} view={view} /> : null;
+  }
+
+  if (target.kind === 'edge') {
+    const data = edges.find((edge) => edge.id === target.id)?.data as ReadingEdgeData | undefined;
+    if (!data || data.edges.length === 0) return null;
+
+    return <EdgeHoverCard edges={data.edges} view={view} count={data.count} />;
+  }
+
+  const node = view.nodes.find((candidate) => candidate.id === target.id);
+  if (!node) return null;
+
+  return (
+    <NodeHoverCard
+      node={node}
+      container={view.containers.find((candidate) => candidate.id === node.containerId)}
+      facts={view.changedFiles.find((file) => file.path === node.filePath)}
+    />
+  );
+}
+
+/** Re-labels the hovered edge without touching a single coordinate. @see applyHighlight */
+function applyEdgeHover(edges: readonly Edge[], hoveredId: string | null): Edge[] {
+  return edges.map((edge) => {
+    const isHovered = edge.id === hoveredId;
+    if ((edge.data?.isHovered ?? false) === isHovered) return edge;
+
+    return { ...edge, data: { ...edge.data, isHovered } };
+  });
 }
 
 /** Re-labels the existing nodes without touching a single coordinate. */

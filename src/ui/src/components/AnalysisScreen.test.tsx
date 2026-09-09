@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AnalysisView } from '@/contracts';
@@ -218,13 +218,18 @@ describe('AnalysisScreen', () => {
     await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.run'));
     transport.respond(analysedView());
 
-    // The rail: what the change does, and the numbers the application counted rather than ones the
-    // model claimed.
+    // The band: what the change does and what it risks, both without opening anything.
     expect(
       await screen.findByText('The contract grew a tenant field and its caller followed.'),
     ).toBeInTheDocument();
-    expect(screen.getByText('Longest chain')).toBeInTheDocument();
+    expect(screen.getByText('Nothing was added to the tests.')).toBeInTheDocument();
     expect(screen.getByText('Analyse again')).toBeInTheDocument();
+
+    // The numbers the application counted rather than ones the model claimed are one toggle away,
+    // because the diagram wants the height more than the statistics want to be permanent.
+    expect(screen.queryByText('Longest chain')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Overview' }));
+    expect(screen.getByText('Longest chain')).toBeInTheDocument();
 
     // And the diagram beside it — one box per file, which is what Iteration 8 added.
     await waitFor(() =>
@@ -244,10 +249,11 @@ describe('AnalysisScreen', () => {
     await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.get'));
     transport.respond(analysedView());
 
-    expect(await screen.findByRole('button', { name: 'Details' })).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Overview' }));
+    expect(screen.getByRole('button', { name: 'Details' })).toBeInTheDocument();
 
-    // Titles are on the diagram's boxes either way — the four prose fields are what only the
-    // long-form view has room for, so they are what distinguishes it.
+    // Titles are on the diagram's boxes either way, and the prose is on the hover cards — the
+    // long-form view is where all of it can be read continuously, so it is still folded.
     expect(screen.queryByText('A tenant field was added.')).not.toBeInTheDocument();
     expect(screen.queryByText('The caller constructs the contract.')).not.toBeInTheDocument();
 
@@ -266,9 +272,19 @@ describe('AnalysisScreen', () => {
     await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.get'));
     transport.respond(analysedView());
 
+    // The change-wide risks are on the band with nothing opened: the top of the screen answers
+    // "where is the danger" before the reviewer has done anything.
     const overall = await screen.findByText('Nothing was added to the tests.');
 
-    // The container and node risks live in the long-form detail, so it has to be open to see them.
+    // Every other risk — cluster, file, link — is collected in one register behind the overview,
+    // which is requirement 5's "all flagged risks in one place".
+    await userEvent.click(screen.getByRole('button', { name: 'Overview' }));
+
+    const register = screen.getByTestId('risk-register');
+    expect(within(register).getByText('The migration cannot be rolled back.')).toBeInTheDocument();
+    expect(within(register).getByText('Older clients will not send it.')).toBeInTheDocument();
+    expect(within(register).getByText('Nothing was added to the tests.')).toBeInTheDocument();
+
     await userEvent.click(screen.getByRole('button', { name: 'Details' }));
 
     const explanation = screen.getByText(
@@ -276,11 +292,31 @@ describe('AnalysisScreen', () => {
     );
 
     expect(overall).toBeInTheDocument();
-    expect(screen.getByText('The migration cannot be rolled back.')).toBeInTheDocument();
-    expect(screen.getByText('Older clients will not send it.')).toBeInTheDocument();
 
     // The risk is its own element rather than text inside the prose beside it.
     expect(explanation.textContent).not.toContain('rolled back');
+  });
+
+  it('sends nothing to the host while the reviewer hovers the diagram', async () => {
+    // Verification step 7, in the form this level can check: the iteration's first fixed decision
+    // is that no LLM call may happen on hover, ever, and the renderer's only route to one is the
+    // bridge. Nothing new crosses it.
+    const transport = new FakeTransport();
+    renderScreen(transport);
+
+    await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.get'));
+    transport.respond(analysedView());
+
+    const box = await screen.findByTestId('graph-node-src/Contract.cs');
+    const sentByNow = transport.sent.length;
+
+    await userEvent.hover(box);
+    await screen.findByTestId('graph-hover-card');
+
+    await userEvent.hover(screen.getByTestId('graph-container-core'));
+    await userEvent.unhover(screen.getByTestId('graph-container-core'));
+
+    expect(transport.sent).toHaveLength(sentByNow);
   });
 
   it('renders a warning diagnostic as words rather than as its code', async () => {
@@ -290,7 +326,9 @@ describe('AnalysisScreen', () => {
     await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.get'));
     transport.respond(analysedView());
 
-    expect(await screen.findByText('These files depend on each other in a loop.')).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Overview' }));
+
+    expect(screen.getByText('These files depend on each other in a loop.')).toBeInTheDocument();
     expect(screen.queryByText('cycle')).not.toBeInTheDocument();
   });
 

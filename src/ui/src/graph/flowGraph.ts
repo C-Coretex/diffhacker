@@ -1,5 +1,11 @@
 import type { Edge, Node } from '@xyflow/react';
-import type { AnalysisContainerInfo, AnalysisNodeInfo, AnalysisView, ChangedFileFactsInfo } from '@/contracts';
+import type {
+  AnalysisContainerInfo,
+  AnalysisEdgeInfo,
+  AnalysisNodeInfo,
+  AnalysisView,
+  ChangedFileFactsInfo,
+} from '@/contracts';
 import { COLLAPSED_HEIGHT, COLLAPSED_WIDTH, NODE_HEIGHT, NODE_WIDTH } from './elkOptions';
 import { bundledEdges, isSyntheticEdge, type BundledEdge, type ElkNode } from './elkGraph';
 import { colourSlots, assignProjectColours, type ProjectColour } from './palette';
@@ -36,7 +42,15 @@ export interface CollapsedContainerNodeData extends Record<string, unknown> {
 export interface ReadingEdgeData extends Record<string, unknown> {
   readonly kind: 'direct' | 'conceptual' | 'bundle';
   readonly count: number;
-  readonly explanation?: string;
+  /**
+   * The model's own edges this line stands for — one, or several for a bundle.
+   *
+   * Iteration 9's edge card needs the explanation, the risks and whether the relationship crosses
+   * a boundary, so the records travel whole rather than as two copied fields.
+   */
+  readonly edges: readonly AnalysisEdgeInfo[];
+  /** Whether the pointer is on this line. Patched in place, the way node highlighting is. */
+  readonly isHovered?: boolean;
 }
 
 export interface FlowGraph {
@@ -173,7 +187,7 @@ export function toFlowGraph(
         data: {
           kind: model?.kind ?? 'conceptual',
           count: 1,
-          explanation: model?.explanation,
+          edges: model ? [model] : [],
         } satisfies ReadingEdgeData,
       });
     }
@@ -199,7 +213,7 @@ function crossEdge(bundle: BundledEdge): Edge {
     data: {
       kind: bundle.count > 1 ? 'bundle' : (bundle.kind ?? 'conceptual'),
       count: bundle.count,
-      explanation: bundle.explanation,
+      edges: bundle.members,
     } satisfies ReadingEdgeData,
   };
 }

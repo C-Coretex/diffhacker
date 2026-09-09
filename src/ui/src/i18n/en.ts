@@ -186,6 +186,8 @@ export const en = {
     },
   },
   theme: {
+    label: 'Colour scheme',
+    system: 'Follow the system',
     light: 'Light',
     dark: 'Dark',
   },
@@ -367,6 +369,7 @@ export const en = {
     summaryHeading: 'What this change does',
     risksHeading: 'Risks',
     noRisks: 'No risks were reported.',
+    riskTotal: '{count} in all',
     containersDescription:
       'In the order a reviewer should read them. Inside each, the file to start from comes first and its consequences follow.',
 
@@ -406,6 +409,78 @@ export const en = {
     detailsHeading: 'Details',
     detailsBody:
       'Every cluster, file and link in full, in the model’s own words. The diagram above says the same thing more briefly.',
+
+    /**
+     * The band across the top of the analysis screen.
+     *
+     * Summary and risks are always on it; everything else is one toggle away, because a reviewer
+     * looking at a three-hundred-box diagram needs the vertical space more than they need the
+     * cluster list on screen at all times.
+     */
+    overview: {
+      toggle: 'Overview',
+      toggleBody:
+        'Reading order, the clusters and their sizes, the numbers, every risk in one list, and where this analysis came from.',
+
+      readingOrderHeading: 'Read in this order',
+      readingOrderBody:
+        'One path through the whole change, crossing cluster boundaries. Pick a step to go to it on the diagram.',
+      readingOrderEmpty: 'No reading order was recorded.',
+
+      clustersHeading: 'Clusters, in reading order',
+      clusterSize: '{count} files',
+      clusterRisks: '{count} risks',
+
+      registerHeading: 'Every risk, in one place',
+      registerBody:
+        'Collected from the change as a whole, from each cluster, from each file and from each link between them.',
+      registerEmpty: 'Nothing in this change was flagged as a risk.',
+      registerFromOverall: 'The change as a whole',
+      registerFromContainer: 'Cluster · {title}',
+      registerFromNode: 'File · {path}',
+      registerFromEdge: 'Link · {source} → {target}',
+
+      runHeading: 'This run',
+      runProvider: 'Provider',
+      runModel: 'Model',
+      runWhen: 'Finished',
+      runCommit: 'From commit',
+      runTokensIn: 'Tokens in',
+      runTokensOut: 'Tokens out',
+      runCost: 'Cost',
+      runDuration: 'Took',
+      runRepairs: 'Repair rounds',
+      runSchema: 'Contract',
+      runUnknown: 'unknown',
+      runSeconds: '{count}s',
+    },
+
+    /**
+     * The hover cards.
+     *
+     * Everything on one is already in the persisted analysis: no call of any kind happens because
+     * a pointer moved (§0.2.8, and the iteration's own first fixed decision).
+     */
+    hover: {
+      pin: 'Pin this card',
+      unpin: 'Unpin this card',
+      pinned: 'Kept open — Escape or a click on the background closes it',
+      clickToKeep: 'Click to keep this open',
+      copyPath: 'Copy path',
+      copied: 'Path copied',
+      copyFailed: 'The path could not be copied',
+
+      nodePlace: 'Rank {rank} in {container} · importance {importance} of 5',
+      nodeSymbol: 'in {symbol}',
+
+      edgeHeading: 'How these two relate',
+      edgeDirection: 'Read {source}, then {target}',
+
+      containerEntry: 'Starts at {file}',
+      containerSize: '{count} files',
+
+      nothingWritten: 'The model wrote nothing here.',
+    },
 
     diagnosticsHeading: 'What validation noticed',
     diagnosticsBody:
@@ -451,6 +526,13 @@ export const en = {
       legendStates: 'Boxes',
       legendStatesNote:
         'A file can be several of these at once. Colour is the project it belongs to, never its state.',
+
+      legendImportance: 'Emphasis',
+      legendImportanceHigh: 'The model ranked this one of the changes to read',
+      legendImportanceNormal: 'Ordinary',
+      legendImportanceLow: 'A mechanical consequence — faded, never hidden',
+      legendImportanceNote:
+        'Every changed file is on the diagram whatever its rank. A faded box comes back to full the moment you hover it, search for it or jump to it.',
 
       legendProjects: 'Projects',
       legendNoProjects: 'Nothing in this change was attributed to a project.',

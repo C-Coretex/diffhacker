@@ -5,8 +5,9 @@ import { useT } from '@/i18n/useT';
 import { useRpc } from '@/rpc/RpcProvider';
 import { describeEnvironment, ping } from '@/rpc/methods';
 import { useAppStore } from '@/store/appStore';
-import { useSystemTheme } from '@/theme/useSystemTheme';
+import { useTheme } from '@/theme/useTheme';
 import { Button } from '@/components/ui/button';
+import { ThemePicker } from '@/components/ThemePicker';
 import { GitMissingBanner } from '@/components/EnvironmentBanner';
 import { WelcomeScreen } from '@/components/WelcomeScreen';
 import { RepositoryScreen } from '@/components/RepositoryScreen';
@@ -17,7 +18,7 @@ import { HostPanel } from '@/components/HostPanel';
 
 export function App() {
   const t = useT();
-  useSystemTheme();
+  useTheme();
 
   const client = useRpc();
   const connection = useAppStore((state) => state.connection);
@@ -107,6 +108,8 @@ export function App() {
               </Button>
             </>
           )}
+
+          <ThemePicker />
         </nav>
       </header>
 

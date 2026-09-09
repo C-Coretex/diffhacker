@@ -32,5 +32,33 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
+    onUnhandledError: isJsdomMissingEventView,
   },
 });
+
+/**
+ * The one unhandled error the graph tests provoke that nothing in this repository can prevent.
+ *
+ * A mouse event in a browser always carries a `view`. `@testing-library/user-event` builds its
+ * events by defining `view` as a **non-configurable** own property from an init object that has
+ * none, so it is fixed at `null` before the event is ever dispatched and no amount of patching in
+ * `setup.ts` can put it back — the property cannot be redefined.
+ *
+ * React Flow pans the canvas with d3-zoom, whose mousedown handler calls `dragDisable(event.view)`
+ * and immediately reads `view.document`. So every click that reaches the pane — collapsing a
+ * cluster, expanding one, choosing a search hit — threw a TypeError inside a DOM listener,
+ * asynchronously and outside any assertion. The tests passed and the run still reported errors
+ * nobody could act on, attributed to whichever test happened to be running at the time.
+ *
+ * Matched exactly rather than by turning unhandled errors off: anything that is not this one still
+ * fails the run.
+ */
+function isJsdomMissingEventView(error: unknown): boolean {
+  const stack = error instanceof Error ? (error.stack ?? '') : '';
+
+  return (
+    error instanceof TypeError &&
+    error.message.includes("reading 'document'") &&
+    stack.includes('d3-drag')
+  );
+}

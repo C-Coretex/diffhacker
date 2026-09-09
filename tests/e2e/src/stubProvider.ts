@@ -343,12 +343,15 @@ export function stubTwoClusterResult(paths: readonly string[]) {
 
   const base = stubAnalysisResult(paths);
 
+  // A risk at every level the schema allows: the change as a whole (in `stubAnalysisResult`), a
+  // cluster, a file (likewise) and a link. Iteration 9's register has to find all four, and a
+  // fixture that only ever wrote two of them would let it pass having found two.
   const cluster = (id: string, title: string, order: number, members: readonly string[]) => ({
     id,
     title,
     summary: `${members.length} file(s) that changed together.`,
     explanation: `Everything in ${title} was edited for one reason.`,
-    risks: [],
+    risks: [`Everything in ${title} has to ship together.`],
     displayOrder: order,
     entryNodeId: members[0],
     nodeIds: [...members],
@@ -382,7 +385,7 @@ export function stubTwoClusterResult(paths: readonly string[]) {
               targetNodeId: first[1],
               kind: 'direct',
               explanation: 'The second file reads from the first.',
-              risks: [],
+              risks: ['The second file still assumes the old shape.'],
             },
           ]
         : []),

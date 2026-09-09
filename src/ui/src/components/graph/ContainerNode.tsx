@@ -34,7 +34,12 @@ export function ContainerNode({ data }: NodeProps<Node<ContainerNodeData>>) {
       >
         <button
           type="button"
-          onClick={() => toggle(container.id)}
+          // Stopped here, or clicking the chevron would also reach the surface's `onNodeClick` and
+          // pin the cluster's card open over the cluster that just folded.
+          onClick={(event) => {
+            event.stopPropagation();
+            toggle(container.id);
+          }}
           className="flex min-w-0 items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-accent"
           aria-expanded
           aria-label={t('analysis.graph.collapseContainer', { title: container.title })}

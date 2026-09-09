@@ -8,11 +8,52 @@
 |---|---|
 | **Depends on** | [8](iteration-08-graph-rendering.md) |
 | **Blocks** | 10 |
-| **Status** | Not started — **this iteration closes the MVP** |
+| **Status** | Complete, apart from macOS and Linux and the one bar only a person can set — see **Where it stands** |
 
 ## Goal
 
 Surface everything the LLM wrote, at the right moment.
+
+## Where it stands
+
+Every numbered requirement is implemented. The decisions taken along the way — the band that
+replaced the left rail, the hover timings, the pinning gesture, where de-emphasis stops, the edge hit
+areas and the two things jsdom cannot do — are recorded in
+[docs/decisions.md](../decisions.md#explanations), and the answers to **Raise before implementing**
+are with them.
+
+Three things went beyond what the requirements asked for, all at the user's request after seeing it
+running:
+
+- **The left rail is gone.** The summary and risks sit across the top and the diagram has the full
+  width. That is requirement 5's overview panel, relocated — see the decision for why it is also the
+  right place given Iteration 10. The summary and risk column fold away as well, independently of
+  the overview below them.
+- **Clicking anything on the diagram keeps its card open** — a node, an edge, a cluster. Hovering
+  alone was not enough: the card vanished while you were reaching for it. **This spends the gesture
+  Iteration 10 was going to use for the diff viewer**, so that iteration needs a button on the card
+  (its requirement 4 already puts the explanation and risks beside the diff, so the card is the
+  natural place) or a double-click. Flagged rather than left to be discovered.
+- **The colour scheme is selectable** — follow the system, light, or dark — from a control in the
+  header. It followed the OS and only the OS before, which is a guess rather than a preference.
+
+**Not verified: macOS and Linux.** CI is deliberately deferred and this machine is Windows, so
+WebView2 is the only renderer any of this has run on — the same gap Iteration 8 reported. Two things
+here are more likely than most to differ: Radix's collision handling, which decides that a card flips
+rather than covers its node; and the clipboard, since `diffhacker://app` is a custom scheme and
+whether a WebView treats it as a secure context is the host's business. `copyText` falls back to
+`document.execCommand` for exactly that reason, and the end-to-end test reads the path back out of
+the real clipboard so it proves whichever branch ran — but only on WebView2 so far.
+
+**Not done by a checklist: verification step 1.** The MVP acceptance test is a person who has never
+seen the change explaining it from the graph alone. That has not been run, and cannot be run by the
+implementer — reported rather than assumed.
+
+Verification steps 2–9 are covered: 2, 3 and 4 by
+[08-explanations.spec.ts](../../tests/e2e/specs/08-explanations.spec.ts) in the real window, 5 three
+times over (node, edge and cluster each assert a `risk-column`), 6 against the persisted document in
+`AnalysisOverviewBand.test.tsx`, 7 as "nothing crosses the bridge while hovering" in
+`AnalysisScreen.test.tsx`, and 8 and 9 in both suites.
 
 ## Context
 

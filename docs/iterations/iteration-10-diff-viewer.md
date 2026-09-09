@@ -35,6 +35,13 @@ exists to escape.
 
 1. Clicking a node opens the diff for that file with changed lines highlighted. When the node
    targets a specific in-file location, **scroll to and highlight it**.
+
+   > **Read this before implementing requirement 1.** Iteration 9 spent the single click: clicking a
+   > node, edge or cluster now keeps its hover card open, because hovering alone lost the card while
+   > the reviewer was reaching for it. So opening the diff needs a different gesture. The card is the
+   > obvious home for it — requirement 4 below already wants the explanation and risks beside the
+   > diff, and they are on the card already — with a double-click as the alternative. Decide it
+   > deliberately rather than quietly taking the click back.
 2. Side-by-side and inline modes, syntax highlighting, expandable context around hunks,
    hunk-to-hunk navigation.
 3. "Open in VS Code" button with diff enabled. **Handle VS Code not being installed.** Also add button "Open in VS" (visual studio) if possible
