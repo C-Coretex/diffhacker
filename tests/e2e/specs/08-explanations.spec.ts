@@ -156,6 +156,13 @@ test('clicking a node, an edge and a cluster explains each one, risks apart', as
 
     await expect(analysis.hoverCard).toContainText('The first half');
 
+    // A cluster this small is not much wider than its own card, so the card — sized to be readable
+    // rather than squeezed into whatever gap happens to be free (the bug this exists to fix) —
+    // covers part of the cluster it is open over. That is an overlay doing what overlays do: closed
+    // here the same way a reviewer would, rather than clicked through.
+    await analysis.closeCardButton.click();
+    await expect(analysis.hoverCard).toHaveCount(0);
+
     // ------------------------------------------------------------ requirement 2: the edge card
 
     // The one thing jsdom cannot render at all. Deliberately clicked *beside* the line rather than

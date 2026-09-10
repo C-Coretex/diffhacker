@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { ChevronDown, FilesIcon } from 'lucide-react';
 import type { Node, NodeProps } from '@xyflow/react';
 import { translate as t } from '@/i18n/translate';
@@ -33,6 +34,12 @@ export function ContainerNode({ data }: NodeProps<Node<ContainerNodeData>>) {
   const toggle = useAppStore((state) => state.toggleContainerCollapsed);
   const actions = useGraphActions();
 
+  // The card anchors here rather than to the header that was actually clicked. A wide cluster's
+  // header can run most of the width of the canvas, and anchoring beside *that* rect leaves Radix
+  // little or no room on either side, which is what was shrinking the card down to nothing — the
+  // title is a normal, compact width regardless of how wide the cluster it names happens to be.
+  const titleRef = useRef<HTMLButtonElement>(null);
+
   return (
     <div
       className={cn(
@@ -48,9 +55,12 @@ export function ContainerNode({ data }: NodeProps<Node<ContainerNodeData>>) {
         // The surface deliberately ignores container nodes (@see AnalysisGraph), so this click is the
         // whole of a cluster's card behaviour. The two buttons below stop their own clicks, so neither
         // collapsing a cluster nor opening it also opens the card.
-        onClick={(event) => actions?.toggleContainerCard(container, event.currentTarget)}
+        onClick={() => {
+          if (titleRef.current) actions?.toggleContainerCard(container, titleRef.current);
+        }}
       >
         <button
+          ref={titleRef}
           type="button"
           // Stopped here, or clicking the chevron would also bubble to the header's own click and
           // open the cluster's card over the cluster that just folded.

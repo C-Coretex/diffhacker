@@ -50,6 +50,14 @@ export function GraphHoverCard({
 
   const { rect } = target;
 
+  // A container's card anchors to its title, not to the header's full width (see ContainerNode) —
+  // a compact anchor rather than one that can run the width of the canvas. But the title sits at
+  // the *top* of the cluster, with the cluster's own boxes directly beneath it, so opening the card
+  // beside the title the way a node's card opens beside a node would land it over those boxes and
+  // whatever is drawn between them. Above or below the title, by contrast, is canvas the reviewer
+  // is not reading at that moment either way, and Radix still flips to whichever of the two has room.
+  const side = target.kind === 'container' ? 'top' : 'right';
+
   return (
     <Popover.Root
       open
@@ -73,7 +81,7 @@ export function GraphHoverCard({
 
       <Popover.Portal>
         <Popover.Content
-          side="right"
+          side={side}
           align="start"
           sideOffset={12}
           collisionPadding={16}
