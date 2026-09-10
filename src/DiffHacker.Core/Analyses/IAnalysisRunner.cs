@@ -17,8 +17,29 @@ public interface IAnalysisRunner
     /// </summary>
     Task<AnalysisRunResult> RunAsync(
         string repositoryPath,
+        AnalysisRunOptions options,
         IProgress<LlmRunEvent>? progress,
         CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// What this run should ask the model for, as distinct from what the analysis is <i>of</i>.
+/// <para>
+/// A record rather than a parameter because it is the shape the answer to "which parts of the
+/// analysis do I actually want to pay for?" takes, and there will be more of them than one.
+/// </para>
+/// </summary>
+public sealed record AnalysisRunOptions
+{
+    /// <summary>
+    /// Whether to ask for the change-clusters grouping as well as dependency flow. False takes it out
+    /// of the prompt and out of the response schema, so a reviewer who never switches is not charged
+    /// for it on every turn.
+    /// </summary>
+    public bool ChangeClusters { get; init; } = true;
+
+    /// <summary>Both groupings — what a run does unless the reviewer said otherwise.</summary>
+    public static AnalysisRunOptions Default { get; } = new();
 }
 
 /// <summary>The outcome of one analysis run, complete with what it cost.</summary>

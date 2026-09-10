@@ -44,6 +44,7 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                diagnostics_json AS DiagnosticsJson,
                files_json       AS FilesJson,
                reviewed_json    AS ReviewedJson,
+               grouping_mode    AS GroupingMode,
                trace_json       AS TraceJson
           FROM analyses
         """;
@@ -61,11 +62,11 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                 (id, repository_path, schema_version, created_at_utc, head_commit, provider_name,
                  model, input_tokens, output_tokens, cost_usd, duration_ms, repair_rounds,
                  document_json, statistics_json, diagnostics_json, files_json, reviewed_json,
-                 trace_json)
+                 grouping_mode, trace_json)
             VALUES (@id, @repositoryPath, @schemaVersion, @createdAtUtc, @headCommit, @providerName,
                     @model, @inputTokens, @outputTokens, @costUsd, @durationMs, @repairRounds,
                     @documentJson, @statisticsJson, @diagnosticsJson, @filesJson, @reviewedJson,
-                    @traceJson);
+                    @groupingMode, @traceJson);
             """,
             new
             {
@@ -94,6 +95,12 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                 reviewedJson = analysis.ReviewedNodeIds.Count == 0
                     ? null
                     : JsonSerializer.Serialize(analysis.ReviewedNodeIds, StorageJson.Options),
+
+                // Null on a fresh run for the same reason: a run has no opinion about which grouping
+                // to open in, and the application-wide default is not this analysis's business.
+                groupingMode = analysis.Grouping is { } grouping
+                    ? AnalysisGroupingNames.Of(grouping)
+                    : null,
                 traceJson = JsonSerializer.Serialize(
                     new AnalysisTrace(analysis.ToolCalls, analysis.ProgressMessages),
                     StorageJson.Options),
@@ -230,6 +237,21 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
         return [.. marks];
     }
 
+    public async ValueTask SetGroupingAsync(
+        string analysisId,
+        AnalysisGrouping grouping,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await database.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        // One column, one row, no read first: unlike the reviewed marks there is nothing to merge —
+        // the last reviewer to choose a grouping is looking at it now.
+        await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE analyses SET grouping_mode = @groupingMode WHERE id = @analysisId;",
+            new { analysisId, groupingMode = AnalysisGroupingNames.Of(grouping) },
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// The stored marks, tolerating both a column never written and one holding something this build
     /// cannot read. A malformed set is worth losing quietly; it is a record of what someone clicked,
@@ -298,6 +320,9 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
         /// <summary>Null before schema 6, and null again whenever nothing is marked.</summary>
         public string? ReviewedJson { get; init; }
 
+        /// <summary>Null before schema 7, and null until the reviewer chooses a grouping.</summary>
+        public string? GroupingMode { get; init; }
+
         public required string TraceJson { get; init; }
 
         public Analysis ToAnalysis()
@@ -325,7 +350,7 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                 },
                 Duration = TimeSpan.FromMilliseconds(DurationMs),
                 RepairRounds = RepairRounds,
-                Document = JsonSerializer.Deserialize<AnalysisResult>(DocumentJson, StorageJson.Options)!,
+                Document = LegacyAnalysisDocument.Read(DocumentJson),
                 Statistics = JsonSerializer.Deserialize<AnalysisStatistics>(StatisticsJson, StorageJson.Options)!,
                 Diagnostics =
                     JsonSerializer.Deserialize<List<AnalysisDiagnostic>>(DiagnosticsJson, StorageJson.Options) ?? [],
@@ -333,6 +358,7 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                     ? []
                     : JsonSerializer.Deserialize<List<ChangedFileFacts>>(FilesJson, StorageJson.Options) ?? [],
                 ReviewedNodeIds = Read(ReviewedJson),
+                Grouping = AnalysisGroupingNames.Parse(GroupingMode),
                 ToolCalls = trace?.ToolCalls ?? [],
                 ProgressMessages = trace?.ProgressMessages ?? [],
             };

@@ -285,15 +285,14 @@ export function stubAnalysisResult(paths: readonly string[]) {
     implementationNotes: '',
     risks: index === 0 ? ['The entry point changed shape.'] : [],
     importance: index === 0 ? 5 : 2,
-    rank: index + 1,
-    states: index === 0 ? ['changed', 'entry_point'] : ['changed'],
+    states: index === 0 ? ['changed'] : ['changed'],
   }));
 
   return {
     summary: 'Every file in the fixture gained a line, which is the whole of the change.',
     overallRisks: ['The fixture has no tests, so nothing proves the change works.'],
-    readingOrder: paths.map((path) => path),
-    containers: [
+    dependencyReadingOrder: paths.map((path) => path),
+    dependencyContainers: [
       {
         id: 'the-whole-change',
         title: 'The whole change',
@@ -305,6 +304,7 @@ export function stubAnalysisResult(paths: readonly string[]) {
         nodeIds: paths.map((path) => path),
       },
     ],
+    ...byDirectory(paths),
     nodes,
     edges: paths.slice(1).map((path) => ({
       sourceNodeId: paths[0],
@@ -323,6 +323,88 @@ export function stubAnalysisResult(paths: readonly string[]) {
 export function stubAnalysisMissing(paths: readonly string[], omit: string) {
   const kept = paths.filter((path) => path !== omit);
   return stubAnalysisResult(kept);
+}
+
+/**
+ * The change-clusters grouping, for any set of paths: one cluster per top-level directory.
+ *
+ * Every builder here needs a second grouping now, and grouping by directory is the one rule that
+ * works for three files and for five hundred without a fixture having to describe itself. It is also
+ * honestly thematic — `db/`, `auth/`, `api/` really are separate concerns in the layered fixture —
+ * which is the property the specs assert against.
+ *
+ * Sorted by name so two runs over one changeset produce the same clusters in the same order, and so
+ * a spec can name one.
+ */
+function byDirectory(paths: readonly string[]) {
+  const groups = new Map<string, string[]>();
+
+  for (const path of paths) {
+    const head = path.split('/')[0] ?? path;
+    const theme = head === path ? 'root' : head;
+    const members = groups.get(theme);
+
+    if (members === undefined) {
+      groups.set(theme, [path]);
+    } else {
+      members.push(path);
+    }
+  }
+
+  const themes = [...groups.entries()].sort(([left], [right]) => left.localeCompare(right));
+
+  return {
+    clusterReadingOrder: themes.flatMap(([, members]) => members),
+    clusterContainers: themes.map(([theme, members], index) => ({
+      id: theme.replace(/[^a-z0-9]+/gi, '-').toLowerCase(),
+      title: `Everything under ${theme}`,
+      summary: `${members.length} file(s) that belong to one concern.`,
+      explanation: `Grouped by area rather than by the path a reader would walk through them.`,
+      risks: [],
+      displayOrder: index + 1,
+      entryNodeId: members[0],
+      nodeIds: [...members],
+    })),
+  };
+}
+
+/**
+ * One node set grouped two genuinely different ways — the fixture Iteration 11 exists to draw.
+ *
+ * Dependency flow puts the **whole** database-to-auth-to-API chain in one cluster, because that is
+ * one change and cutting it at a concern boundary would hide the thing a reviewer needs to see.
+ * Change clusters splits the same nodes by area, which breaks that chain across three clusters and
+ * turns its edges into crossings. Verification steps 2 and 3 are those two sentences.
+ */
+export function stubGroupedResult(paths: readonly string[]) {
+  const base = stubAnalysisResult(paths);
+
+  return {
+    ...base,
+    summary: 'A tenant column was added, the token started carrying it, and the API started returning it.',
+    dependencyContainers: [
+      {
+        id: 'tenant-end-to-end',
+        title: 'Tenancy, end to end',
+        summary: 'One change from the migration through the token to the endpoint.',
+        explanation:
+          'Kept whole on purpose: the path crosses database, auth and API, and following it is the only way to see what the change does.',
+        risks: ['The migration and the API have to ship together.'],
+        displayOrder: 1,
+        entryNodeId: paths[0],
+        nodeIds: paths.map((path) => path),
+      },
+    ],
+    // Consecutive links, so the chain is a path rather than a fan — which is what makes the
+    // difference between the two groupings visible as broken lines rather than as fewer of them.
+    edges: paths.slice(1).map((path, index) => ({
+      sourceNodeId: paths[index],
+      targetNodeId: path,
+      kind: index === 0 ? 'direct' : 'conceptual',
+      explanation: `${path} only makes sense once ${paths[index]} is understood.`,
+      risks: [],
+    })),
+  };
 }
 
 /**
@@ -359,22 +441,13 @@ export function stubTwoClusterResult(paths: readonly string[]) {
 
   return {
     ...base,
-    containers:
+    dependencyContainers:
       second.length === 0
         ? [cluster('first-half', 'The first half', 1, first)]
         : [
             cluster('first-half', 'The first half', 1, first),
             cluster('second-half', 'The second half', 2, second),
           ],
-    // Ranks restart inside each cluster, which is what the schema requires and what the boxes
-    // print.
-    nodes: base.nodes.map((node) => ({
-      ...node,
-      rank: (first.includes(node.filePath) ? first : second).indexOf(node.filePath) + 1,
-      states: node.filePath === first[0] || node.filePath === second[0]
-        ? ['changed', 'entry_point']
-        : ['changed'],
-    })),
     edges: [
       // One inside the first cluster, one crossing between them: the two kinds of line the
       // diagram has to draw differently.
@@ -432,8 +505,8 @@ export function stubReviewResult(
 
   return {
     ...base,
-    readingOrder: [first, second, third, hub, fourth, aside],
-    containers: [
+    dependencyReadingOrder: [first, second, third, hub, fourth, aside],
+    dependencyContainers: [
       {
         id: 'the-change',
         title: 'The change itself',
@@ -455,19 +528,12 @@ export function stubReviewResult(
         nodeIds: [aside],
       },
     ],
-    nodes: base.nodes.map((node) => {
-      const inMain = main.includes(node.filePath);
-      const rank = inMain ? main.indexOf(node.filePath) + 1 : 1;
-
-      return {
-        ...node,
-        rank,
-        startLine: region?.path === node.filePath ? region.startLine : 0,
-        endLine: region?.path === node.filePath ? region.endLine : 0,
-        symbol: region?.path === node.filePath ? 'tenantAware' : '',
-        states: rank === 1 ? ['changed', 'entry_point'] : ['changed'],
-      };
-    }),
+    nodes: base.nodes.map((node) => ({
+      ...node,
+      startLine: region?.path === node.filePath ? region.startLine : 0,
+      endLine: region?.path === node.filePath ? region.endLine : 0,
+      symbol: region?.path === node.filePath ? 'tenantAware' : '',
+    })),
     edges: [
       { sourceNodeId: first, targetNodeId: hub, kind: 'direct', explanation: `${hub} reads the contract ${first} defines.`, risks: [] },
       { sourceNodeId: second, targetNodeId: hub, kind: 'direct', explanation: `${hub} was renamed out from under ${second}.`, risks: [] },

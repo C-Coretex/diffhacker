@@ -21,11 +21,17 @@ namespace DiffHacker.Core.Analyses;
 /// gets it right the first time, and repair rounds cost real money on a large change.
 /// </para>
 /// <para>
+/// It is assembled from sections rather than written as one literal because two of them come in two
+/// versions: a run that was not asked for the change-clusters grouping is not told about it at all.
+/// Telling a model about work it must not do costs the tokens of the instruction on every turn and
+/// invites the work anyway.
+/// </para>
+/// <para>
 /// <b>The division of labour with the schema matters, and is easy to lose.</b> Both this prompt and
 /// <c>analysis-result.schema.json</c> reach the model on <i>every request</i> — the schema as the
 /// response format — so anything said at length in both is paid for twice per turn, up to three
-/// hundred times a run. So: the prompt owns the guidance (how to cluster, how to choose a starting
-/// point, what rank means), and a schema description owns only what its field is and the constraint
+/// hundred times a run. So: the prompt owns the guidance (how to cluster, how the two groupings
+/// differ, how to choose a starting point), and a schema description owns only what its field is and the constraint
 /// the validator will check. Guidance was duplicated into the schema once; it cost ~4,000 characters
 /// a turn and taught the model nothing the prompt had not already said.
 /// </para>
@@ -38,7 +44,28 @@ public static class AnalysisPrompt
     /// <summary>Key into <c>DiffHacker.Contracts.ContractSchemas</c>.</summary>
     public const string SchemaKey = "analysis-result";
 
-    public static string SystemPrompt() =>
+    /// <summary>
+    /// What the model is told, for a run that wants both groupings or only the first.
+    /// </summary>
+    /// <param name="changeClusters">
+    /// Whether the second grouping was asked for. When it was not, its fields are not in the schema
+    /// either (<see cref="AnalysisResponseSchema"/>) and nothing here mentions them — a model told
+    /// about work it must not do has been charged for reading the instruction.
+    /// </param>
+    public static string SystemPrompt(bool changeClusters = true) => string.Join(
+        "\n\n",
+        Opening,
+        WhatAClusterIs,
+        changeClusters ? TwoGroupings : OneGroupingOnly,
+        StartingPoint,
+        MembershipOrder,
+        Edges,
+        changeClusters ? ReadingOrderBoth : ReadingOrderOne,
+        RulesShared,
+        changeClusters ? RulesBoth : RulesOne,
+        Writing);
+
+    private const string Opening =
         """
         You are mapping one uncommitted Git change so a reviewer can understand it without opening
         three hundred files alphabetically and rebuilding the change's shape in their head.
@@ -46,9 +73,9 @@ public static class AnalysisPrompt
 
         ## How your answer gets read
 
-        The reviewer sees clusters. They open one, start at the node you marked as its starting
-        point, and walk down through the nodes after it — each a consequence of, or companion to,
-        what they just read. Then the next cluster.
+        The reviewer sees clusters. They open one, start at the node the cluster names as its
+        starting point, and walk down through the nodes after it — each a consequence of, or
+        companion to, what they just read. Then the next cluster.
 
         So the test is not whether your answer is accurate. It is whether someone can read it top
         to bottom, once, and never hit a node and think "what is this, and why now?". Every node
@@ -83,7 +110,10 @@ public static class AnalysisPrompt
          When a tool reveals an important fact, state it clearly and concisely in your reasoning before moving on
          so it remains available even if the original result is later pruned. If you need a pruned
          result again, call the tool again.
+        """;
 
+    private const string WhatAClusterIs =
+        """
         ## Clusters — one thing the reviewer thinks about at a time
 
         A container is a set of changes that only make sense together. Of any two files ask: would
@@ -103,7 +133,57 @@ public static class AnalysisPrompt
 
         Order containers with displayOrder so earlier ones make later ones comprehensible: the
         decision before its fallout, the capability before the cleanup it allowed.
+        """;
 
+    /// <summary>
+    /// The section Iteration 11 exists for. Two groupings of one node set, and the reviewer switches
+    /// between them — so the difference between them has to be stated as a difference in purpose,
+    /// not as two goes at the same question.
+    /// </summary>
+    private const string TwoGroupings =
+        """
+        ## !! GROUP THE SAME NODES TWICE !!
+
+        The reviewer has a switch with two positions, and you fill in both. Same nodes, same
+        explanations, same edges — grouped two different ways, because two different questions get
+        asked of one change and no single grouping answers both.
+
+        **dependencyContainers — dependency flow.** Clusters that keep a COMPLETE change path
+        intact. When a change runs from a migration, through the token that reads it, into the
+        endpoint that returns it, that is ONE cluster here even though it spans database, auth and
+        API. Do not cut a path because it crosses concerns; keeping it whole is the entire point of
+        this grouping, and it is the one the reviewer sees first.
+
+        **clusterContainers — change clusters.** The same nodes grouped by theme or concern instead:
+        the database work together, the auth work together, the API work together. That path above
+        now breaks across three clusters, and that is correct here — this grouping answers "what
+        areas did this touch, and how much of each?", and it is genuinely useful for that.
+
+        It is not a fallback and not a rough draft of the other one. Give it real cluster titles,
+        real summaries, real explanations and its own entry points. A reviewer who switches to it and
+        finds the first grouping with the labels changed has been given nothing.
+
+        The two are independent: different clusters, different ids, different number of them,
+        different reading order. What they cannot differ on is coverage — every node appears exactly
+        once in each of them.
+        """;
+
+    /// <inheritdoc cref="TwoGroupings"/>
+    private const string OneGroupingOnly =
+        """
+        ## Dependency flow — keep whole paths whole
+
+        There is one grouping to fill in, dependencyContainers, and its job is to keep a COMPLETE
+        change path intact. When a change runs from a migration, through the token that reads it,
+        into the endpoint that returns it, that is ONE cluster even though it spans database, auth
+        and API. Do not cut a path because it crosses concerns.
+
+        Grouping by area — the database work here, the auth work there — is a different view, and it
+        is not wanted on this run. Do not produce it and do not compromise between the two.
+        """;
+
+    private const string StartingPoint =
+        """
         ## !! THE STARTING POINT — your most consequential choice !!
 
         Each container names exactly one entry node: the change that EXPLAINS the others, not its
@@ -116,15 +196,21 @@ public static class AnalysisPrompt
 
         It is not the biggest file, not the one with the most changed lines, not the first
         alphabetically.
+        """;
 
-        ## Rank — the order they are read in
+    private const string MembershipOrder =
+        """
+        ## Order — the order they are read in
 
-        Rank is a reading path through a container, entry node at 1. Rank by what a reader needs
+        A container's nodeIds is a reading path, entry node first. Order by what a reader needs
         first, NOT by importance and NOT by size: a node comes after everything a reader needs in
-        order to understand it. Where one decision fans out into twenty call sites, the decision is
-        rank 1 and the sites follow it. Where two nodes do not depend on each other, put the one
-        that matters more first.
+        order to understand it. Where one decision fans out into twenty call sites, the decision
+        comes first and the sites follow it. Where two nodes do not depend on each other, put the
+        one that matters more first.
+        """;
 
+    private const string Edges =
+        """
         ## Edges — how reading flows
 
         An edge means "to understand the target, read from the source". Do not classify it as
@@ -135,16 +221,38 @@ public static class AnalysisPrompt
         they are how you say "these belong to the same idea" when no import says it for you. A
         cluster held together by intent should be full of them.
 
-        Aim for every node to be reachable from that container's entry node by following edges.
+        Aim for every node to be reachable from its container's entry node by following edges.
         That is what makes a cluster a path a reader can walk rather than a pile of files.
 
         Cross-container edges are fine where reading really does jump between clusters — but never
         instead of putting related things in one container.
+        """;
 
-        readingOrder is the single path through the whole change: every node once, in the order you
-        would use walking someone through it. Normally containers in displayOrder, each one's nodes
-        in rank order; depart from that only for a real reason.
+    private const string ReadingOrderBoth =
+        """
+        ## Reading order — one per grouping
 
+        dependencyReadingOrder and clusterReadingOrder are each a single path through the whole
+        change: every node once, in the order you would use walking someone through it in that
+        grouping. Normally that grouping's containers in displayOrder, each one's nodeIds in the
+        order they are listed; depart from that only for a real reason.
+
+        They will not be the same list, and one copied from the other is a wrong answer to the
+        second question.
+        """;
+
+    /// <inheritdoc cref="ReadingOrderBoth"/>
+    private const string ReadingOrderOne =
+        """
+        ## Reading order
+
+        dependencyReadingOrder is the single path through the whole change: every node once, in the
+        order you would use walking someone through it. Normally the containers in displayOrder,
+        each one's nodeIds in the order they are listed; depart from that only for a real reason.
+        """;
+
+    private const string RulesShared =
+        """
         ## !! Rules that are checked !!
 
         A failure comes straight back to you, so getting these right first time is cheaper:
@@ -155,13 +263,35 @@ public static class AnalysisPrompt
         - No node names a file that is not in the changed-file list.
         - One node per file; split only for two genuinely unrelated changes, the second id being
           the path, a '#', and a short slug.
-        - Every node is listed by exactly one container. Not two, not none.
-        - Every container names exactly one entry node: one of its members, carrying the
-          entry_point state, with rank 1.
-        - Ranks within a container, and displayOrder across containers, run 1, 2, 3 … with no gaps
-          and no repeats.
-        - The reading order lists every node once.
+        """;
 
+    private const string RulesBoth =
+        """
+        And once for EACH grouping, dependency flow and change clusters alike:
+
+        - Every node is listed by exactly one container of that grouping. Not two, not none.
+        - Every container names exactly one entry node, and it is the first entry of its nodeIds.
+        - displayOrder across that grouping's containers runs 1, 2, 3 … with no gaps and no repeats.
+        - That grouping's reading order lists every node once.
+        - A container lists no node twice — the list is the reading order, so there is one place for
+          each.
+        """;
+
+    /// <inheritdoc cref="RulesBoth"/>
+    private const string RulesOne =
+        """
+        And for the grouping:
+
+        - Every node is listed by exactly one container. Not two, not none.
+        - Every container names exactly one entry node, and it is the first entry of its nodeIds.
+        - displayOrder across the containers runs 1, 2, 3 … with no gaps and no repeats.
+        - The reading order lists every node once.
+        - A container lists no node twice — the list is the reading order, so there is one place for
+          each.
+        """;
+
+    private const string Writing =
+        """
         ## Writing — short, because of where it is read
 
         Most of this is read inside a box on a diagram, roughly the size of a business card, with

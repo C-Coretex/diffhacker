@@ -384,6 +384,12 @@ export const en = {
     emptyHeading: 'This change has not been analysed',
     emptyBody:
       'One run reads the working tree, explores the repository and produces the whole result at once. It costs real money, so nothing starts until you ask.',
+
+    // The one control on this screen that changes what a run costs, so it says what it buys and
+    // sits beside the button that spends the money rather than in a settings page.
+    changeClusters: 'Also group by theme',
+    changeClustersBody:
+      'Asks the same run for a second grouping, so you can switch between them afterwards without paying again. Turn it off and the run is a little cheaper and only the dependency-flow grouping exists.',
     cleanHeading: 'Nothing to analyse',
     cleanBody: 'The working tree matches HEAD, so there is no change to describe.',
 
@@ -537,6 +543,23 @@ export const en = {
       expandAll: 'Expand all',
       legend: 'Legend',
       counts: '{containers} clusters · {nodes} files · {edges} links',
+
+      /**
+       * The two groupings, and the line that explains why the same change looks different in each.
+       * Both bodies are readable before switching — each sits on its own button — so the reviewer
+       * can tell what the other view is for without having to go and look.
+       */
+      grouping: {
+        label: 'Grouping',
+        dependencyFlow: 'Dependency flow',
+        dependencyFlowBody:
+          'Clusters follow the change itself: a path stays in one cluster all the way through, even where it crosses database, auth and API.',
+        changeClusters: 'Change clusters',
+        changeClustersBody:
+          'Clusters follow the theme instead: each concern is its own cluster, so you can see what areas were touched — and paths that span several of them are split between clusters.',
+        unavailable:
+          'This analysis was produced without the change-clusters grouping. Analyse again to get both.',
+      },
 
       searchLabel: 'Find a file on the diagram',
       searchPlaceholder: 'Find a file, node or cluster…',

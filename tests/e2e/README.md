@@ -83,6 +83,8 @@ specs/
   08-explanations.spec.ts                hover cards, keeping one open, the risk register
   09-diff-review.spec.ts                 Monaco, every awkward file kind, navigation, reviewed marks,
                                          the controls on a box, a cluster opened whole, full screen
+  10-grouping-modes.spec.ts              two groupings of one analysis, switching for free, marks
+                                         that survive it, and the opt-out proved at the wire
 src/
   appHarness.ts    launches the host, attaches over CDP, screenshots, tears down
   gitFixture.ts    builds real repositories in temp directories

@@ -188,6 +188,40 @@ export class RepoSet {
     return this.track(GitRepo.create('clean').write('readme.md', 'clean\n').commitAll('initial'));
   }
 
+  /**
+   * A change that genuinely spans three concerns: a migration, the token that reads it, and the
+   * endpoint that returns it, plus a changelog line.
+   *
+   * Iteration 11's verification steps 2 and 3 cannot be checked on a fixture whose files are all
+   * alike. The whole question is whether dependency flow keeps a cross-concern path in one cluster
+   * while change clusters splits it by area, and that needs areas — so the directories here are the
+   * point of the fixture rather than decoration.
+   */
+  layered(): GitRepo {
+    const repo = this.track(GitRepo.create('layered'));
+
+    repo
+      .write('db/001_add_tenant.sql', 'ALTER TABLE users ADD COLUMN tenant TEXT;\n')
+      .write('db/schema.sql', 'CREATE TABLE users (id INTEGER PRIMARY KEY);\n')
+      .write('auth/tokens.ts', 'export interface Token {\n  subject: string;\n}\n')
+      .write('auth/middleware.ts', 'export function authenticate() {\n  return true;\n}\n')
+      .write('api/users.ts', 'export function listUsers() {\n  return [];\n}\n')
+      .write('api/routes.ts', 'export const routes = ["/users"];\n')
+      .write('docs/changelog.md', '# Changelog\n')
+      .commitAll('initial');
+
+    repo
+      .write('db/001_add_tenant.sql', 'ALTER TABLE users ADD COLUMN tenant TEXT NOT NULL;\n')
+      .write('db/schema.sql', 'CREATE TABLE users (id INTEGER PRIMARY KEY, tenant TEXT);\n')
+      .write('auth/tokens.ts', 'export interface Token {\n  subject: string;\n  tenant: string;\n}\n')
+      .write('auth/middleware.ts', 'export function authenticate() {\n  return tenantOf() !== null;\n}\n')
+      .write('api/users.ts', 'export function listUsers(tenant: string) {\n  return [tenant];\n}\n')
+      .write('api/routes.ts', 'export const routes = ["/users", "/tenants"];\n')
+      .write('docs/changelog.md', '# Changelog\n\n- Users are now scoped to a tenant.\n');
+
+    return repo;
+  }
+
   /** No commits at all, so there is no HEAD to compare against. */
   withoutCommits(): GitRepo {
     const repo = this.track(GitRepo.create('nocommits'));

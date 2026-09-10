@@ -8,7 +8,47 @@
 |---|---|
 | **Depends on** | [7](iteration-07-analysis-pipeline.md), [8](iteration-08-graph-rendering.md) |
 | **Blocks** | — |
-| **Status** | Not started |
+| **Status** | **Complete apart from macOS/Linux**, which is unverified for the same reason every iteration since 8 has been: there is no CI and no E2E away from Windows. |
+
+> **The questions below were answered before implementing. Recorded here so they are not reopened;
+> the reasoning is in [decisions.md](../decisions.md#grouping-modes).**
+>
+> - **One result, not two.** One LLM pass produces both groupings. The node prose is where an
+>   analysis's tokens go and both groupings share every word of it, so the second grouping is a
+>   second container list and a second reading order — single-digit percent of output — against a
+>   lazy second pass costing roughly a second analysis and arriving as a charge from clicking a
+>   toggle. Requirement 2 is then trivially satisfied: `analysis.setGrouping` reads the stored answer
+>   a second way and has no path to the runner.
+> - **With an opt-out.** A remembered toggle beside the Analyse button, defaulting to on, drops the
+>   second grouping from the prompt *and* from the response schema, so a reviewer who never switches
+>   pays nothing for it. An analysis produced that way reports one grouping in
+>   `availableGroupings` and the other control is disabled with its reason.
+> - **Old analyses open in dependency flow.** `LegacyAnalysisDocument` upgrades a pre-1.10 document
+>   on read — old `containers` become the dependency-flow grouping, member order comes from the rank
+>   each node carried — and invents no change-clusters grouping. Nothing someone paid for stops
+>   opening.
+> - **One edge set, re-classified per grouping.** `crossesContainers` is computed host-side from
+>   membership, so the same edge is inside a cluster in one grouping and crossing in the other, and
+>   §0.6's faint-and-out-of-layout rule applies unchanged. Change clusters is visibly the view where
+>   paths break, which is the honest picture of what it costs.
+> - **The active grouping is remembered per analysis** (schema 7's nullable `grouping_mode`, beside
+>   `reviewed_json` and equally unable to touch the document), and the grouping last chosen anywhere
+>   is the application-wide default a new analysis opens in. Consistent with what Iteration 12 asks
+>   for.
+> - **No cost display was needed**, because nothing lazy was built. The only control that changes
+>   what a run costs is the opt-out, and it sits beside the button that spends the money.
+
+### Where it stands
+
+Every numbered requirement is implemented. Two contract changes are worth knowing about because they
+reach further than the iteration: `rank` and the `entry_point` state left the model's answer — a
+single value cannot describe two groupings — so a container's `nodeIds` *is* its reading order, and
+the wire derives both per grouping. That deleted three error codes rather than adding any, and the
+renderer needed no change for it.
+
+Not verified: macOS and Linux. `10-grouping-modes.spec.ts` is Windows-only like the rest of the
+suite, and the picker is plain buttons, so nothing here is expected to differ — but expected is not
+verified.
 
 ## Goal
 

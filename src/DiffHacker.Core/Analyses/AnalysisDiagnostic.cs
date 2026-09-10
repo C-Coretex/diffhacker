@@ -37,20 +37,42 @@ public sealed record AnalysisDiagnostic
     /// <summary>What the diagnostic is about. Empty when it is about the result as a whole.</summary>
     public string Subject { get; init; } = string.Empty;
 
-    public static AnalysisDiagnostic Error(string code, string subject, string message) => new()
+    /// <summary>
+    /// Which grouping the observation belongs to, or null when it belongs to the result as a whole.
+    /// <para>
+    /// A cluster, an entry point and a reading order exist once per grouping, so an observation about
+    /// one of them is only true of one of them. Recorded rather than folded into the subject for two
+    /// reasons: the message can name the grouping so a repair round stays actionable, and the wire
+    /// projection shows the reviewer the warnings about the picture actually on screen instead of
+    /// warnings about a diagram they are not looking at.
+    /// </para>
+    /// </summary>
+    public AnalysisGrouping? Grouping { get; init; }
+
+    public static AnalysisDiagnostic Error(
+        string code,
+        string subject,
+        string message,
+        AnalysisGrouping? grouping = null) => new()
     {
         Severity = AnalysisDiagnosticSeverity.Error,
         Code = code,
         Subject = subject,
         Message = message,
+        Grouping = grouping,
     };
 
-    public static AnalysisDiagnostic Warning(string code, string subject, string message) => new()
+    public static AnalysisDiagnostic Warning(
+        string code,
+        string subject,
+        string message,
+        AnalysisGrouping? grouping = null) => new()
     {
         Severity = AnalysisDiagnosticSeverity.Warning,
         Code = code,
         Subject = subject,
         Message = message,
+        Grouping = grouping,
     };
 }
 
@@ -70,12 +92,20 @@ public static class AnalysisDiagnosticCodes
     public const string UnknownNodeReference = "unknown_node_reference";
     public const string DuplicateContainerId = "duplicate_container_id";
     public const string NoEntryNode = "no_entry_node";
-    public const string ManyEntryNodes = "many_entry_nodes";
     public const string EntryNodeNotAMember = "entry_node_not_a_member";
     public const string EntryNodeNotFirst = "entry_node_not_first";
-    public const string EntryStateDisagrees = "entry_state_disagrees";
-    public const string RankNotDense = "rank_not_dense";
     public const string DisplayOrderNotDense = "display_order_not_dense";
+    public const string DuplicateContainerMember = "duplicate_container_member";
+
+    /// <summary>
+    /// The run asked for the change-clusters grouping and the answer has none.
+    /// <para>
+    /// An error rather than a shrug: the reviewer will be offered a control that cannot work, and the
+    /// second grouping is the thing the extra tokens were spent on. When the run did not ask for it,
+    /// its absence is not a finding at all.
+    /// </para>
+    /// </summary>
+    public const string GroupingMissing = "grouping_missing";
     public const string ImportanceOutOfRange = "importance_out_of_range";
     public const string EmptyNodeField = "empty_node_field";
     public const string EmptyContainer = "empty_container";

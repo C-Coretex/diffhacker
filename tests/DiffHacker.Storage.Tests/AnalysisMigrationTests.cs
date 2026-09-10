@@ -1,4 +1,5 @@
 using System.Text.Json;
+using DiffHacker.Core.Analyses;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -111,6 +112,148 @@ public sealed class AnalysisMigrationTests : IDisposable
     }
 
     [Fact]
+    public async Task An_analysis_stored_before_grouping_modes_existed_opens_in_dependency_flow()
+    {
+        // Iteration 11's half. The contract renamed the fields that carry a grouping and moved
+        // reading order off the node, so a document written before it has none of the new names —
+        // and deserialising it as it stands would give an analysis someone paid for with no clusters
+        // in it at all. It is upgraded on the way out instead, and offers the one grouping it has.
+        //
+        // The old document is written by hand here, deliberately against the rule the other builders
+        // follow: the shape under test is one no current code can serialise.
+        await BuildVersion4DatabaseAsync(TestContext.Current.CancellationToken, LegacyDocumentJson);
+
+        await using (var database = new AppDatabase(_directory.DatabaseFile, NullLogger<AppDatabase>.Instance))
+        {
+            var store = new SqliteAnalysisStore(database);
+
+            var stored = (await store.GetLatestAsync("/repo", TestContext.Current.CancellationToken))
+                .ShouldNotBeNull();
+
+            stored.AvailableGroupings.ShouldBe([AnalysisGrouping.DependencyFlow]);
+            stored.Grouping.ShouldBeNull();
+
+            var container = stored.Document.DependencyContainers.ShouldHaveSingleItem();
+
+            container.Id.ShouldBe("core");
+            container.EntryNodeId.ShouldBe("src/Contract.cs");
+
+            // Listed caller-first in the old document, but the caller was rank 2 — so the order the
+            // old rank expressed is the order the list now carries.
+            container.NodeIds.ShouldBe(["src/Contract.cs", "src/Caller.cs"]);
+
+            stored.Document.DependencyReadingOrder.ShouldBe(["src/Contract.cs", "src/Caller.cs"]);
+            stored.ReadingOrderFor(AnalysisGrouping.DependencyFlow)
+                .ShouldBe(["src/Contract.cs", "src/Caller.cs"]);
+
+            // The state the container now declares on its own is gone from the node.
+            stored.Document.Nodes
+                .Single(static node => node.Id == "src/Contract.cs")
+                .States.ShouldBe([AnalysisNodeState.Changed]);
+
+            // And nothing was invented to fill the grouping the run never produced.
+            stored.Document.ClusterContainers.ShouldBeEmpty();
+            stored.Document.ClusterReadingOrder.ShouldBeEmpty();
+        }
+
+        SqliteConnection.ClearAllPools();
+    }
+
+    [Fact]
+    public async Task An_analysis_stored_before_grouping_modes_existed_can_still_be_marked_reviewed()
+    {
+        // The two halves have to work together: reviewed marks are keyed by node id, and an upgraded
+        // document keeps the ids it had, so a mark made before this iteration still means something.
+        await BuildVersion4DatabaseAsync(TestContext.Current.CancellationToken, LegacyDocumentJson);
+
+        await using (var database = new AppDatabase(_directory.DatabaseFile, NullLogger<AppDatabase>.Instance))
+        {
+            var store = new SqliteAnalysisStore(database);
+
+            var stored = (await store.GetLatestAsync("/repo", TestContext.Current.CancellationToken))
+                .ShouldNotBeNull();
+
+            (await store.SetNodesReviewedAsync(
+                stored.Id,
+                ["src/Caller.cs"],
+                reviewed: true,
+                TestContext.Current.CancellationToken))
+                .ShouldBe(["src/Caller.cs"]);
+        }
+
+        SqliteConnection.ClearAllPools();
+    }
+
+    /// <summary>
+    /// One analysis document exactly as Iteration 10 left it: one <c>containers</c> array, one
+    /// <c>readingOrder</c>, a <c>rank</c> on each node and an <c>entry_point</c> state. The members
+    /// are listed in the wrong order on purpose, so the upgrade has a rank to actually use.
+    /// </summary>
+    private const string LegacyDocumentJson =
+        """
+        {
+          "summary": "The contract grew a field.",
+          "overallRisks": [],
+          "readingOrder": ["src/Contract.cs", "src/Caller.cs"],
+          "containers": [
+            {
+              "id": "core",
+              "title": "The contract",
+              "summary": "A field arrived.",
+              "explanation": "And its caller followed.",
+              "risks": [],
+              "displayOrder": 1,
+              "entryNodeId": "src/Contract.cs",
+              "nodeIds": ["src/Caller.cs", "src/Contract.cs"]
+            }
+          ],
+          "nodes": [
+            {
+              "id": "src/Caller.cs",
+              "filePath": "src/Caller.cs",
+              "symbol": "",
+              "startLine": 0,
+              "endLine": 0,
+              "title": "The caller",
+              "whatChanged": "It passes a tenant.",
+              "whyItChanged": "The contract asked for one.",
+              "howItAffectsOthers": "",
+              "implementationNotes": "",
+              "risks": [],
+              "importance": 2,
+              "rank": 2,
+              "states": ["changed"]
+            },
+            {
+              "id": "src/Contract.cs",
+              "filePath": "src/Contract.cs",
+              "symbol": "",
+              "startLine": 0,
+              "endLine": 0,
+              "title": "The contract",
+              "whatChanged": "A tenant field.",
+              "whyItChanged": "Callers need to pass one.",
+              "howItAffectsOthers": "Every call site.",
+              "implementationNotes": "",
+              "risks": [],
+              "importance": 5,
+              "rank": 1,
+              "states": ["changed", "entry_point"]
+            }
+          ],
+          "edges": [
+            {
+              "sourceNodeId": "src/Contract.cs",
+              "targetNodeId": "src/Caller.cs",
+              "kind": "direct",
+              "explanation": "Read the decision before its consequence.",
+              "risks": []
+            }
+          ]
+        }
+        """;
+
+    [Fact]
     public async Task A_provider_saved_before_context_windows_existed_has_no_override()
     {
         await BuildVersion4DatabaseAsync(TestContext.Current.CancellationToken);
@@ -134,7 +277,9 @@ public sealed class AnalysisMigrationTests : IDisposable
     /// <summary>
     /// The schema exactly as Iteration 7 left it, with one analysis and one provider already in it.
     /// </summary>
-    private async Task BuildVersion4DatabaseAsync(CancellationToken cancellationToken)
+    private async Task BuildVersion4DatabaseAsync(
+        CancellationToken cancellationToken,
+        string? documentJson = null)
     {
         await BuildVersion3DatabaseAsync(cancellationToken);
 
@@ -156,7 +301,7 @@ public sealed class AnalysisMigrationTests : IDisposable
         command.CommandText = Version4Schema;
         command.Parameters.AddWithValue(
             "@documentJson",
-            JsonSerializer.Serialize(sample.Document, StorageJson.Options));
+            documentJson ?? JsonSerializer.Serialize(sample.Document, StorageJson.Options));
         command.Parameters.AddWithValue(
             "@statisticsJson",
             JsonSerializer.Serialize(sample.Statistics, StorageJson.Options));

@@ -25,6 +25,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
 
     private AppDatabase _database = null!;
     private SqliteAnalysisStore _store = null!;
+    private SqliteAppSettingStore _settings = null!;
     private StubAnalysisRunner _runner = null!;
     private AnalysisRpcTarget _target = null!;
 
@@ -35,6 +36,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
             NullLogger<AppDatabase>.Instance);
 
         _store = new SqliteAnalysisStore(_database);
+        _settings = new SqliteAppSettingStore(_database);
         _runner = new StubAnalysisRunner(_store);
         _target = Target();
 
@@ -221,10 +223,12 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
             NullLogger<AppDatabase>.Instance);
 
         _store = new SqliteAnalysisStore(_database);
+        _settings = new SqliteAppSettingStore(_database);
         var runner = new StubAnalysisRunner(_store);
         var restarted = new AnalysisRpcTarget(
             _store,
             runner,
+            _settings,
             new RunEventNotifier(new SilentNotifier(), NullLogger<RunEventNotifier>.Instance),
             NullLogger<AnalysisRpcTarget>.Instance);
 
@@ -233,6 +237,245 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         view.HasAnalysis.ShouldBeTrue();
         view.Nodes.Count.ShouldBe(2);
         runner.Runs.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task An_analysis_opens_in_dependency_flow_and_says_which_groupings_it_holds()
+    {
+        var view = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        view.Grouping.ShouldBe(AnalysisGroupingMode.Dependency_flow);
+        view.AvailableGroupings.ShouldBe(
+            [AnalysisGroupingMode.Dependency_flow, AnalysisGroupingMode.Change_clusters],
+            ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task Switching_grouping_shows_the_same_nodes_arranged_differently_and_runs_nothing()
+    {
+        // Iteration 11 verification steps 1 and 5, together, because they are the same claim seen
+        // from two sides: the node set is identical, and the switch cost nothing because both
+        // groupings came out of the run that was already paid for.
+        var flow = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+        var runsAfterAnalysing = _runner.Runs;
+
+        var clusters = await _target.SetGroupingAsync(
+            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken);
+
+        clusters.Grouping.ShouldBe(AnalysisGroupingMode.Change_clusters);
+        clusters.AnalysisId.ShouldBe(flow.AnalysisId);
+
+        // Identical node sets, asserted as set equality rather than by counting.
+        Ids(clusters).ShouldBe(Ids(flow), ignoreOrder: true);
+
+        // And a different arrangement of them, or there would be nothing to switch to.
+        clusters.Containers.Count.ShouldBe(2);
+        flow.Containers.Count.ShouldBe(1);
+
+        // Switching back, and switching again, still runs nothing.
+        await _target.SetGroupingAsync(
+            new SetGroupingRequest(grouping: SetGroupingMode.Dependency_flow, repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken);
+
+        await _target.SetGroupingAsync(
+            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken);
+
+        _runner.Runs.ShouldBe(runsAfterAnalysing);
+    }
+
+    [Fact]
+    public async Task Every_node_of_the_changeset_is_in_both_projections()
+    {
+        // §0.2.5 for both pictures. The sample's changeset has three files and its answer covers two
+        // of them, so this compares the projections against the answer rather than against the
+        // changeset — the changeset half is AnalysisValidator's, and it is checked there.
+        var flow = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        var clusters = await _target.SetGroupingAsync(
+            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken);
+
+        foreach (var view in new[] { flow, clusters })
+        {
+            var members = view.Containers
+                .SelectMany(static container => container.NodeIds)
+                .ToHashSet(StringComparer.Ordinal);
+
+            members.SetEquals(Ids(view)).ShouldBeTrue();
+
+            // And every node knows which container it is in, in this grouping.
+            view.Nodes.ShouldAllBe(node => node.ContainerId.Length > 0);
+        }
+    }
+
+    [Fact]
+    public async Task The_same_edge_crosses_containers_in_one_grouping_and_not_in_the_other()
+    {
+        // What change clusters costs and dependency flow buys, as a single boolean. The host computes
+        // it from membership, so it moves with the grouping rather than being claimed by the model.
+        var flow = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        flow.Edges.ShouldHaveSingleItem().CrossesContainers.ShouldBeFalse();
+
+        var clusters = await _target.SetGroupingAsync(
+            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken);
+
+        clusters.Edges.ShouldHaveSingleItem().CrossesContainers.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Each_grouping_gets_its_own_entry_points_ranks_and_reading_order()
+    {
+        // Requirement 5. None of the three is in the model's document any more — one integer and one
+        // state could not have described two groupings — so all three are read off the grouping being
+        // projected.
+        var flow = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        flow.ReadingOrder.ShouldBe(["src/Contract.cs", "src/Caller.cs"]);
+        flow.Nodes.Single(static node => node.Id == "src/Caller.cs").Rank.ShouldBe(2);
+        flow.Nodes.Single(static node => node.Id == "src/Contract.cs").States
+            .ShouldContain(AnalysisNodeInfoState.Entry_point);
+        flow.Nodes.Single(static node => node.Id == "src/Caller.cs").States
+            .ShouldNotContain(AnalysisNodeInfoState.Entry_point);
+
+        var clusters = await _target.SetGroupingAsync(
+            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken);
+
+        clusters.ReadingOrder.ShouldBe(["src/Caller.cs", "src/Contract.cs"]);
+
+        // Every cluster here holds one node, so every node starts one.
+        clusters.Nodes.ShouldAllBe(node => node.Rank == 1);
+        clusters.Nodes.ShouldAllBe(node => node.States.Contains(AnalysisNodeInfoState.Entry_point));
+    }
+
+    [Fact]
+    public async Task The_statistics_that_depend_on_the_grouping_move_and_the_rest_do_not()
+    {
+        var flow = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        var clusters = await _target.SetGroupingAsync(
+            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken);
+
+        flow.Statistics.ShouldNotBeNull().ContainerCount.ShouldBe(1);
+        clusters.Statistics.ShouldNotBeNull().ContainerCount.ShouldBe(2);
+
+        clusters.Statistics.NodeCount.ShouldBe(flow.Statistics.NodeCount);
+        clusters.Statistics.TotalFiles.ShouldBe(flow.Statistics.TotalFiles);
+        clusters.Statistics.EdgeCount.ShouldBe(flow.Statistics.EdgeCount);
+    }
+
+    [Fact]
+    public async Task A_warning_about_one_grouping_is_shown_with_that_grouping_and_not_the_other()
+    {
+        // A gap in a cluster the reviewer is not looking at is something they cannot act on, and a
+        // reading of the diagram in front of them that is simply untrue.
+        var flow = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        flow.Diagnostics.Select(static d => d.Code).ShouldBe([AnalysisDiagnosticCodes.Cycle]);
+
+        var clusters = await _target.SetGroupingAsync(
+            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken);
+
+        clusters.Diagnostics.Select(static d => d.Code).ShouldBe(
+            [AnalysisDiagnosticCodes.Cycle, AnalysisDiagnosticCodes.UnreachableNode],
+            ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task Reviewed_marks_survive_a_change_of_grouping()
+    {
+        // Requirement 6, and the reason the whole thing was affordable: marks are node ids on the
+        // analysis row, and nothing about a grouping touches them.
+        await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        await _target.SetReviewedAsync(
+            new SetNodesReviewedRequest(nodeIds: ["src/Caller.cs"], repositoryPath: "/repo", reviewed: true),
+            TestContext.Current.CancellationToken);
+
+        var clusters = await _target.SetGroupingAsync(
+            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken);
+
+        clusters.ReviewedNodeIds.ShouldBe(["src/Caller.cs"]);
+
+        // And the mark still lands on the node it was made against, not on a position in a list.
+        clusters.Nodes.ShouldContain(node => node.Id == "src/Caller.cs");
+    }
+
+    [Fact]
+    public async Task The_chosen_grouping_is_remembered_for_that_analysis_across_a_restart()
+    {
+        await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        await _target.SetGroupingAsync(
+            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken);
+
+        var restarted = await Restart();
+
+        var view = await restarted.Target.GetAsync(Request(), TestContext.Current.CancellationToken);
+
+        view.Grouping.ShouldBe(AnalysisGroupingMode.Change_clusters);
+        restarted.Runner.Runs.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task An_analysis_that_does_not_hold_a_grouping_refuses_it_by_name()
+    {
+        // The alternative would be to quietly show dependency flow while the control read "change
+        // clusters", which the reviewer would have no way to see through.
+        await _target.RunAsync(Request(changeClusters: false), TestContext.Current.CancellationToken);
+
+        var view = await _target.GetAsync(Request(), TestContext.Current.CancellationToken);
+
+        view.AvailableGroupings.ShouldBe([AnalysisGroupingMode.Dependency_flow]);
+
+        var failure = await Should.ThrowAsync<LocalRpcException>(async () => await _target.SetGroupingAsync(
+            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken));
+
+        var data = failure.ErrorData.ShouldBeOfType<RpcErrorData>();
+
+        data.Code.ShouldBe("analysis_grouping_unavailable");
+        data.Args.ShouldNotBeNull()["grouping"].ShouldBe("change_clusters");
+    }
+
+    [Fact]
+    public async Task Switching_a_repository_that_has_never_been_analysed_says_so()
+    {
+        var failure = await Should.ThrowAsync<LocalRpcException>(async () => await _target.SetGroupingAsync(
+            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken));
+
+        failure.ErrorData.ShouldBeOfType<RpcErrorData>().Code.ShouldBe("analysis_not_found");
+    }
+
+    [Fact]
+    public async Task What_a_run_should_ask_for_is_remembered_and_reported_back()
+    {
+        // The one control that changes what an analysis costs, so it comes back the way it was left
+        // rather than resetting to the expensive answer every time the screen opens.
+        (await _target.GetAsync(Request(), TestContext.Current.CancellationToken))
+            .ProduceChangeClusters.ShouldBeTrue("both groupings unless the reviewer said otherwise.");
+
+        await _target.RunAsync(Request(changeClusters: false), TestContext.Current.CancellationToken);
+
+        _runner.LastOptions.ShouldNotBeNull().ChangeClusters.ShouldBeFalse();
+
+        (await _target.GetAsync(Request(), TestContext.Current.CancellationToken))
+            .ProduceChangeClusters.ShouldBeFalse();
+
+        // Absent means "what you remembered", so a caller that does not know about the field cannot
+        // silently change what a run costs.
+        await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        _runner.LastOptions.ShouldNotBeNull().ChangeClusters.ShouldBeFalse();
     }
 
     [Fact]
@@ -298,10 +541,44 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
     private AnalysisRpcTarget Target() => new(
         _store,
         _runner,
+        _settings,
         new RunEventNotifier(new SilentNotifier(), NullLogger<RunEventNotifier>.Instance),
         NullLogger<AnalysisRpcTarget>.Instance);
 
-    private static AnalysisRequest Request() => new(repositoryPath: "/repo");
+    private static AnalysisRequest Request(bool? changeClusters = null) =>
+        new(changeClusters: changeClusters, repositoryPath: "/repo");
+
+    private static HashSet<string> Ids(AnalysisView view) =>
+        [.. view.Nodes.Select(static node => node.Id)];
+
+    /// <summary>
+    /// Closes the database and builds the whole surface again over the same file, the way starting
+    /// the application does. The runner is fresh, so its run count answers "did reopening this cost
+    /// anything?".
+    /// </summary>
+    private async Task<(AnalysisRpcTarget Target, StubAnalysisRunner Runner)> Restart()
+    {
+        await _database.DisposeAsync();
+        SqliteConnection.ClearAllPools();
+
+        _database = new AppDatabase(
+            Path.Combine(_dataDirectory.FullName, "diffhacker.db"),
+            NullLogger<AppDatabase>.Instance);
+
+        _store = new SqliteAnalysisStore(_database);
+        _settings = new SqliteAppSettingStore(_database);
+
+        var runner = new StubAnalysisRunner(_store);
+
+        return (
+            new AnalysisRpcTarget(
+                _store,
+                runner,
+                _settings,
+                new RunEventNotifier(new SilentNotifier(), NullLogger<RunEventNotifier>.Instance),
+                NullLogger<AnalysisRpcTarget>.Instance),
+            runner);
+    }
 
     /// <summary>
     /// Stands in for the whole pipeline. The orchestration itself is covered by
@@ -315,12 +592,16 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
 
         public Exception? Throw { get; set; }
 
+        public AnalysisRunOptions? LastOptions { get; private set; }
+
         public async Task<AnalysisRunResult> RunAsync(
             string repositoryPath,
+            AnalysisRunOptions options,
             IProgress<LlmRunEvent>? progress,
             CancellationToken cancellationToken)
         {
             Runs++;
+            LastOptions = options;
 
             if (Throw is { } thrown)
             {
@@ -344,7 +625,13 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
                 };
             }
 
-            var analysis = AnalysisSamples.Completed(repositoryPath);
+            // A distinct id and timestamp per run, because a re-run is a new row: the real runner
+            // makes a fresh Guid, and a stub that reused one id could not be asked to run twice.
+            var analysis = AnalysisSamples.Completed(repositoryPath, options.ChangeClusters) with
+            {
+                Id = $"analysis{Runs}",
+                CreatedAtUtc = DateTimeOffset.UnixEpoch.AddMinutes(Runs),
+            };
             await store.SaveAsync(analysis, cancellationToken);
 
             return new AnalysisRunResult { Analysis = analysis, Usage = analysis.Usage };

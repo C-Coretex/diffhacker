@@ -339,6 +339,24 @@ const graphDefaults = {
   editorError: undefined,
 } as const;
 
+/**
+ * The subset of that which is keyed to a *container*, for a change of grouping mode.
+ *
+ * Switching grouping keeps the same analysis and the same nodes, so most of the view state is still
+ * meaningful — but a collapsed set and an open cluster queue hold container ids, and the other
+ * grouping's containers are different clusters with different ids. Carrying them across would fold
+ * whichever cluster happened to share an id and leave the reviewer in a queue that no longer exists.
+ *
+ * Everything node-keyed survives deliberately: the file open in the diff panel, the reviewed marks
+ * (requirement 6), the panel width and the band folds. A reviewer who switches grouping while
+ * reading a file is still reading that file.
+ */
+const groupingDefaults = {
+  graphCollapsed: new Set<string>() as ReadonlySet<string>,
+  graphFocusedNodeId: undefined,
+  diffContainerId: undefined,
+} as const;
+
 export const useAppStore = create<AppState>((set) => ({
   connection: 'connecting',
 
@@ -485,6 +503,13 @@ export const useAppStore = create<AppState>((set) => ({
       // clusters the reviewer never collapsed, using ids that happen to match; carrying the search
       // across would highlight a file that is no longer in the change.
       ...(state.analysisView?.analysisId === analysisView.analysisId ? {} : graphDefaults),
+
+      // The same analysis in the other grouping is the same nodes in different clusters, so only
+      // the container-keyed part of the view is stale. See groupingDefaults.
+      ...(state.analysisView?.analysisId === analysisView.analysisId &&
+      state.analysisView?.grouping !== analysisView.grouping
+        ? groupingDefaults
+        : {}),
 
       // The marks come from the host every time, in both branches. They are the one thing on this
       // screen the reviewer authored, and the stored analysis is the only authority on them — a

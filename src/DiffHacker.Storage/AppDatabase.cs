@@ -23,7 +23,7 @@ public sealed partial class AppDatabase : IAsyncDisposable
     /// Bumped whenever <see cref="MigrateAsync"/> gains a step. Stored in the file, so an older
     /// build opening a newer database can say so rather than misreading it.
     /// </summary>
-    private const int CurrentSchemaVersion = 6;
+    private const int CurrentSchemaVersion = 7;
 
     private readonly string _connectionString;
     private readonly ILogger<AppDatabase> _logger;
@@ -305,6 +305,22 @@ public sealed partial class AppDatabase : IAsyncDisposable
             // grouping mode underneath it without touching this column.
             await connection.ExecuteAsync(new CommandDefinition(
                 "ALTER TABLE analyses ADD COLUMN reviewed_json TEXT NULL;",
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+
+        if (version < 7)
+        {
+            // Iteration 11: which of the two groupings the reviewer last looked this analysis at in.
+            // Nullable and additive on the same grounds as the two columns above — a version-6 row
+            // reads back as "never chose one", and the application-wide default then applies, so the
+            // analysis opens either way.
+            //
+            // Beside the document rather than inside it, for the reason reviewed_json is: the
+            // document is the model's answer unedited, and which of its two groupings someone is
+            // reading is not part of the answer. A re-run writes a new row and so opens at the
+            // default again, which is the same honest reading of "remembered per analysis".
+            await connection.ExecuteAsync(new CommandDefinition(
+                "ALTER TABLE analyses ADD COLUMN grouping_mode TEXT NULL;",
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
 

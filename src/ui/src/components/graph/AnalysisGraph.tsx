@@ -10,7 +10,7 @@ import {
   type Node,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { AnalysisContainerInfo, AnalysisView } from '@/contracts';
+import type { AnalysisContainerInfo, AnalysisGroupingMode, AnalysisView } from '@/contracts';
 import { useT } from '@/i18n/useT';
 import { containerQueue } from '@/components/diff/containerQueue';
 import { useEditors, useOpenInEditor } from '@/components/diff/useEditors';
@@ -58,15 +58,28 @@ const EDGE_TYPES = {
 
 const EMPTY_GRAPH: FlowGraph = { nodes: [], edges: [], colours: [] };
 
-export function AnalysisGraph({ view }: { view: AnalysisView }) {
+export function AnalysisGraph({ view, onChangeGrouping, groupingBusy }: GraphProps) {
   return (
     <ReactFlowProvider>
-      <GraphSurface view={view} />
+      <GraphSurface view={view} onChangeGrouping={onChangeGrouping} groupingBusy={groupingBusy} />
     </ReactFlowProvider>
   );
 }
 
-function GraphSurface({ view }: { view: AnalysisView }) {
+interface GraphProps {
+  readonly view: AnalysisView;
+
+  /**
+   * Switching grouping is the screen's business, not the diagram's: it is a host call that replaces
+   * the view, and this surface only ever draws the view it is given. Passed down rather than reached
+   * for through the store so the diagram stays a function of its props.
+   */
+  readonly onChangeGrouping: (grouping: AnalysisGroupingMode) => void;
+
+  readonly groupingBusy: boolean;
+}
+
+function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
   const t = useT();
   const collapsed = useAppStore((state) => state.graphCollapsed);
   const search = useAppStore((state) => state.graphSearch);
@@ -284,12 +297,22 @@ function GraphSurface({ view }: { view: AnalysisView }) {
 
   return (
     <GraphActionsProvider value={actions}>
-      <div className="relative flex h-full min-h-0 flex-col">
+      {/*
+        The active grouping is on the wrapper as well as in the toolbar's own state, because "which
+        picture is this?" is a question about the whole diagram and one an end-to-end test has to be
+        able to answer without reading prose.
+      */}
+      <div
+        className="relative flex h-full min-h-0 flex-col"
+        data-grouping-mode={view.grouping}
+      >
         <GraphToolbar
           view={view}
           colours={graph.colours}
           onSelectSearchHit={focusNode}
           onFitView={() => void fitView({ duration: 300 })}
+          onChangeGrouping={onChangeGrouping}
+          groupingBusy={groupingBusy}
         />
 
         <div className="relative min-h-0 flex-1">

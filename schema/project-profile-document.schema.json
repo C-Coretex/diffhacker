@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.9/project-profile-document.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.10/project-profile-document.schema.json",
   "title": "ProjectProfileDocument",
   "description": "Standing knowledge about one repository, reused by every future review of it. Every field is required, so a field with nothing to say comes back as an empty string or an empty array. Timestamps, commit and user-authored notes belong to the stored profile around this document, not to your answer.",
   "type": "object",

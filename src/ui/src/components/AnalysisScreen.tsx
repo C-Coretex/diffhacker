@@ -1,15 +1,23 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2Icon, NetworkIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
-import type { AnalysisView } from '@/contracts';
+import type { AnalysisGroupingMode, AnalysisView } from '@/contracts';
 import { describeError } from '@/i18n/errors';
 import { formatCount } from '@/i18n/format';
 import { useT } from '@/i18n/useT';
-import { getAnalysis, onAnalysisProgress, onToolCallEvent, runAnalysis } from '@/rpc/methods';
+import {
+  getAnalysis,
+  onAnalysisProgress,
+  onToolCallEvent,
+  runAnalysis,
+  setGrouping,
+} from '@/rpc/methods';
 import { useRpc } from '@/rpc/RpcProvider';
 import { useAppStore } from '@/store/appStore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { AnalysisOverviewBand } from './AnalysisOverviewBand';
 import { useReviewShortcuts } from './diff/useReviewShortcuts';
 import { useSplitter } from './diff/useSplitter';
@@ -71,8 +79,14 @@ export function AnalysisScreen() {
   const recordEvent = useAppStore((store) => store.recordAnalysisRunEvent);
 
   const [runError, setRunError] = useState<string>();
+  const [switching, setSwitching] = useState(false);
   const abort = useRef<AbortController>(null);
   const path = repository?.path;
+
+  // Local rather than in the store, and defaulted from the host: what the next run should ask for is
+  // remembered application-wide, so the box comes back ticked the way it was left.
+  const [changeClusters, setChangeClusters] = useState<boolean>();
+  const produceChangeClusters = changeClusters ?? view?.produceChangeClusters ?? true;
 
   // Reading the stored analysis never starts a conversation, which is the whole reason it is
   // stored: the money was spent once.
@@ -110,7 +124,13 @@ export function AnalysisScreen() {
     startRun();
 
     try {
-      setAnalysis(await runAnalysis(client, { repositoryPath: path }, controller.signal));
+      setAnalysis(
+        await runAnalysis(
+          client,
+          { repositoryPath: path, changeClusters: produceChangeClusters },
+          controller.signal,
+        ),
+      );
     } catch (caught) {
       // A cancelled run is not a failure to report as one, but it did spend money, so the message
       // says what happened rather than pretending nothing did.
@@ -119,7 +139,29 @@ export function AnalysisScreen() {
       abort.current = null;
       endRun();
     }
-  }, [client, path, startRun, setAnalysis, endRun, t]);
+  }, [client, path, startRun, setAnalysis, endRun, produceChangeClusters, t]);
+
+  /**
+   * Switches which grouping the diagram shows. It reads the stored answer a second way and spends
+   * nothing, so it needs no confirmation and no abort signal — but it does need a guard against a
+   * second click landing while the first is in flight, or two views race to replace the state.
+   */
+  const changeGrouping = useCallback(
+    async (grouping: AnalysisGroupingMode) => {
+      if (!client || !path || switching) return;
+
+      setSwitching(true);
+
+      try {
+        setAnalysis(await setGrouping(client, { repositoryPath: path, grouping }));
+      } catch (caught) {
+        failAnalysis(describeError(caught));
+      } finally {
+        setSwitching(false);
+      }
+    },
+    [client, path, switching, setAnalysis, failAnalysis],
+  );
 
   if (!repository) return null;
 
@@ -140,8 +182,30 @@ export function AnalysisScreen() {
           )}
         </div>
 
+        {/*
+          Beside the button that spends the money, not in a settings page: this is the only control
+          on the screen that changes what a run costs, and the moment to decide is the moment you
+          are about to pay. Its state is remembered application-wide by the host, so it is a default
+          you set once and an override you can make per run.
+        */}
+        <div className="ml-auto flex items-center gap-2">
+          <Checkbox
+            id="analysis-change-clusters"
+            checked={produceChangeClusters}
+            disabled={run === 'running'}
+            onChange={(event) => setChangeClusters(event.target.checked)}
+            data-testid="toggle-change-clusters"
+          />
+          <Label
+            htmlFor="analysis-change-clusters"
+            className="text-xs font-normal text-muted-foreground"
+            title={t('analysis.changeClustersBody')}
+          >
+            {t('analysis.changeClusters')}
+          </Label>
+        </div>
+
         <Button
-          className="ml-auto"
           disabled={run === 'running'}
           onClick={() => void analyse()}
         >
@@ -191,7 +255,11 @@ export function AnalysisScreen() {
       {analysed && view && (
         <div className="flex min-h-0 flex-1 flex-col">
           <AnalysisOverviewBand view={view} />
-          <ReviewWorkspace view={view} />
+          <ReviewWorkspace
+            view={view}
+            onChangeGrouping={(grouping) => void changeGrouping(grouping)}
+            groupingBusy={switching}
+          />
         </div>
       )}
 
@@ -228,7 +296,15 @@ const DiffPanel = lazy(async () => ({ default: (await import('./diff/DiffPanel')
  * The panel is mounted only while a node is open. Creating an editor is not free either, so a
  * reviewer who has not opened a file has paid for neither the code nor the editor.
  */
-function ReviewWorkspace({ view }: { view: AnalysisView }) {
+function ReviewWorkspace({
+  view,
+  onChangeGrouping,
+  groupingBusy,
+}: {
+  view: AnalysisView;
+  onChangeGrouping: (grouping: AnalysisGroupingMode) => void;
+  groupingBusy: boolean;
+}) {
   const t = useT();
   const container = useRef<HTMLDivElement>(null);
 
@@ -252,7 +328,11 @@ function ReviewWorkspace({ view }: { view: AnalysisView }) {
         make leaving full screen slower than entering it, for a diagram nobody stopped needing.
       */}
       <div className={expanded ? 'hidden' : 'min-h-0 min-w-0 flex-1'}>
-        <AnalysisGraph view={view} />
+        <AnalysisGraph
+          view={view}
+          onChangeGrouping={onChangeGrouping}
+          groupingBusy={groupingBusy}
+        />
       </div>
 
       {open && (

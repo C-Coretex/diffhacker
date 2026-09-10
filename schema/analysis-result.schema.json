@@ -1,15 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.9/analysis-result.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.10/analysis-result.schema.json",
   "title": "AnalysisResult",
-  "description": "The complete map of one changeset: how the change clusters, how it flows, what to read first, what each part does and what is risky. Every field is required, so a field with nothing to say is an empty string, an empty array or 0. Timestamps, model name and statistics are the application's to record and are stored around this document, not inside it.",
+  "description": "The complete map of one changeset: how the change groups, how it flows, what to read first, what each part does and what is risky. The same nodes are grouped twice, two ways, and the reviewer switches between them. Every field is required, so a field with nothing to say is an empty string, an empty array or 0. Timestamps, model name and statistics are the application's to record and are stored around this document, not inside it.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "summary",
     "overallRisks",
-    "readingOrder",
-    "containers",
+    "dependencyContainers",
+    "dependencyReadingOrder",
+    "clusterContainers",
+    "clusterReadingOrder",
     "nodes",
     "edges"
   ],
@@ -25,23 +27,37 @@
         "type": "string"
       }
     },
-    "readingOrder": {
+    "dependencyContainers": {
       "type": "array",
-      "description": "The single path through the whole change: every node id, once, in the order you would use walking someone through it. It crosses cluster boundaries. Normally the containers in displayOrder with each one's nodes in rank order.",
-      "items": {
-        "type": "string"
-      }
-    },
-    "containers": {
-      "type": "array",
-      "description": "The clusters the change divides into. A cluster shares a reason for existing, which is not the same as sharing a code dependency.",
+      "description": "The dependency-flow grouping: clusters that keep a complete change path intact, even where the path crosses unrelated concerns. Every node appears in exactly one of these.",
       "items": {
         "$ref": "#/$defs/analysisContainer"
       }
     },
+    "dependencyReadingOrder": {
+      "type": "array",
+      "description": "The single path through the whole change in the dependency-flow grouping: every node id, once. Normally its containers in displayOrder with each one's nodeIds in their listed order.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "clusterContainers": {
+      "type": "array",
+      "description": "The change-clusters grouping: the same nodes regrouped by theme or concern. Every node appears in exactly one of these too, and container ids need not match the dependency-flow ones.",
+      "items": {
+        "$ref": "#/$defs/analysisContainer"
+      }
+    },
+    "clusterReadingOrder": {
+      "type": "array",
+      "description": "The single path through the whole change in the change-clusters grouping: every node id, once. Its own order, not a copy of the other one.",
+      "items": {
+        "type": "string"
+      }
+    },
     "nodes": {
       "type": "array",
-      "description": "Every participant in the change. One node per changed file; split a file only when it holds two genuinely unrelated changes. A deleted or unreadable binary file still gets a node.",
+      "description": "Every participant in the change, listed once and shared by both groupings. One node per changed file; split a file only when it holds two genuinely unrelated changes. A deleted or unreadable binary file still gets a node.",
       "items": {
         "$ref": "#/$defs/analysisNode"
       }
@@ -57,7 +73,7 @@
   "$defs": {
     "analysisContainer": {
       "title": "AnalysisContainer",
-      "description": "One cluster of interconnected change. Members are named by id rather than nested, because a $def here may not reference another $def.",
+      "description": "One cluster of interconnected change, within one grouping. Members are named by id rather than nested, because a $def here may not reference another $def.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -74,7 +90,7 @@
         "id": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9-]*$",
-          "description": "Stable identifier, lowercase with hyphens, named for what the cluster is about: 'token-budget-accounting', not 'container-3'. Unique across containers."
+          "description": "Stable identifier, lowercase with hyphens, named for what the cluster is about: 'token-budget-accounting', not 'container-3'. Unique within its own grouping."
         },
         "title": {
           "type": "string",
@@ -98,15 +114,15 @@
         "displayOrder": {
           "type": "integer",
           "minimum": 1,
-          "description": "Position among the containers, counting from 1 with no gaps and no repeats. Earlier containers should make later ones comprehensible."
+          "description": "Position among the containers of the same grouping, counting from 1 with no gaps and no repeats. Earlier containers should make later ones comprehensible."
         },
         "entryNodeId": {
           "type": "string",
-          "description": "The node the reviewer starts from: the change that explains the others rather than one of its echoes. Must be one of nodeIds, must be the node whose rank is 1, and must carry the entry_point state. Exactly one per container."
+          "description": "The node the reviewer starts from: the change that explains the others rather than one of its echoes. Must be the first entry of nodeIds. Exactly one per container."
         },
         "nodeIds": {
           "type": "array",
-          "description": "Ids of the nodes in this container. Every node in the result belongs to exactly one container - none listed twice, none left out.",
+          "description": "Ids of the nodes in this container, in the order they are read - entry node first. Every node in the result belongs to exactly one container of this grouping: none listed twice, none left out.",
           "items": {
             "type": "string"
           }
@@ -131,7 +147,6 @@
         "implementationNotes",
         "risks",
         "importance",
-        "rank",
         "states"
       ],
       "properties": {
@@ -190,25 +205,19 @@
           "maximum": 5,
           "description": "How much this node matters to understanding the change, 1 to 5. 5 is 'a reviewer who reads nothing else must read this'; 1 is a mechanical consequence. Spend the high numbers sparingly."
         },
-        "rank": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Position within its own container, counting from 1 with no gaps and no repeats. Rank 1 is the entry node, and the ranks after it are a reading path: a node comes after everything a reader needs in order to understand it. Not importance, not size."
-        },
         "states": {
           "type": "array",
-          "description": "What is true of this node. Not mutually exclusive: an added file that is also the starting point and also risky carries three. Give at least one.",
+          "description": "What is true of this node. Not mutually exclusive: an added file that is also risky carries two. Give at least one. Being a starting point is not here - that is a property of a container in one grouping, not of the node.",
           "items": {
             "title": "AnalysisNodeState",
-            "description": "changed, added and deleted describe what git did to the file; unchanged_relevant marks a file that did not change but must be read to follow the change; risky and entry_point are your own judgements.",
+            "description": "changed, added and deleted describe what git did to the file; unchanged_relevant marks a file that did not change but must be read to follow the change; risky is your own judgement.",
             "type": "string",
             "enum": [
               "changed",
               "added",
               "deleted",
               "unchanged_relevant",
-              "risky",
-              "entry_point"
+              "risky"
             ]
           }
         }

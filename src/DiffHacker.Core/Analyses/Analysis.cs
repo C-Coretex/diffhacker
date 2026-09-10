@@ -40,7 +40,23 @@ public sealed record Analysis
     /// <summary>The model's answer, exactly as it produced it.</summary>
     public required AnalysisResult Document { get; init; }
 
+    /// <summary>
+    /// The numbers, computed for the dependency-flow grouping. Use <see cref="StatisticsFor"/> when
+    /// showing another one.
+    /// </summary>
     public required AnalysisStatistics Statistics { get; init; }
+
+    /// <summary>
+    /// The grouping the reviewer last chose for this analysis, or null when they never chose one and
+    /// the application-wide default applies.
+    /// <para>
+    /// The second thing in a stored analysis the user writes rather than the model, and it sits here
+    /// for the same reason <see cref="ReviewedNodeIds"/> does: the document is the model's answer
+    /// unedited, and which of its two groupings someone is looking at is not part of it. Null on an
+    /// analysis written before database schema 7.
+    /// </para>
+    /// </summary>
+    public AnalysisGrouping? Grouping { get; init; }
 
     /// <summary>
     /// The changeset as it stood when the run happened, one entry per file. Stored with the result
@@ -76,11 +92,42 @@ public sealed record Analysis
     public IReadOnlyList<string> ProgressMessages { get; init; } = [];
 
     /// <summary>
-    /// The traversal to offer the reviewer: the model's own reading order when it covered every
-    /// node, and otherwise the one derived from container order and rank. Computed on read rather
-    /// than stored, so the stored document stays exactly what the model wrote.
+    /// The traversal to offer the reviewer in one grouping: the model's own reading order for it when
+    /// that covered every node, and otherwise the one derived from container order and membership
+    /// order. Computed on read rather than stored, so the stored document stays exactly what the
+    /// model wrote.
     /// </summary>
-    public IReadOnlyList<string> ReadingOrder => AnalysisReadingOrder.Resolve(Document);
+    public IReadOnlyList<string> ReadingOrderFor(AnalysisGrouping grouping) =>
+        AnalysisReadingOrder.Resolve(Document, grouping);
+
+    /// <summary>
+    /// The numbers for one grouping. Recomputed rather than stored twice, for the same reason
+    /// <see cref="ReadingOrderFor"/> is: everything it needs is in the document, and a second copy
+    /// of twenty numbers is a second thing that can be stale.
+    /// </summary>
+    public AnalysisStatistics StatisticsFor(AnalysisGrouping grouping)
+    {
+        if (grouping is AnalysisGrouping.DependencyFlow)
+        {
+            return Statistics;
+        }
+
+        var containers = Document.For(grouping).Containers;
+        var sizes = containers.Select(static container => container.NodeIds.Count).ToArray();
+
+        return Statistics with
+        {
+            ContainerCount = containers.Count,
+            LargestContainerSize = sizes.Length == 0 ? 0 : sizes.Max(),
+            SmallestContainerSize = sizes.Length == 0 ? 0 : sizes.Min(),
+            RiskCount = Statistics.RiskCount
+                - Document.DependencyContainers.Sum(static container => container.Risks.Count)
+                + containers.Sum(static container => container.Risks.Count),
+        };
+    }
+
+    /// <summary>Which groupings this analysis can be shown in. See <see cref="AnalysisResult.Groupings"/>.</summary>
+    public IReadOnlyList<AnalysisGrouping> AvailableGroupings => Document.Groupings;
 }
 
 /// <summary>Why an analysis run stopped, beyond the provider-level <see cref="LlmFailures"/>.</summary>

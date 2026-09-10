@@ -12,6 +12,12 @@ namespace DiffHacker.Core.Tests;
 /// file it dropped costs a repair round and teaches the model nothing, and requirement 4 is
 /// specifically that the failure fed back is specific.
 /// </para>
+/// <para>
+/// Since Iteration 11 the fixture holds two groupings, and the rules about clusters, entry points
+/// and reading order are checked against each of them. A fault in the grouping nobody is looking at
+/// still fails the run: the reviewer can switch to it with one click, and §0.2.5 is a promise about
+/// both pictures.
+/// </para>
 /// </summary>
 public sealed class AnalysisValidatorTests
 {
@@ -40,16 +46,29 @@ public sealed class AnalysisValidatorTests
     }
 
     [Fact]
+    public void Both_groupings_cover_exactly_the_same_nodes()
+    {
+        // Iteration 11's verification step 1, at the document level: the two pictures are two
+        // arrangements of one node set, so a node in one and not the other is not a different view —
+        // it is a missing file in whichever the reviewer happens to open.
+        var result = AnalysisFixtures.Valid();
+        var nodes = result.Nodes.Select(static node => node.Id).ToHashSet(StringComparer.Ordinal);
+
+        foreach (var grouping in result.Groupings)
+        {
+            var members = result.For(grouping).Containers
+                .SelectMany(static container => container.NodeIds)
+                .ToHashSet(StringComparer.Ordinal);
+
+            members.SetEquals(nodes).ShouldBeTrue($"the {grouping} grouping covers a different node set.");
+        }
+    }
+
+    [Fact]
     public void A_changed_file_with_no_node_is_named_in_the_diagnostic()
     {
         var result = AnalysisFixtures.Valid();
-
-        var broken = result with
-        {
-            Nodes = [.. result.Nodes.Where(static node => node.FilePath != AnalysisFixtures.IconPath)],
-            Containers = [.. result.Containers.Where(static container => container.Id != "removed-assets")],
-            ReadingOrder = [AnalysisFixtures.ContractPath, AnalysisFixtures.CallerPath],
-        };
+        var broken = Without(result, AnalysisFixtures.IconPath);
 
         var validation = AnalysisFixtures.Check(broken);
 
@@ -69,21 +88,8 @@ public sealed class AnalysisValidatorTests
         // The other half of completeness. A model that cannot find something to say about a file
         // could otherwise cover its own gap by inventing a neighbouring one.
         var result = AnalysisFixtures.Valid();
-        var invented = AnalysisFixtures.Node("src/NeverTouched.cs", rank: 3);
-
-        var broken = result with
-        {
-            Nodes = [.. result.Nodes, invented],
-            Containers =
-            [
-                result.Containers[0] with
-                {
-                    NodeIds = [.. result.Containers[0].NodeIds, invented.Id],
-                },
-                result.Containers[1],
-            ],
-            ReadingOrder = [.. result.ReadingOrder, invented.Id],
-        };
+        var invented = AnalysisFixtures.Node("src/NeverTouched.cs");
+        var broken = With(result, invented);
 
         var validation = AnalysisFixtures.Check(broken);
 
@@ -99,10 +105,10 @@ public sealed class AnalysisValidatorTests
 
         var broken = result with
         {
-            Containers =
+            DependencyContainers =
             [
-                result.Containers[0],
-                result.Containers[1] with
+                result.DependencyContainers[0],
+                result.DependencyContainers[1] with
                 {
                     NodeIds = [AnalysisFixtures.IconPath, AnalysisFixtures.CallerPath],
                 },
@@ -112,8 +118,6 @@ public sealed class AnalysisValidatorTests
         var validation = AnalysisFixtures.Check(broken);
 
         validation.IsValid.ShouldBeFalse();
-
-        validation.Errors.ShouldContain(d => d.Code == AnalysisDiagnosticCodes.NodeInManyContainers);
 
         var diagnostic = validation.Errors.First(d => d.Code == AnalysisDiagnosticCodes.NodeInManyContainers);
 
@@ -129,10 +133,10 @@ public sealed class AnalysisValidatorTests
 
         var broken = result with
         {
-            Containers =
+            DependencyContainers =
             [
-                result.Containers[0] with { NodeIds = [AnalysisFixtures.ContractPath] },
-                result.Containers[1],
+                result.DependencyContainers[0] with { NodeIds = [AnalysisFixtures.ContractPath] },
+                result.DependencyContainers[1],
             ],
         };
 
@@ -140,11 +144,77 @@ public sealed class AnalysisValidatorTests
 
         validation.IsValid.ShouldBeFalse();
 
-        validation.Errors.ShouldContain(d => d.Code == AnalysisDiagnosticCodes.NodeInNoContainer);
-
         var diagnostic = validation.Errors.First(d => d.Code == AnalysisDiagnosticCodes.NodeInNoContainer);
 
         diagnostic.Subject.ShouldBe(AnalysisFixtures.CallerPath);
+    }
+
+    [Fact]
+    public void A_fault_in_the_grouping_nobody_is_looking_at_still_fails_the_run()
+    {
+        // Requirement 4: both modes obey the completeness invariant. The reviewer switches with one
+        // click, so an answer whose second grouping drops a file is not half right.
+        var result = AnalysisFixtures.Valid();
+
+        var broken = result with
+        {
+            ClusterContainers = [.. result.ClusterContainers.Where(static c => c.Id != "assets")],
+        };
+
+        var validation = AnalysisFixtures.Check(broken);
+
+        validation.IsValid.ShouldBeFalse();
+
+        var diagnostic = validation.Errors.First(d => d.Code == AnalysisDiagnosticCodes.NodeInNoContainer);
+
+        diagnostic.Subject.ShouldBe(AnalysisFixtures.IconPath);
+        diagnostic.Grouping.ShouldBe(AnalysisGrouping.ChangeClusters);
+    }
+
+    [Fact]
+    public void A_per_grouping_message_says_which_grouping_it_is_about()
+    {
+        // Two answers can hold a container called 'assets', so "container 'assets' has no nodes" is
+        // not something a model can act on until it knows which of its two groupings that is.
+        var result = AnalysisFixtures.Valid();
+
+        var broken = result with
+        {
+            ClusterContainers =
+            [
+                result.ClusterContainers[0],
+                result.ClusterContainers[1],
+                result.ClusterContainers[2] with { DisplayOrder = 1 },
+            ],
+        };
+
+        AnalysisFixtures.Check(broken).Errors
+            .ShouldContain(d =>
+                d.Code == AnalysisDiagnosticCodes.DisplayOrderNotDense &&
+                d.Grouping == AnalysisGrouping.ChangeClusters &&
+                d.Message.Contains("change-clusters grouping"));
+    }
+
+    [Fact]
+    public void A_missing_second_grouping_fails_when_the_run_asked_for_it()
+    {
+        var validation = AnalysisFixtures.Check(AnalysisFixtures.DependencyOnly());
+
+        validation.IsValid.ShouldBeFalse();
+        validation.Errors.ShouldContain(d => d.Code == AnalysisDiagnosticCodes.GroupingMissing);
+    }
+
+    [Fact]
+    public void A_missing_second_grouping_is_not_a_finding_when_the_run_did_not_ask_for_it()
+    {
+        // Its fields were not in the schema the model answered, so its absence is what was asked
+        // for rather than something to report.
+        var validation = AnalysisFixtures.Check(
+            AnalysisFixtures.DependencyOnly(),
+            expectChangeClusters: false);
+
+        validation.IsValid.ShouldBeTrue();
+        validation.Diagnostics.ShouldBeEmpty();
     }
 
     [Fact]
@@ -164,13 +234,14 @@ public sealed class AnalysisValidatorTests
 
         validation.IsValid.ShouldBeFalse();
 
-        validation.Errors.ShouldContain(d => d.Code == AnalysisDiagnosticCodes.DanglingEdge);
-
         var diagnostic = validation.Errors.First(d => d.Code == AnalysisDiagnosticCodes.DanglingEdge);
 
         diagnostic.Message.ShouldContain("src/Ghost.cs");
         diagnostic.Message.ShouldContain("target");
         diagnostic.Subject.ShouldContain(AnalysisFixtures.ContractPath);
+
+        // Edges belong to the whole result, not to a grouping, so the diagnostic names none.
+        diagnostic.Grouping.ShouldBeNull();
     }
 
     [Fact]
@@ -180,59 +251,20 @@ public sealed class AnalysisValidatorTests
 
         var broken = result with
         {
-            Containers =
+            DependencyContainers =
             [
-                result.Containers[0] with { EntryNodeId = string.Empty },
-                result.Containers[1],
-            ],
-            Nodes =
-            [
-                AnalysisFixtures.Node(AnalysisFixtures.ContractPath, rank: 1, importance: 5),
-                result.Nodes[1],
-                result.Nodes[2],
+                result.DependencyContainers[0] with { EntryNodeId = string.Empty },
+                result.DependencyContainers[1],
             ],
         };
 
         var validation = AnalysisFixtures.Check(broken);
 
         validation.IsValid.ShouldBeFalse();
-
-        validation.Errors.ShouldContain(d => d.Code == AnalysisDiagnosticCodes.NoEntryNode);
 
         var diagnostic = validation.Errors.First(d => d.Code == AnalysisDiagnosticCodes.NoEntryNode);
 
         diagnostic.Subject.ShouldBe("contract-and-caller");
-    }
-
-    [Fact]
-    public void A_container_with_two_entry_nodes_names_both_of_them()
-    {
-        var result = AnalysisFixtures.Valid();
-
-        var broken = result with
-        {
-            Nodes =
-            [
-                result.Nodes[0],
-                AnalysisFixtures.Node(
-                    AnalysisFixtures.CallerPath,
-                    rank: 2,
-                    states: [AnalysisNodeState.Changed, AnalysisNodeState.EntryPoint]),
-                result.Nodes[2],
-            ],
-        };
-
-        var validation = AnalysisFixtures.Check(broken);
-
-        validation.IsValid.ShouldBeFalse();
-
-        validation.Errors.ShouldContain(d => d.Code == AnalysisDiagnosticCodes.ManyEntryNodes);
-
-        var diagnostic = validation.Errors.First(d => d.Code == AnalysisDiagnosticCodes.ManyEntryNodes);
-
-        diagnostic.Subject.ShouldBe("contract-and-caller");
-        diagnostic.Message.ShouldContain(AnalysisFixtures.ContractPath);
-        diagnostic.Message.ShouldContain(AnalysisFixtures.CallerPath);
     }
 
     [Fact]
@@ -242,10 +274,10 @@ public sealed class AnalysisValidatorTests
 
         var broken = result with
         {
-            Containers =
+            DependencyContainers =
             [
-                result.Containers[0] with { EntryNodeId = AnalysisFixtures.IconPath },
-                result.Containers[1],
+                result.DependencyContainers[0] with { EntryNodeId = AnalysisFixtures.IconPath },
+                result.DependencyContainers[1],
             ],
         };
 
@@ -256,23 +288,56 @@ public sealed class AnalysisValidatorTests
     }
 
     [Fact]
-    public void An_entry_node_that_is_not_ranked_first_is_named_with_the_rank_it_has()
+    public void An_entry_node_the_membership_list_does_not_start_with_is_named_along_with_the_one_it_does()
     {
+        // The rule that replaced "rank 1 and the entry_point state". One declaration, one list, and
+        // the two cannot disagree without saying so — which also means it can be stated per
+        // grouping, where a single rank on a node could not.
         var result = AnalysisFixtures.Valid();
 
         var broken = result with
         {
-            Nodes =
+            DependencyContainers =
             [
-                result.Nodes[0] with { Rank = 2 },
-                result.Nodes[1] with { Rank = 1 },
-                result.Nodes[2],
+                result.DependencyContainers[0] with
+                {
+                    EntryNodeId = AnalysisFixtures.CallerPath,
+                    NodeIds = [AnalysisFixtures.ContractPath, AnalysisFixtures.CallerPath],
+                },
+                result.DependencyContainers[1],
             ],
         };
 
         AnalysisFixtures.Check(broken).Errors
             .ShouldContain(d =>
-                d.Code == AnalysisDiagnosticCodes.EntryNodeNotFirst && d.Message.Contains("rank 2"));
+                d.Code == AnalysisDiagnosticCodes.EntryNodeNotFirst &&
+                d.Message.Contains(AnalysisFixtures.CallerPath) &&
+                d.Message.Contains(AnalysisFixtures.ContractPath));
+    }
+
+    [Fact]
+    public void A_container_that_lists_the_same_node_twice_is_named()
+    {
+        // Now that the list is the reading order, a repeat is not a harmless duplicate: it asks for
+        // one node in two places in one walk.
+        var result = AnalysisFixtures.Valid();
+
+        var broken = result with
+        {
+            DependencyContainers =
+            [
+                result.DependencyContainers[0] with
+                {
+                    NodeIds = [AnalysisFixtures.ContractPath, AnalysisFixtures.CallerPath, AnalysisFixtures.CallerPath],
+                },
+                result.DependencyContainers[1],
+            ],
+        };
+
+        AnalysisFixtures.Check(broken).Errors
+            .ShouldContain(d =>
+                d.Code == AnalysisDiagnosticCodes.DuplicateContainerMember &&
+                d.Message.Contains(AnalysisFixtures.CallerPath));
     }
 
     [Fact]
@@ -294,33 +359,9 @@ public sealed class AnalysisValidatorTests
 
         validation.IsValid.ShouldBeFalse();
 
-        validation.Errors.ShouldContain(d => d.Code == AnalysisDiagnosticCodes.DuplicateNodeId);
-
         var diagnostic = validation.Errors.First(d => d.Code == AnalysisDiagnosticCodes.DuplicateNodeId);
 
         diagnostic.Subject.ShouldBe(AnalysisFixtures.ContractPath);
-    }
-
-    [Fact]
-    public void Ranks_with_a_gap_are_reported_with_the_values_that_were_given()
-    {
-        var result = AnalysisFixtures.Valid();
-
-        var broken = result with
-        {
-            Nodes =
-            [
-                result.Nodes[0],
-                result.Nodes[1] with { Rank = 7 },
-                result.Nodes[2],
-            ],
-        };
-
-        AnalysisFixtures.Check(broken).Errors
-            .ShouldContain(d =>
-                d.Code == AnalysisDiagnosticCodes.RankNotDense &&
-                d.Message.Contains("contract-and-caller") &&
-                d.Message.Contains("1, 7"));
     }
 
     [Fact]
@@ -330,15 +371,16 @@ public sealed class AnalysisValidatorTests
 
         var broken = result with
         {
-            Containers =
+            DependencyContainers =
             [
-                result.Containers[0],
-                result.Containers[1] with { DisplayOrder = 1 },
+                result.DependencyContainers[0],
+                result.DependencyContainers[1] with { DisplayOrder = 1 },
             ],
         };
 
         AnalysisFixtures.Check(broken).Errors
-            .ShouldContain(d => d.Code == AnalysisDiagnosticCodes.DisplayOrderNotDense);
+            .ShouldContain(d =>
+                d.Code == AnalysisDiagnosticCodes.DisplayOrderNotDense && d.Message.Contains("1, 1"));
     }
 
     [Fact]
@@ -346,7 +388,7 @@ public sealed class AnalysisValidatorTests
     {
         // The decision recorded in the plan: mutual dependencies are real, and rejecting them would
         // be asking the model to misdescribe the repository. Reading direction survives because it
-        // comes from container order and rank, not from following edges.
+        // comes from container order and membership order, not from following edges.
         var result = AnalysisFixtures.Valid();
 
         var broken = result with
@@ -369,12 +411,14 @@ public sealed class AnalysisValidatorTests
 
         validation.IsValid.ShouldBeTrue();
 
-        validation.Warnings.ShouldContain(d => d.Code == AnalysisDiagnosticCodes.Cycle);
-
         var warning = validation.Warnings.First(d => d.Code == AnalysisDiagnosticCodes.Cycle);
 
         warning.Message.ShouldContain(AnalysisFixtures.ContractPath);
         warning.Message.ShouldContain(AnalysisFixtures.CallerPath);
+
+        // Reported once, not once per grouping: a cycle is a fact about the edges, and the edges are
+        // shared.
+        validation.Warnings.Count(d => d.Code == AnalysisDiagnosticCodes.Cycle).ShouldBe(1);
     }
 
     [Fact]
@@ -390,13 +434,18 @@ public sealed class AnalysisValidatorTests
         // A warning, not a failure: the node may belong there with the connection left unsaid.
         validation.IsValid.ShouldBeTrue();
 
-        validation.Warnings.Count(d => d.Code == AnalysisDiagnosticCodes.UnreachableNode).ShouldBe(1);
-
-        var diagnostic = validation.Warnings.First(d => d.Code == AnalysisDiagnosticCodes.UnreachableNode);
+        var diagnostic = validation.Warnings
+            .Where(d => d.Code == AnalysisDiagnosticCodes.UnreachableNode)
+            .ShouldHaveSingleItem();
 
         diagnostic.Subject.ShouldBe(AnalysisFixtures.CallerPath);
         diagnostic.Message.ShouldContain(AnalysisFixtures.ContractPath);
         diagnostic.Message.ShouldContain("contract-and-caller");
+
+        // Only in dependency flow. The change-clusters grouping puts the caller in a cluster of its
+        // own, where it is the whole walk and there is no gap to report — which is the same fact
+        // seen from the other picture, and why this rule runs per grouping.
+        diagnostic.Grouping.ShouldBe(AnalysisGrouping.DependencyFlow);
     }
 
     [Fact]
@@ -470,16 +519,23 @@ public sealed class AnalysisValidatorTests
                 result.Nodes[1],
                 result.Nodes[2],
             ],
-            Containers =
+            DependencyContainers =
             [
-                result.Containers[0] with
+                result.DependencyContainers[0] with
                 {
                     EntryNodeId = "node-1",
                     NodeIds = ["node-1", AnalysisFixtures.CallerPath],
                 },
-                result.Containers[1],
+                result.DependencyContainers[1],
             ],
-            ReadingOrder = ["node-1", AnalysisFixtures.CallerPath, AnalysisFixtures.IconPath],
+            DependencyReadingOrder = ["node-1", AnalysisFixtures.CallerPath, AnalysisFixtures.IconPath],
+            ClusterContainers =
+            [
+                AnalysisFixtures.Container("contracts", displayOrder: 1, nodeIds: ["node-1"]),
+                result.ClusterContainers[1],
+                result.ClusterContainers[2],
+            ],
+            ClusterReadingOrder = ["node-1", AnalysisFixtures.CallerPath, AnalysisFixtures.IconPath],
         };
 
         AnalysisFixtures.Check(broken).Errors
@@ -493,27 +549,11 @@ public sealed class AnalysisValidatorTests
     {
         // §0.6 permits the split for two genuinely unrelated changes in one file. Validation has to
         // allow it, or the invariant and the rule would contradict each other.
-        var result = AnalysisFixtures.Valid();
         var second = AnalysisFixtures.Node(
             AnalysisFixtures.CallerPath,
-            rank: 3,
             id: AnalysisFixtures.CallerPath + "#logging");
 
-        var split = result with
-        {
-            Nodes = [.. result.Nodes, second],
-            Containers =
-            [
-                result.Containers[0] with
-                {
-                    NodeIds = [.. result.Containers[0].NodeIds, second.Id],
-                },
-                result.Containers[1],
-            ],
-            ReadingOrder = [.. result.ReadingOrder, second.Id],
-        };
-
-        AnalysisFixtures.Check(split).IsValid.ShouldBeTrue();
+        AnalysisFixtures.Check(With(AnalysisFixtures.Valid(), second)).IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -568,7 +608,8 @@ public sealed class AnalysisValidatorTests
 
         var broken = result with
         {
-            ReadingOrder = [AnalysisFixtures.ContractPath, AnalysisFixtures.ContractPath, AnalysisFixtures.CallerPath],
+            DependencyReadingOrder =
+                [AnalysisFixtures.ContractPath, AnalysisFixtures.ContractPath, AnalysisFixtures.CallerPath],
         };
 
         AnalysisFixtures.Check(broken).Errors
@@ -576,19 +617,45 @@ public sealed class AnalysisValidatorTests
     }
 
     [Fact]
-    public void An_incomplete_reading_order_is_a_warning_because_rank_already_answers_it()
+    public void An_incomplete_reading_order_is_a_warning_because_membership_order_already_answers_it()
     {
         var result = AnalysisFixtures.Valid();
-        var broken = result with { ReadingOrder = [AnalysisFixtures.ContractPath] };
+        var broken = result with { DependencyReadingOrder = [AnalysisFixtures.ContractPath] };
 
         var validation = AnalysisFixtures.Check(broken);
 
         validation.IsValid.ShouldBeTrue();
-        validation.Warnings.ShouldContain(d => d.Code == AnalysisDiagnosticCodes.IncompleteReadingOrder);
+        validation.Warnings.ShouldContain(d =>
+            d.Code == AnalysisDiagnosticCodes.IncompleteReadingOrder &&
+            d.Grouping == AnalysisGrouping.DependencyFlow);
 
         // And the traversal offered to the reviewer is the derived one, covering everything.
-        AnalysisReadingOrder.Resolve(broken).ShouldBe(
+        AnalysisReadingOrder.Resolve(broken, AnalysisGrouping.DependencyFlow).ShouldBe(
             [AnalysisFixtures.ContractPath, AnalysisFixtures.CallerPath, AnalysisFixtures.IconPath]);
+    }
+
+    [Fact]
+    public void Each_grouping_gets_the_reading_order_it_stated()
+    {
+        // Requirement 5: reading order is computed per mode. The fixture's two groupings order the
+        // same three nodes differently once derived, because their containers differ.
+        var result = AnalysisFixtures.Valid() with
+        {
+            DependencyReadingOrder = [],
+            ClusterReadingOrder = [],
+            ClusterContainers =
+            [
+                AnalysisFixtures.Container("assets", displayOrder: 1, nodeIds: [AnalysisFixtures.IconPath]),
+                AnalysisFixtures.Container("contracts", displayOrder: 2, nodeIds: [AnalysisFixtures.ContractPath]),
+                AnalysisFixtures.Container("call-sites", displayOrder: 3, nodeIds: [AnalysisFixtures.CallerPath]),
+            ],
+        };
+
+        AnalysisReadingOrder.Resolve(result, AnalysisGrouping.DependencyFlow).ShouldBe(
+            [AnalysisFixtures.ContractPath, AnalysisFixtures.CallerPath, AnalysisFixtures.IconPath]);
+
+        AnalysisReadingOrder.Resolve(result, AnalysisGrouping.ChangeClusters).ShouldBe(
+            [AnalysisFixtures.IconPath, AnalysisFixtures.ContractPath, AnalysisFixtures.CallerPath]);
     }
 
     [Fact]
@@ -600,8 +667,13 @@ public sealed class AnalysisValidatorTests
 
         var broken = result with
         {
-            Nodes = [result.Nodes[0] with { Importance = 0 }, result.Nodes[1] with { Rank = 9 }, result.Nodes[2]],
+            Nodes = [result.Nodes[0] with { Importance = 0 }, result.Nodes[1] with { Title = " " }, result.Nodes[2]],
             Edges = [result.Edges[0] with { SourceNodeId = "nowhere" }],
+            DependencyContainers =
+            [
+                result.DependencyContainers[0] with { EntryNodeId = "nowhere" },
+                result.DependencyContainers[1] with { DisplayOrder = 4 },
+            ],
         };
 
         var errors = AnalysisFixtures.Check(broken).Errors;
@@ -614,9 +686,11 @@ public sealed class AnalysisValidatorTests
     [Fact]
     public void An_empty_changeset_and_an_empty_result_agree_with_each_other()
     {
+        // Not reachable in production — a clean changeset fails the run before a token is spent — but
+        // the two halves of "nothing to say" should agree rather than argue.
         var empty = new AnalysisResult { Summary = "Nothing changed." };
 
-        AnalysisValidator.Validate(empty, []).IsValid.ShouldBeTrue();
+        AnalysisValidator.Validate(empty, [], expectChangeClusters: false).IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -640,8 +714,12 @@ public sealed class AnalysisValidatorTests
         var validation = AnalysisFixtures.Check(verbose);
 
         validation.IsValid.ShouldBeTrue("a long sentence is not a reason to reject an answer.");
-        validation.Warnings.ShouldContain(d =>
-            d.Code == AnalysisDiagnosticCodes.VerboseField && d.Subject == result.Nodes[0].Id);
+
+        // Once, not once per grouping: the prose on a node is shared by both.
+        validation.Warnings
+            .Where(d => d.Code == AnalysisDiagnosticCodes.VerboseField)
+            .ShouldHaveSingleItem()
+            .Subject.ShouldBe(result.Nodes[0].Id);
     }
 
     [Fact]
@@ -673,13 +751,13 @@ public sealed class AnalysisValidatorTests
         {
             Summary = new string('x', AnalysisFieldBudgets.OverallSummary * 3),
             OverallRisks = [new string('x', AnalysisFieldBudgets.Risk * 3)],
-            Containers =
+            DependencyContainers =
             [
-                result.Containers[0] with
+                result.DependencyContainers[0] with
                 {
                     Explanation = new string('x', AnalysisFieldBudgets.ContainerExplanation * 3),
                 },
-                result.Containers[1],
+                result.DependencyContainers[1],
             ],
         };
 
@@ -690,9 +768,11 @@ public sealed class AnalysisValidatorTests
         warnings.Count.ShouldBe(3);
 
         // The two about the change as a whole carry no subject; the container one names itself, so
-        // a reader knows what to shorten.
+        // a reader knows what to shorten, and which grouping to shorten it in.
         warnings.Count(d => d.Subject.Length == 0).ShouldBe(2);
-        warnings.ShouldContain(d => d.Subject == result.Containers[0].Id);
+        warnings.ShouldContain(d =>
+            d.Subject == result.DependencyContainers[0].Id &&
+            d.Grouping == AnalysisGrouping.DependencyFlow);
     }
 
     [Fact]
@@ -701,11 +781,65 @@ public sealed class AnalysisValidatorTests
         var result = AnalysisFixtures.Valid();
         var other = new[] { AnalysisFixtures.File("src/Elsewhere.cs") };
 
-        var validation = AnalysisValidator.Validate(result, other);
+        var validation = AnalysisValidator.Validate(result, other, expectChangeClusters: true);
 
         validation.IsValid.ShouldBeFalse();
         validation.Errors.Count(static d => d.Code == AnalysisDiagnosticCodes.UnknownFile).ShouldBe(3);
         validation.Errors.ShouldContain(d =>
             d.Code == AnalysisDiagnosticCodes.FileNotCovered && d.Subject == "src/Elsewhere.cs");
+    }
+
+    /// <summary>
+    /// Drops a node from the result and from both groupings, so a test about the shared node set is
+    /// not also a test about a grouping that now has a hole in it.
+    /// </summary>
+    private static AnalysisResult Without(AnalysisResult result, string path) => result with
+    {
+        Nodes = [.. result.Nodes.Where(node => node.FilePath != path)],
+        DependencyContainers = [.. Purge(result.DependencyContainers, path)],
+        DependencyReadingOrder = [.. result.DependencyReadingOrder.Where(id => id != path)],
+        ClusterContainers = [.. Purge(result.ClusterContainers, path)],
+        ClusterReadingOrder = [.. result.ClusterReadingOrder.Where(id => id != path)],
+    };
+
+    /// <inheritdoc cref="Without"/>
+    private static AnalysisResult With(AnalysisResult result, AnalysisNode node) => result with
+    {
+        Nodes = [.. result.Nodes, node],
+        DependencyContainers = [.. Extend(result.DependencyContainers, node.Id)],
+        DependencyReadingOrder = [.. result.DependencyReadingOrder, node.Id],
+        ClusterContainers = [.. Extend(result.ClusterContainers, node.Id)],
+        ClusterReadingOrder = [.. result.ClusterReadingOrder, node.Id],
+    };
+
+    private static IEnumerable<AnalysisContainer> Purge(
+        IReadOnlyList<AnalysisContainer> containers,
+        string nodeId)
+    {
+        var order = 1;
+
+        foreach (var container in containers)
+        {
+            var members = container.NodeIds.Where(id => id != nodeId).ToArray();
+
+            if (members.Length == 0)
+            {
+                continue;
+            }
+
+            yield return container with { NodeIds = members, DisplayOrder = order++ };
+        }
+    }
+
+    private static IEnumerable<AnalysisContainer> Extend(
+        IReadOnlyList<AnalysisContainer> containers,
+        string nodeId)
+    {
+        for (var index = 0; index < containers.Count; index++)
+        {
+            yield return index == 0
+                ? containers[index] with { NodeIds = [.. containers[index].NodeIds, nodeId] }
+                : containers[index];
+        }
     }
 }

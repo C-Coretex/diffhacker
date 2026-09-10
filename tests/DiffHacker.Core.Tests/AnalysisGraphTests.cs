@@ -140,11 +140,16 @@ public sealed class AnalysisGraphTests
         {
             Nodes = [result.Nodes[0] with { Risks = ["A risk on a node."] }, result.Nodes[1], result.Nodes[2]],
             Edges = [result.Edges[0] with { Risks = ["A risk on an edge."] }],
-            Containers = [result.Containers[0] with { Risks = ["A risk on a container."] }, result.Containers[1]],
+            DependencyContainers =
+            [
+                result.DependencyContainers[0] with { Risks = ["A risk on a container."] },
+                result.DependencyContainers[1],
+            ],
         };
 
         var statistics = AnalysisStatistics.From(
             withRisks,
+            AnalysisGrouping.DependencyFlow,
             ChangesetStatistics.From(AnalysisFixtures.Changeset()),
             AnalysisGraph.Build(withRisks.Nodes, withRisks.Edges));
 
@@ -162,7 +167,7 @@ public sealed class AnalysisGraphTests
         {
             Nodes =
             [
-                result.Nodes[0] with { States = [AnalysisNodeState.Changed, AnalysisNodeState.EntryPoint, AnalysisNodeState.Risky] },
+                result.Nodes[0] with { States = [AnalysisNodeState.Changed, AnalysisNodeState.Risky] },
                 result.Nodes[1],
                 result.Nodes[2],
             ],
@@ -170,11 +175,12 @@ public sealed class AnalysisGraphTests
 
         AnalysisStatistics.From(
             marked,
+            AnalysisGrouping.DependencyFlow,
             ChangesetStatistics.From(AnalysisFixtures.Changeset()),
             AnalysisGraph.Build(marked.Nodes, marked.Edges)).RiskyNodeCount.ShouldBe(1);
     }
 
-    private static AnalysisNode Node(string id) => AnalysisFixtures.Node(id, rank: 1);
+    private static AnalysisNode Node(string id) => AnalysisFixtures.Node(id);
 
     private static AnalysisEdge Edge(string source, string target) => new()
     {

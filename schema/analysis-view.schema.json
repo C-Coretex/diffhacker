@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.9/analysis-view.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.10/analysis-view.schema.json",
   "title": "AnalysisView",
-  "description": "Everything the renderer is given about the stored analysis of one repository: the model's graph, the provenance of the run that produced it, the statistics the application computed alongside it, and the diagnostics validation raised. Returned by every analysis.* method, so the renderer replaces its state wholesale rather than merging. The document's fields are hoisted to the root rather than nested under an analysis object, because the contract generator cannot render a definition that references another definition and the container list needs one — the same flattening profile-state.schema.json applies. The container, node and edge shapes duplicate the ones in analysis-result.schema.json, because a schema here cannot reference one there; AnalysisAgreementTests holds the two copies together.",
+  "description": "Everything the renderer is given about the stored analysis of one repository, projected in one grouping: the model's graph, the provenance of the run that produced it, the statistics the application computed alongside it, and the diagnostics validation raised. Returned by every analysis.* method, so the renderer replaces its state wholesale rather than merging. The stored document holds two groupings of one node set; this is one of them, chosen by grouping, and switching is another call rather than a second copy on the wire. The document's fields are hoisted to the root rather than nested under an analysis object, because the contract generator cannot render a definition that references another definition and the container list needs one — the same flattening profile-state.schema.json applies. The container, node and edge shapes duplicate the ones in analysis-result.schema.json, because a schema here cannot reference one there; AnalysisAgreementTests holds the two copies together.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -16,7 +16,10 @@
     "edges",
     "diagnostics",
     "changedFiles",
-    "reviewedNodeIds"
+    "reviewedNodeIds",
+    "grouping",
+    "availableGroupings",
+    "produceChangeClusters"
   ],
   "properties": {
     "repositoryPath": {
@@ -85,14 +88,29 @@
     },
     "readingOrder": {
       "type": "array",
-      "description": "Node ids in the order a reviewer should walk the change. When the model's own order did not cover every node, this is the traversal the application derived from container order and node rank instead, and a diagnostic records that it did.",
+      "description": "Node ids in the order a reviewer should walk the change, in the active grouping. When the model's own order for that grouping did not cover every node, this is the traversal the application derived from container order and membership order instead, and a diagnostic records that it did.",
       "items": {
         "type": "string"
       }
     },
+    "grouping": {
+      "$ref": "#/$defs/analysisGroupingMode",
+      "description": "Which grouping the containers, reading order, node ranks and edge crossings below belong to. dependency_flow when there is no analysis yet."
+    },
+    "availableGroupings": {
+      "type": "array",
+      "description": "The groupings the stored analysis actually holds, so a control offering one it does not can be disabled rather than failing. Always contains dependency_flow; contains change_clusters only when the run that produced this analysis was asked for it. An analysis written before groupings existed offers the one.",
+      "items": {
+        "$ref": "#/$defs/analysisGroupingMode"
+      }
+    },
+    "produceChangeClusters": {
+      "type": "boolean",
+      "description": "Whether the next run will ask the model for the change-clusters grouping as well. A remembered choice about what to spend, not a property of the analysis below, so it is present whether or not one exists."
+    },
     "containers": {
       "type": "array",
-      "description": "The clusters the change divides into, already sorted by display order.",
+      "description": "The clusters the change divides into in the active grouping, already sorted by display order.",
       "items": {
         "$ref": "#/$defs/analysisContainerInfo"
       }
@@ -113,7 +131,7 @@
     },
     "diagnostics": {
       "type": "array",
-      "description": "What validation observed about the stored result. A stored analysis only ever carries warnings — anything that failed validation was repaired or the run failed, and a failed run is not stored.",
+      "description": "What validation observed about the stored result, limited to what describes the picture on screen: the observations about the change as a whole plus the ones about the active grouping. A stored analysis only ever carries warnings — anything that failed validation was repaired or the run failed, and a failed run is not stored.",
       "items": {
         "$ref": "#/$defs/analysisDiagnosticInfo"
       }
@@ -137,6 +155,12 @@
     }
   },
   "$defs": {
+    "analysisGroupingMode": {
+      "title": "AnalysisGroupingMode",
+      "description": "One of the two ways the same nodes are grouped. dependency_flow keeps a complete change path in one cluster even where it crosses concerns; change_clusters groups by theme instead and accepts that paths break. A definition rather than two inline copies, because this file uses it twice and two inline enums of one name would not compile.",
+      "type": "string",
+      "enum": ["dependency_flow", "change_clusters"]
+    },
     "analysisContainerInfo": {
       "title": "AnalysisContainerInfo",
       "description": "One cluster of interconnected change, on the wire.",
@@ -195,7 +219,7 @@
     },
     "analysisNodeInfo": {
       "title": "AnalysisNodeInfo",
-      "description": "A file, or a specific place inside a file, on the wire. Carries its container id, which the model's own document does not: membership is declared once by the container there, and resolved onto the node here so the renderer does not have to search for it.",
+      "description": "A file, or a specific place inside a file, on the wire. Carries three things the model's own document does not, all of them properties of the active grouping rather than of the node: its container id, its rank, and the entry_point state. Membership and order are declared once by the container there and resolved onto the node here, so the renderer does not have to search for them and cannot see a node's place in the grouping it is not looking at.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -273,14 +297,14 @@
         },
         "rank": {
           "type": "integer",
-          "description": "Position within its container, counting from 1. Rank 1 is the entry node."
+          "description": "Position within its container in the active grouping, counting from 1. Rank 1 is the entry node. Computed from where the container lists the node rather than claimed by the model, which could not state one number for two groupings."
         },
         "states": {
           "type": "array",
           "description": "What is true of this node. Not mutually exclusive.",
           "items": {
             "title": "AnalysisNodeInfoState",
-            "description": "One thing that is true of a node. The same values as AnalysisNodeState in analysis-result.schema.json, duplicated because a schema here cannot reference one there, and held to it by AnalysisAgreementTests.",
+            "description": "One thing that is true of a node. The values of AnalysisNodeState in analysis-result.schema.json plus entry_point, which the host adds for the entry node of the active grouping's container. Duplicated because a schema here cannot reference one there, and held to it by AnalysisAgreementTests.",
             "type": "string",
             "enum": [
               "changed",
@@ -334,7 +358,7 @@
         },
         "crossesContainers": {
           "type": "boolean",
-          "description": "True when the two ends sit in different containers. Computed by the application from container membership rather than claimed by the model."
+          "description": "True when the two ends sit in different containers of the active grouping. Computed by the application from container membership rather than claimed by the model, so the same edge crosses in one grouping and not in the other - which is what change clusters costs you and dependency flow buys."
         }
       }
     },
@@ -490,7 +514,7 @@
         },
         "containerCount": {
           "type": "integer",
-          "description": "Containers in the graph."
+          "description": "Containers in the graph, in the active grouping. The four numbers here that depend on how the change was grouped - this, the two container sizes, and riskCount's container term - are recomputed per grouping; the rest describe the changeset or the node set and do not move."
         },
         "nodeCount": {
           "type": "integer",

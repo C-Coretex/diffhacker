@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AnalysisView } from '@/contracts';
+import { en } from '@/i18n/en';
 import { RpcProvider } from '@/rpc/RpcProvider';
 import { useAppStore } from '@/store/appStore';
 import { FakeTransport } from '@/test/fakeTransport';
@@ -20,6 +21,9 @@ function emptyView(): AnalysisView {
     diagnostics: [],
     changedFiles: [],
     reviewedNodeIds: [],
+    grouping: 'dependency_flow',
+    availableGroupings: ['dependency_flow', 'change_clusters'],
+    produceChangeClusters: true,
   };
 }
 
@@ -169,6 +173,95 @@ describe('AnalysisScreen', () => {
 
     expect(await screen.findByText('This change has not been analysed')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Analyse this change' })).toBeInTheDocument();
+  });
+
+  it('asks the host for the other grouping and replaces the view with what comes back', async () => {
+    // Requirement 2, from the renderer's side: switching is a read of the stored answer, so it goes
+    // through analysis.setGrouping and never through analysis.run.
+    const transport = new FakeTransport();
+    renderScreen(transport);
+
+    await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.get'));
+    transport.respond(analysedView());
+
+    await userEvent.click(await screen.findByTestId('grouping-change_clusters'));
+
+    await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.setGrouping'));
+
+    expect(
+      transport.lastRequest<{ params: [{ grouping: string; repositoryPath: string }] }>().params[0],
+    ).toEqual({ grouping: 'change_clusters', repositoryPath: 'C:/repo' });
+
+    transport.respond(
+      analysedView({
+        grouping: 'change_clusters',
+        containers: [
+          {
+            id: 'contracts',
+            title: 'Contracts',
+            summary: 'The shape everything agrees on.',
+            explanation: 'Its own concern here.',
+            risks: [],
+            displayOrder: 1,
+            entryNodeId: 'src/Contract.cs',
+            nodeIds: ['src/Contract.cs'],
+          },
+          {
+            id: 'call-sites',
+            title: 'Call sites',
+            summary: 'Where it is constructed.',
+            explanation: 'Its own concern here too.',
+            risks: [],
+            displayOrder: 2,
+            entryNodeId: 'src/Caller.cs',
+            nodeIds: ['src/Caller.cs'],
+          },
+        ],
+      }),
+    );
+
+    // The one-line explanation under the toolbar follows the picture, which is the whole of
+    // requirement 3.
+    expect(await screen.findByText(en.analysis.graph.grouping.changeClustersBody)).toBeInTheDocument();
+    expect(useAppStore.getState().analysisView?.grouping).toBe('change_clusters');
+
+    // No run was started on the way.
+    expect(transport.sent.some((message) => message.includes('analysis.run'))).toBe(false);
+  });
+
+  it('keeps what is keyed to a node across a grouping switch and drops what is keyed to a cluster', async () => {
+    // Requirement 6 for the marks, and the reason the collapsed set cannot come with them: the other
+    // grouping's clusters are different clusters, and a container id that happens to match is not
+    // the same box.
+    const transport = new FakeTransport();
+    renderScreen(transport);
+
+    await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.get'));
+    transport.respond(analysedView());
+
+    await waitFor(() => expect(useAppStore.getState().analysisView).toBeDefined());
+
+    useAppStore.setState({
+      graphCollapsed: new Set(['core']),
+      diffContainerId: 'core',
+      diffNodeId: 'src/Caller.cs',
+    });
+
+    await userEvent.click(await screen.findByTestId('grouping-change_clusters'));
+    await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.setGrouping'));
+
+    transport.respond(analysedView({ grouping: 'change_clusters', reviewedNodeIds: ['src/Caller.cs'] }));
+
+    await waitFor(() => expect(useAppStore.getState().analysisView?.grouping).toBe('change_clusters'));
+
+    const state = useAppStore.getState();
+
+    expect(state.graphCollapsed.size).toBe(0);
+    expect(state.diffContainerId).toBeUndefined();
+
+    // Node-keyed state survives: the file being read, and the marks.
+    expect(state.diffNodeId).toBe('src/Caller.cs');
+    expect([...state.reviewedNodeIds]).toEqual(['src/Caller.cs']);
   });
 
   it('shows the live run and nothing of the result while one is in flight', async () => {

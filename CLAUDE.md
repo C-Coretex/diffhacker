@@ -317,7 +317,9 @@ Run from the repository root.
   no import between its members, is the case the product exists for. `AnalysisPromptTests` pins those
   ideas so the prose can be improved but not quietly dropped. It asserts against a whitespace-collapsed
   copy, so rewrapping a paragraph never fails a test and nobody has to contort the prose to keep one
-  green.
+  green. From Iteration 11 it is assembled from sections rather than written as one literal, because
+  two of them come in two versions — and it states the two groupings' *conflict* rather than
+  describing grouping twice and hoping for two different answers.
 - **The prompt owns the guidance; a schema description owns its field.** Both reach the model on
   *every* request — the schema as the response format — so anything said at length in both is paid
   for twice a turn, up to 300 times a run. Guidance was duplicated into the schema descriptions once
@@ -326,7 +328,9 @@ Run from the repository root.
   The same rule governs `ProfilePrompt` and `project-profile-document.schema.json`.
 - **Anything re-sent per turn is measured, not eyeballed.** The fixed preamble of an analysis request
   is the system prompt + the response schema + the ten tool descriptions: ~7,100 tokens, before a
-  single changed-file row. `list_changed_files` at 150 rows a page and `ToolText`'s byte caps exist
+  single changed-file row — and the schema goes twice, as the response format and again through
+  `StructuredOutput.PromptSuffix`, which is why Iteration 11's opt-out strips it rather than
+  discarding the answer. `list_changed_files` at 150 rows a page and `ToolText`'s byte caps exist
   for the same reason. Tool descriptions have a 200-character floor (`ToolboxCatalogTests`) — that is
   a floor, not a target, and each still says what its tool will not do and which tool to use instead.
 - **The analysis result is the model's, unedited.** `AnalysisValidator` reports; it never corrects.
@@ -337,11 +341,32 @@ Run from the repository root.
 - **A node id keeps its file path as its whole prefix** — `src/Cache.cs`, or `src/Cache.cs#eviction`
   when one file holds two unrelated changes. §0.6's "stable across re-runs" is enforced by
   `AnalysisNodeId`, not hoped for.
-- **Reviewed marks are node ids on the analysis row**, in schema 6's nullable `reviewed_json`.
-  `IAnalysisStore.SetNodesReviewedAsync` is the only method there that changes a stored analysis, and
-  it still cannot touch the document — the marks sit beside the model's answer, never inside it. A
-  re-run writes a new row and so starts with nothing marked; that is deliberate and pinned by
-  `SqliteAnalysisStoreTests`. See [docs/decisions.md](docs/decisions.md#reading-the-code).
+- **Reviewed marks are node ids on the analysis row**, in schema 6's nullable `reviewed_json`;
+  schema 7's nullable `grouping_mode` sits beside them. `SetNodesReviewedAsync` and
+  `SetGroupingAsync` are the only two methods on `IAnalysisStore` that change a stored analysis, and
+  **neither can touch the document** — both write the reviewer's own state, never the model's answer.
+  A re-run writes a new row and so starts with nothing marked and no grouping chosen; that is
+  deliberate and pinned by `SqliteAnalysisStoreTests`. See
+  [docs/decisions.md](docs/decisions.md#reading-the-code).
+- **The result holds two groupings of one node set; a view holds one of them.**
+  `dependencyContainers`/`dependencyReadingOrder` keep a complete change path intact even across
+  concerns; `clusterContainers`/`clusterReadingOrder` regroup the same nodes by theme. Four flat root
+  properties rather than a list of groupings, because a `$def` may not reference another one — ask
+  for one through `AnalysisResult.For(grouping)`. §0.2.5 applies to **both**: `AnalysisValidator`
+  runs every cluster, entry-point and reading-order rule once per grouping, and each message names
+  which. `AnalysisWire.ToWire(analysis, grouping, …)` is where a grouping is chosen, and
+  `analysis.setGrouping` never touches the runner.
+- **Order is a list's order.** A container's `nodeIds` *is* the reading order, entry node first;
+  `rank` and the `entry_point` state are gone from the model's answer, because neither could describe
+  two groupings, and the wire derives both per grouping so the renderer never noticed. That deleted
+  three error codes rather than adding any — see
+  [docs/decisions.md](docs/decisions.md#grouping-modes).
+- **The second grouping is optional, and then it is absent from the request.**
+  `AnalysisPrompt.SystemPrompt(false)` and `AnalysisResponseSchema.For(false)` both drop it, which
+  matters twice over: `StructuredOutput.PromptSuffix` sends the schema in the prompt *as well as* as
+  the response format. An analysis then holds one grouping, reports that in
+  `AnalysisView.availableGroupings`, and the other control is disabled with its reason.
+  `LegacyAnalysisDocument` gives a pre-1.10 document the same shape.
 - **The renderer never composes a command line.** `editor.open` takes an editor, a file and a line;
   whether that becomes `--diff` or `--goto` is decided host-side from which sides of the file exist.
   `HeadBlobExtractor` is the eighth entry on `RepositoryWriteTests.Allowed` and writes only under
@@ -417,6 +442,12 @@ Monaco measures a DOM that has no layout, so every unit test mocks it and assert
 for. Whether a real editor starts — in a WebView, from a custom scheme, with a classic worker, under
 a policy granting no `unsafe-eval` — has exactly one place it can be answered, and that spec also
 arms a `securitypolicyviolation` collector across six editors to prove the policy was never widened.
+**Iteration 11 adds [10-grouping-modes.spec.ts](tests/e2e/specs/10-grouping-modes.spec.ts)** to answer
+the one question the design turns on: requirement 2 says switching grouping must not re-run the
+analysis, and the only honest check is counting what the provider was asked for — across a switch, a
+switch back, and a restart onto the same stored state. `RepoSet.layered()` gives it a change that
+genuinely spans database, auth and API, so "one cluster here, three there" is a fact about the
+fixture rather than about the stub.
 
 > The stub answers `stream: true` with server-sent events, because `LlmSession` streams every
 > request. A stub that only sent one JSON body read as a provider returning an empty message, and
@@ -460,6 +491,11 @@ both forbid, and what survives that configuration is about as much code as `Mona
 resizable-panel package either: the splitter is one pointer capture, one clamp and one callback. The
 diff itself is Monaco's, the language is resolved by Monaco's own extension table, and the graph
 navigation is built from `AnalysisView.edges` the renderer already holds.
+
+**Iteration 11 added none.** The grouping picker is `ThemePicker`'s pattern — a `role="group"` of two
+`aria-pressed` buttons — rather than `@radix-ui/react-toggle-group`; the schema variant is thirty
+lines of `System.Text.Json.Nodes` over the one schema in `/schema`; and the legacy-document upgrade
+is the same, rather than a migration framework.
 
 No resilience package (retry is ~60 lines in `RetryPolicy`). No package for the folder picker
 or secret store (PhotinoX's `ShowOpenFolder`; `[LibraryImport]` credential bindings — why

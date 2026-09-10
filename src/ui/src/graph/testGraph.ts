@@ -34,7 +34,43 @@ export function testView(overrides: Partial<AnalysisView> = {}): AnalysisView {
       file('src/Notes.md', 'added', 20, 0, 'Markdown', 'docs'),
     ],
     reviewedNodeIds: [],
+    grouping: 'dependency_flow',
+    availableGroupings: ['dependency_flow', 'change_clusters'],
+    produceChangeClusters: true,
     ...overrides,
+  };
+}
+
+/**
+ * The same three files, grouped the other way.
+ *
+ * One dependency-flow cluster holding the whole path against three thematic ones — which is the
+ * difference the two groupings exist to show, and the reason a switch is worth making: the same
+ * `direct` edge sits inside a cluster in one and crosses two clusters in the other.
+ *
+ * A pair rather than one view with a flag, because the host projects a grouping and hands the
+ * renderer the result: two views is what the renderer actually sees.
+ */
+export function groupedViews(): { dependencyFlow: AnalysisView; changeClusters: AnalysisView } {
+  return {
+    dependencyFlow: testView({
+      readingOrder: ['src/Contract.cs', 'src/Caller.cs', 'src/Notes.md'],
+    }),
+    changeClusters: testView({
+      grouping: 'change_clusters',
+      readingOrder: ['src/Contract.cs', 'src/Caller.cs', 'src/Notes.md'],
+      containers: [
+        container('contracts', 1, 'src/Contract.cs', ['src/Contract.cs']),
+        container('callers', 2, 'src/Caller.cs', ['src/Caller.cs']),
+        container('documentation', 3, 'src/Notes.md', ['src/Notes.md']),
+      ],
+      nodes: [
+        node('src/Contract.cs', 'contracts', 1, ['changed', 'entry_point']),
+        node('src/Caller.cs', 'callers', 1, ['changed', 'entry_point']),
+        node('src/Notes.md', 'documentation', 1, ['added', 'entry_point']),
+      ],
+      edges: [edge('src/Contract.cs', 'src/Caller.cs', 'direct', true)],
+    }),
   };
 }
 

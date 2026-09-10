@@ -76,10 +76,12 @@ public sealed partial class AnalysisRunner(
 
     public async Task<AnalysisRunResult> RunAsync(
         string repositoryPath,
+        AnalysisRunOptions options,
         IProgress<LlmRunEvent>? progress,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(repositoryPath);
+        ArgumentNullException.ThrowIfNull(options);
 
         var stopwatch = Stopwatch.StartNew();
         var provider = await ActiveProvider.ResolveAsync(providers, cancellationToken).ConfigureAwait(false);
@@ -127,13 +129,16 @@ public sealed partial class AnalysisRunner(
 
         var conversation = new LlmConversation
         {
-            SystemPrompt = AnalysisPrompt.SystemPrompt(),
+            SystemPrompt = AnalysisPrompt.SystemPrompt(options.ChangeClusters),
             UserMessage = AnalysisPrompt.OpeningMessage(RepositoryName(repositoryPath), changeset, storedProfile),
             Tools = toolbox.Tools,
             ResponseFormat = new LlmResponseFormat
             {
                 SchemaName = AnalysisPrompt.SchemaName,
-                SchemaJson = ContractSchemas.Get(AnalysisPrompt.SchemaKey),
+
+                // The prompt and the schema agree about which groupings exist, or the model is asked
+                // for a field it was told nothing about and told about a field it cannot answer in.
+                SchemaJson = AnalysisResponseSchema.For(options.ChangeClusters),
             },
             MaxSchemaRepairs = RepairRoundsFor(changeset.Files.Count, SchemaRepairFloor, SchemaRepairCeiling),
             MaxResultRepairs = RepairRoundsFor(changeset.Files.Count, ResultRepairFloor, ResultRepairCeiling),
@@ -147,7 +152,7 @@ public sealed partial class AnalysisRunner(
                     return ["The answer could not be read back as an analysis document."];
                 }
 
-                validation = AnalysisValidator.Validate(candidate, changeset.Files);
+                validation = AnalysisValidator.Validate(candidate, changeset.Files, options.ChangeClusters);
                 return validation.ErrorMessages;
             },
         };
@@ -214,7 +219,14 @@ public sealed partial class AnalysisRunner(
             Duration = stopwatch.Elapsed,
             RepairRounds = run.ResultRepairs,
             Document = candidate,
-            Statistics = AnalysisStatistics.From(candidate, changeset.Statistics, graph),
+
+            // Recorded for dependency flow, the grouping an analysis opens in; the four numbers that
+            // depend on the grouping are recomputed for the other one on read.
+            Statistics = AnalysisStatistics.From(
+                candidate,
+                AnalysisGrouping.DependencyFlow,
+                changeset.Statistics,
+                graph),
             // The changeset this answer was validated against, kept with it. Taken from the same
             // object the run used, so the boxes can never disagree with the graph drawn on them.
             ChangedFiles = [.. changeset.Files.Select(ChangedFileFacts.From)],
@@ -230,7 +242,8 @@ public sealed partial class AnalysisRunner(
             repositoryPath,
             changeset.Files.Count,
             candidate.Nodes.Count,
-            candidate.Containers.Count,
+            candidate.DependencyContainers.Count,
+            candidate.ClusterContainers.Count,
             run.ResultRepairs,
             session.ToolCalls.Count);
 
@@ -288,13 +301,15 @@ public sealed partial class AnalysisRunner(
         EventId = 7001,
         Level = LogLevel.Information,
         Message = "Stored an analysis of {Repository}: {Files} changed file(s) as {Nodes} node(s) in "
-            + "{Containers} container(s), {Repairs} repair round(s), {ToolCalls} tool calls.")]
+            + "{Containers} dependency-flow container(s) and {ClusterContainers} change-cluster(s), "
+            + "{Repairs} repair round(s), {ToolCalls} tool calls.")]
     private static partial void AnalysisStored(
         ILogger logger,
         string repository,
         int files,
         int nodes,
         int containers,
+        int clusterContainers,
         int repairs,
         int toolCalls);
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildElkGraph, type ElkNode } from './elkGraph';
 import { inProcessLayout } from './runLayout';
-import { twoContainerView } from './testGraph';
+import { groupedViews, twoContainerView } from './testGraph';
 
 /**
  * Requirement 12: the layout output for a fixed input graph, snapshotted, so a layout regression is
@@ -43,6 +43,32 @@ describe('ELK layout', () => {
     }
   });
 
+  it('lays the other grouping out as its own diagram', async () => {
+    // The two groupings are two arrangements of one node set, so they are two layouts. Snapshotted
+    // separately because a change that only moved the change-clusters picture would otherwise be
+    // invisible here — and because seeing the two side by side is the clearest statement of what
+    // switching actually does.
+    const { changeClusters } = groupedViews();
+    const laidOut = await inProcessLayout(buildElkGraph(changeClusters, new Set()));
+
+    expect(positions(laidOut)).toMatchSnapshot();
+  });
+
+  it('keeps the same node boxes in both groupings', async () => {
+    // §0.2.5, measured on the thing that draws the diagram: every node reaches the layout in both
+    // pictures, at the same size, in a different place.
+    const { dependencyFlow, changeClusters } = groupedViews();
+
+    const flow = await inProcessLayout(buildElkGraph(dependencyFlow, new Set()));
+    const clusters = await inProcessLayout(buildElkGraph(changeClusters, new Set()));
+
+    expect(leafIds(clusters)).toEqual(leafIds(flow));
+
+    // One container against three, or there would be nothing to switch to.
+    expect(flow.children?.length).toBe(1);
+    expect(clusters.children?.length).toBe(3);
+  });
+
   it('lays a collapsed container out as one box', async () => {
     const laidOut = await inProcessLayout(buildElkGraph(twoContainerView(), new Set(['core'])));
 
@@ -71,4 +97,13 @@ function positions(graph: ElkNode): unknown {
  */
 function round(value: number | undefined): number | undefined {
   return value === undefined ? undefined : Math.round(value);
+}
+
+/** Every node box in the laid-out graph, sorted, so two groupings can be compared by node set. */
+function leafIds(graph: ElkNode): string[] {
+  const ids = (graph.children ?? []).flatMap((child) =>
+    (child.children ?? []).length > 0 ? leafIds(child) : [child.id],
+  );
+
+  return ids.sort((left, right) => left.localeCompare(right));
 }

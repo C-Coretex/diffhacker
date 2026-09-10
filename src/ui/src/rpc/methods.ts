@@ -31,6 +31,7 @@ import type {
   SaveProfileNotesRequest,
   SaveProfileRequest,
   SaveProviderRequest,
+  SetGroupingRequest,
   SetNodesReviewedRequest,
   TestConnectionResult,
   ToolCallEvent,
@@ -97,6 +98,7 @@ export const RpcMethods = {
   getAnalysis: 'analysis.get',
   runAnalysis: 'analysis.run',
   setNodesReviewed: 'analysis.setReviewed',
+  setGrouping: 'analysis.setGrouping',
 
   describeEditors: 'editor.describe',
   saveEditorSettings: 'editor.save',
@@ -330,6 +332,20 @@ export function runAnalysis(
     ANALYSIS_TIMEOUT_MS,
     request,
   );
+}
+
+/**
+ * Shows the stored analysis in the other grouping, and answers with the whole view.
+ *
+ * A plain `call` with the default timeout, not the analysis one: both groupings came out of the run
+ * that was already paid for, so this reads the stored document a second way and starts no
+ * conversation. Nothing here can spend money.
+ */
+export function setGrouping(
+  client: RpcClient,
+  request: SetGroupingRequest,
+): Promise<AnalysisView> {
+  return client.call<AnalysisView>(RpcMethods.setGrouping, request);
 }
 
 /**

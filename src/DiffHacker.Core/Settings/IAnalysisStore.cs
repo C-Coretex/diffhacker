@@ -11,9 +11,11 @@ namespace DiffHacker.Core.Settings;
 /// from here and never starts a conversation — the money was spent once.
 /// </para>
 /// <para>
-/// <see cref="SetNodesReviewedAsync"/> is the one method here that changes a stored analysis, and it
-/// is still not an exception to the paragraph above: it writes the reviewer's own marks, which live
-/// beside the model's answer rather than inside it. Nothing here can edit the document.
+/// <see cref="SetNodesReviewedAsync"/> and <see cref="SetGroupingAsync"/> are the two methods here
+/// that change a stored analysis, and neither is an exception to the paragraph above: both write the
+/// reviewer's own state — which nodes they have read, and which grouping they are reading it in —
+/// and both live beside the model's answer rather than inside it. <b>Nothing here can edit the
+/// document</b>, and that is the invariant to keep if a third one is ever added.
 /// </para>
 /// </summary>
 public interface IAnalysisStore
@@ -45,5 +47,19 @@ public interface IAnalysisStore
         string analysisId,
         IReadOnlyList<string> nodeIds,
         bool reviewed,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Remembers which of its groupings one analysis is being read in, so reopening it later shows
+    /// the picture the reviewer left rather than the default.
+    /// <para>
+    /// Whether the analysis actually holds that grouping is not asked here, on the same grounds node
+    /// ids are taken on trust above: it is a question about the model's answer, and the caller
+    /// holding the document is the one that can answer it.
+    /// </para>
+    /// </summary>
+    ValueTask SetGroupingAsync(
+        string analysisId,
+        AnalysisGrouping grouping,
         CancellationToken cancellationToken);
 }

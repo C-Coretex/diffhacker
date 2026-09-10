@@ -53,7 +53,8 @@ public sealed class SqliteAnalysisStoreTests : IAsyncLifetime
 
         stored.Document.Summary.ShouldBe(analysis.Document.Summary);
         stored.Document.Nodes.Count.ShouldBe(analysis.Document.Nodes.Count);
-        stored.Document.Containers[0].EntryNodeId.ShouldBe("src/Contract.cs");
+        stored.Document.DependencyContainers[0].EntryNodeId.ShouldBe("src/Contract.cs");
+        stored.Document.ClusterContainers.Count.ShouldBe(2);
         stored.Document.Edges[0].Kind.ShouldBe(AnalysisEdgeKind.Conceptual);
 
         stored.Statistics.NodeCount.ShouldBe(analysis.Statistics.NodeCount);
@@ -111,8 +112,12 @@ public sealed class SqliteAnalysisStoreTests : IAsyncLifetime
         var json = (await command.ExecuteScalarAsync(TestContext.Current.CancellationToken) as string).ShouldNotBeNull();
 
         json.ShouldContain("\"unchanged_relevant\"");
-        json.ShouldContain("\"entry_point\"");
+        json.ShouldContain("\"changed\"");
         json.ShouldNotContain("UnchangedRelevant");
+
+        // And entry_point is not in the document at all any more: it belongs to a container of one
+        // grouping, so the host derives it for whichever grouping it projects.
+        json.ShouldNotContain("entry_point");
     }
 
     [Fact]
@@ -305,14 +310,115 @@ public sealed class SqliteAnalysisStoreTests : IAsyncLifetime
             .ReviewedNodeIds.ShouldBe(["src/Caller.cs"]);
     }
 
+    [Fact]
+    public async Task A_fresh_analysis_has_chosen_no_grouping_and_the_default_applies()
+    {
+        await _store.SaveAsync(Sample(), TestContext.Current.CancellationToken);
+
+        (await _store.GetLatestAsync("/repo", TestContext.Current.CancellationToken))
+            .ShouldNotBeNull()
+            .Grouping.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task The_grouping_a_reviewer_chose_survives_a_restart()
+    {
+        await _store.SaveAsync(Sample(), TestContext.Current.CancellationToken);
+
+        await _store.SetGroupingAsync(
+            "analysis1", AnalysisGrouping.ChangeClusters, TestContext.Current.CancellationToken);
+
+        await Restart();
+
+        (await _store.GetLatestAsync("/repo", TestContext.Current.CancellationToken))
+            .ShouldNotBeNull()
+            .Grouping.ShouldBe(AnalysisGrouping.ChangeClusters);
+    }
+
+    [Fact]
+    public async Task Choosing_a_grouping_leaves_the_model_s_document_untouched()
+    {
+        // The invariant IAnalysisStore documents: the two methods that change a stored analysis write
+        // the reviewer's own state, and neither can edit the answer.
+        await _store.SaveAsync(Sample(), TestContext.Current.CancellationToken);
+
+        var before = await Document();
+
+        await _store.SetGroupingAsync(
+            "analysis1", AnalysisGrouping.ChangeClusters, TestContext.Current.CancellationToken);
+
+        (await Document()).ShouldBe(before);
+    }
+
+    [Fact]
+    public async Task A_grouping_belongs_to_one_analysis_and_a_re_run_starts_at_the_default()
+    {
+        // The same trade the reviewed marks make, for the same reason: the choice lives on the row,
+        // and a re-run is a new row.
+        await _store.SaveAsync(Sample(), TestContext.Current.CancellationToken);
+
+        await _store.SetGroupingAsync(
+            "analysis1", AnalysisGrouping.ChangeClusters, TestContext.Current.CancellationToken);
+
+        await _store.SaveAsync(
+            Sample() with { Id = "analysis2", CreatedAtUtc = DateTimeOffset.UnixEpoch.AddDays(1) },
+            TestContext.Current.CancellationToken);
+
+        (await _store.GetLatestAsync("/repo", TestContext.Current.CancellationToken))
+            .ShouldNotBeNull()
+            .Grouping.ShouldBeNull();
+
+        (await _store.FindAsync("analysis1", TestContext.Current.CancellationToken))
+            .ShouldNotBeNull()
+            .Grouping.ShouldBe(AnalysisGrouping.ChangeClusters);
+    }
+
+    [Fact]
+    public async Task The_grouping_column_holds_the_spelling_the_schema_uses()
+    {
+        // It crosses the JSON-RPC bridge as this string, so a C# name in the column would be a
+        // second spelling of the same thing and one of them would eventually be wrong.
+        await _store.SaveAsync(Sample(), TestContext.Current.CancellationToken);
+
+        await _store.SetGroupingAsync(
+            "analysis1", AnalysisGrouping.ChangeClusters, TestContext.Current.CancellationToken);
+
+        await using var connection = await _database.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT grouping_mode FROM analyses WHERE id = 'analysis1';";
+
+        (await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))
+            .ShouldBe("change_clusters");
+    }
+
+    /// <summary>Closes the database and opens it again, the way the application does on restart.</summary>
+    private async Task Restart()
+    {
+        await _database.DisposeAsync();
+        SqliteConnection.ClearAllPools();
+
+        _database = new AppDatabase(_directory.DatabaseFile, NullLogger<AppDatabase>.Instance);
+        _store = new SqliteAnalysisStore(_database);
+    }
+
+    private async Task<string> Document()
+    {
+        await using var connection = await _database.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT document_json FROM analyses WHERE id = 'analysis1';";
+
+        return (await command.ExecuteScalarAsync(TestContext.Current.CancellationToken) as string)
+            .ShouldNotBeNull();
+    }
+
     internal static Analysis Sample()
     {
         var document = new AnalysisResult
         {
             Summary = "The contract grew a field.",
             OverallRisks = ["Nothing was added to the tests."],
-            ReadingOrder = ["src/Contract.cs", "src/Caller.cs"],
-            Containers =
+            DependencyReadingOrder = ["src/Contract.cs", "src/Caller.cs"],
+            DependencyContainers =
             [
                 new AnalysisContainer
                 {
@@ -325,6 +431,33 @@ public sealed class SqliteAnalysisStoreTests : IAsyncLifetime
                     NodeIds = ["src/Contract.cs", "src/Caller.cs"],
                 },
             ],
+
+            // The same two nodes grouped by theme, so the round trip carries both groupings and a
+            // test can read one back without the other having been invented on the way.
+            ClusterReadingOrder = ["src/Caller.cs", "src/Contract.cs"],
+            ClusterContainers =
+            [
+                new AnalysisContainer
+                {
+                    Id = "call-sites",
+                    Title = "Call sites",
+                    Summary = "Where the contract is constructed.",
+                    Explanation = "Grouped by concern rather than by the path through them.",
+                    DisplayOrder = 1,
+                    EntryNodeId = "src/Caller.cs",
+                    NodeIds = ["src/Caller.cs"],
+                },
+                new AnalysisContainer
+                {
+                    Id = "contracts",
+                    Title = "Contracts",
+                    Summary = "The shape everything agrees on.",
+                    Explanation = "Its own concern in this grouping.",
+                    DisplayOrder = 2,
+                    EntryNodeId = "src/Contract.cs",
+                    NodeIds = ["src/Contract.cs"],
+                },
+            ],
             Nodes =
             [
                 new AnalysisNode
@@ -335,8 +468,7 @@ public sealed class SqliteAnalysisStoreTests : IAsyncLifetime
                     WhatChanged = "A tenant field.",
                     WhyItChanged = "Callers need to pass one.",
                     Importance = 5,
-                    Rank = 1,
-                    States = [AnalysisNodeState.Changed, AnalysisNodeState.EntryPoint],
+                    States = [AnalysisNodeState.Changed],
                 },
                 new AnalysisNode
                 {
@@ -346,7 +478,6 @@ public sealed class SqliteAnalysisStoreTests : IAsyncLifetime
                     WhatChanged = "Nothing, but it has to be read.",
                     WhyItChanged = "It constructs the contract.",
                     Importance = 2,
-                    Rank = 2,
                     States = [AnalysisNodeState.UnchangedRelevant],
                 },
             ],
@@ -406,6 +537,7 @@ public sealed class SqliteAnalysisStoreTests : IAsyncLifetime
             Document = document,
             Statistics = AnalysisStatistics.From(
                 document,
+                AnalysisGrouping.DependencyFlow,
                 ChangesetStatistics.From(changed),
                 AnalysisGraph.Build(document.Nodes, document.Edges)),
             ChangedFiles = [.. changed.Select(ChangedFileFacts.From)],

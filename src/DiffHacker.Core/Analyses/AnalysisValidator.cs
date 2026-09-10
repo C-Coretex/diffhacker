@@ -17,7 +17,15 @@ namespace DiffHacker.Core.Analyses;
 /// makes the result unusable and is worth spending a repair round on. A cycle does not: mutual
 /// dependencies exist in real code, and rejecting the answer would be asking the model to
 /// misdescribe the repository. The reading direction stays unambiguous regardless, because it
-/// comes from container order and node rank rather than from following edges.
+/// comes from container order and membership order rather than from following edges.
+/// </para>
+/// <para>
+/// <b>Since Iteration 11 the checks divide in two.</b> The node set, the edges and the prose are
+/// shared by both groupings and are checked once. Clusters, entry points and reading orders exist
+/// once <i>per grouping</i>, and every rule about them runs again for each grouping the result
+/// holds — §0.2.5 applies to both pictures, not to whichever one the reviewer happens to open. Each
+/// per-grouping message names its grouping, because "no node in container 'auth'" is not something a
+/// model can act on when there are two answers it could be about.
 /// </para>
 /// </summary>
 public static class AnalysisValidator
@@ -27,7 +35,14 @@ public static class AnalysisValidator
     /// </summary>
     /// <param name="result">The model's answer, already known to match the schema.</param>
     /// <param name="changedFiles">Every file in the changeset. The completeness rule is measured against this.</param>
-    public static AnalysisValidation Validate(AnalysisResult result, IReadOnlyList<ChangedFile> changedFiles)
+    /// <param name="expectChangeClusters">
+    /// Whether the run asked for the second grouping. When it did not, the cluster fields were not
+    /// in the schema the model answered and their absence is not a finding.
+    /// </param>
+    public static AnalysisValidation Validate(
+        AnalysisResult result,
+        IReadOnlyList<ChangedFile> changedFiles,
+        bool expectChangeClusters)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(changedFiles);
@@ -37,18 +52,44 @@ public static class AnalysisValidator
 
         CheckFileCoverage(result, changedFiles, diagnostics, nodesById);
         CheckNodeContent(result, diagnostics);
-
-        var membership = CheckContainers(result, nodesById, diagnostics);
-
-        CheckMembership(result, nodesById, membership, diagnostics);
         CheckEdges(result, nodesById, diagnostics);
-        CheckReadingOrder(result, nodesById, diagnostics);
         CheckCycles(result, diagnostics);
-        CheckReachability(result, diagnostics);
-        CheckFieldLengths(result, diagnostics);
+        CheckSharedFieldLengths(result, diagnostics);
+
+        if (expectChangeClusters && result.ClusterContainers.Count == 0)
+        {
+            diagnostics.Add(AnalysisDiagnostic.Error(
+                AnalysisDiagnosticCodes.GroupingMissing,
+                string.Empty,
+                "The change-clusters grouping is empty. The same nodes have to be grouped a second "
+                    + "way, by theme or concern, with every node in exactly one cluster there too.",
+                AnalysisGrouping.ChangeClusters));
+        }
+
+        foreach (var grouping in result.Groupings)
+        {
+            var view = result.For(grouping);
+            var membership = CheckContainers(view, nodesById, diagnostics);
+
+            CheckMembership(result, nodesById, membership, grouping, diagnostics);
+            CheckReadingOrder(result, view, nodesById, diagnostics);
+            CheckReachability(result, view, diagnostics);
+            CheckContainerFieldLengths(view, diagnostics);
+        }
 
         return new AnalysisValidation { Diagnostics = diagnostics };
     }
+
+    /// <summary>
+    /// How a per-grouping message opens, so the model is never told about "container 'auth'" without
+    /// being told which of its two answers that container is in.
+    /// </summary>
+    private static string At(AnalysisGrouping grouping) => grouping switch
+    {
+        AnalysisGrouping.DependencyFlow => "In the dependency-flow grouping, ",
+        AnalysisGrouping.ChangeClusters => "In the change-clusters grouping, ",
+        _ => throw new ArgumentOutOfRangeException(nameof(grouping), grouping, "Unnamed grouping."),
+    };
 
     /// <summary>Ids exist, are unique, and are derived from the path they claim.</summary>
     private static Dictionary<string, AnalysisNode> CheckNodeIdentity(
@@ -178,11 +219,12 @@ public static class AnalysisValidator
     }
 
     /// <summary>
-    /// Container identity, entry nodes and ranks. Returns which containers claim each node, so the
-    /// membership rule can be checked once against the whole picture.
+    /// Container identity, entry nodes and membership order, for one grouping. Returns which
+    /// containers claim each node, so the membership rule can be checked once against the whole
+    /// picture.
     /// </summary>
     private static Dictionary<string, List<string>> CheckContainers(
-        AnalysisResult result,
+        AnalysisGroupingView view,
         Dictionary<string, AnalysisNode> nodesById,
         List<AnalysisDiagnostic> diagnostics)
     {
@@ -190,14 +232,16 @@ public static class AnalysisValidator
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var displayOrders = new List<int>();
 
-        foreach (var container in result.Containers)
+        foreach (var container in view.Containers)
         {
             if (!seen.Add(container.Id))
             {
                 diagnostics.Add(AnalysisDiagnostic.Error(
                     AnalysisDiagnosticCodes.DuplicateContainerId,
                     container.Id,
-                    $"Two containers share the id '{container.Id}'. Container ids must be unique."));
+                    $"{At(view.Grouping)}two containers share the id '{container.Id}'. Container ids "
+                        + "must be unique within a grouping.",
+                    view.Grouping));
             }
 
             displayOrders.Add(container.DisplayOrder);
@@ -207,13 +251,28 @@ public static class AnalysisValidator
                 diagnostics.Add(AnalysisDiagnostic.Error(
                     AnalysisDiagnosticCodes.EmptyContainer,
                     container.Id,
-                    $"Container '{container.Id}' has no nodes. Remove it, or move nodes into it."));
+                    $"{At(view.Grouping)}container '{container.Id}' has no nodes. Remove it, or move "
+                        + "nodes into it.",
+                    view.Grouping));
             }
 
-            var members = new List<AnalysisNode>();
+            var members = new HashSet<string>(StringComparer.Ordinal);
 
             foreach (var nodeId in container.NodeIds)
             {
+                if (!members.Add(nodeId))
+                {
+                    diagnostics.Add(AnalysisDiagnostic.Error(
+                        AnalysisDiagnosticCodes.DuplicateContainerMember,
+                        container.Id,
+                        $"{At(view.Grouping)}container '{container.Id}' lists '{nodeId}' more than "
+                            + "once. The list is the reading order, so a node can only be at one "
+                            + "place in it.",
+                        view.Grouping));
+
+                    continue;
+                }
+
                 if (!membership.TryGetValue(nodeId, out var owners))
                 {
                     membership[nodeId] = owners = [];
@@ -221,46 +280,45 @@ public static class AnalysisValidator
 
                 owners.Add(container.Id);
 
-                if (nodesById.TryGetValue(nodeId, out var node))
-                {
-                    members.Add(node);
-                }
-                else
+                if (!nodesById.ContainsKey(nodeId))
                 {
                     diagnostics.Add(AnalysisDiagnostic.Error(
                         AnalysisDiagnosticCodes.UnknownNodeReference,
                         container.Id,
-                        $"Container '{container.Id}' lists the node '{nodeId}', which does not exist."));
+                        $"{At(view.Grouping)}container '{container.Id}' lists the node '{nodeId}', "
+                            + "which does not exist.",
+                        view.Grouping));
                 }
             }
 
-            CheckEntryNode(container, nodesById, members, diagnostics);
-            CheckRanks(container, members, diagnostics);
+            CheckEntryNode(view.Grouping, container, nodesById, diagnostics);
         }
 
         CheckDense(
             displayOrders,
             AnalysisDiagnosticCodes.DisplayOrderNotDense,
             string.Empty,
-            "container displayOrder values",
+            $"{At(view.Grouping)}the container displayOrder values",
+            view.Grouping,
             diagnostics);
 
         return membership;
     }
 
     /// <summary>
-    /// Exactly one entry node per container, declared and stated consistently.
+    /// Exactly one entry node per container, and it is the one the membership list starts with.
     /// <para>
-    /// Both halves are checked because both are representable and both are wrong on their own: a
-    /// container can name an entry node that is not in it, and it can carry two nodes marked
-    /// <c>entry_point</c> while naming one of them. A reviewer told to start in two places has not
-    /// been told where to start.
+    /// The two used to be able to disagree three ways — a container could name a node that was not
+    /// in it, name one whose rank was not 1, or carry a second node marked <c>entry_point</c>. Two
+    /// groupings cannot both be described by one rank or one state on a node, so the entry node is
+    /// now declared once and the reading order starts with it by construction. One rule replaces
+    /// three, and the reviewer still cannot be told to start in two places.
     /// </para>
     /// </summary>
     private static void CheckEntryNode(
+        AnalysisGrouping grouping,
         AnalysisContainer container,
         Dictionary<string, AnalysisNode> nodesById,
-        List<AnalysisNode> members,
         List<AnalysisDiagnostic> diagnostics)
     {
         var declared = container.EntryNodeId;
@@ -270,68 +328,33 @@ public static class AnalysisValidator
             diagnostics.Add(AnalysisDiagnostic.Error(
                 AnalysisDiagnosticCodes.NoEntryNode,
                 container.Id,
-                $"Container '{container.Id}' names no entry node that exists. Every container needs "
-                    + "exactly one node a reviewer starts from."));
+                $"{At(grouping)}container '{container.Id}' names no entry node that exists. Every "
+                    + "container needs exactly one node a reviewer starts from.",
+                grouping));
+
+            return;
         }
-        else if (!container.NodeIds.Contains(declared, StringComparer.Ordinal))
+
+        if (!container.NodeIds.Contains(declared, StringComparer.Ordinal))
         {
             diagnostics.Add(AnalysisDiagnostic.Error(
                 AnalysisDiagnosticCodes.EntryNodeNotAMember,
                 container.Id,
-                $"Container '{container.Id}' names '{declared}' as its entry node, but that node is "
-                    + "not one of its members."));
+                $"{At(grouping)}container '{container.Id}' names '{declared}' as its entry node, but "
+                    + "that node is not one of its members.",
+                grouping));
         }
-        else if (nodesById[declared].Rank != 1)
+        else if (!string.Equals(container.NodeIds[0], declared, StringComparison.Ordinal))
         {
             diagnostics.Add(AnalysisDiagnostic.Error(
                 AnalysisDiagnosticCodes.EntryNodeNotFirst,
                 container.Id,
-                $"Container '{container.Id}' starts at '{declared}', but that node has rank "
-                    + $"{nodesById[declared].Rank.ToString(CultureInfo.InvariantCulture)} rather than 1. "
-                    + "The entry node is the one the ranks count from."));
-        }
-
-        var marked = members
-            .Where(static node => node.States.Contains(AnalysisNodeState.EntryPoint))
-            .Select(static node => node.Id)
-            .ToArray();
-
-        if (marked.Length > 1)
-        {
-            diagnostics.Add(AnalysisDiagnostic.Error(
-                AnalysisDiagnosticCodes.ManyEntryNodes,
-                container.Id,
-                $"Container '{container.Id}' has {marked.Length.ToString(CultureInfo.InvariantCulture)} "
-                    + $"nodes marked entry_point ({string.Join(", ", marked)}). Exactly one may be."));
-        }
-        else if (marked.Length == 0 && members.Count > 0)
-        {
-            diagnostics.Add(AnalysisDiagnostic.Error(
-                AnalysisDiagnosticCodes.NoEntryNode,
-                container.Id,
-                $"No node in container '{container.Id}' is marked entry_point. Its entry node must "
-                    + "carry that state."));
-        }
-        else if (marked.Length == 1 && !string.Equals(marked[0], declared, StringComparison.Ordinal))
-        {
-            diagnostics.Add(AnalysisDiagnostic.Error(
-                AnalysisDiagnosticCodes.EntryStateDisagrees,
-                container.Id,
-                $"Container '{container.Id}' names '{declared}' as its entry node, but '{marked[0]}' "
-                    + "is the node marked entry_point. They must be the same node."));
+                $"{At(grouping)}container '{container.Id}' starts at '{declared}', but its nodeIds "
+                    + $"begin with '{container.NodeIds[0]}'. The entry node is the one the reading "
+                    + "order counts from, so it comes first.",
+                grouping));
         }
     }
-
-    private static void CheckRanks(
-        AnalysisContainer container,
-        List<AnalysisNode> members,
-        List<AnalysisDiagnostic> diagnostics) =>
-        CheckDense(
-            members.Select(static node => node.Rank).ToList(),
-            AnalysisDiagnosticCodes.RankNotDense,
-            container.Id,
-            $"node ranks in container '{container.Id}'",
-            diagnostics);
 
     /// <summary>
     /// Whether a set of ordering numbers is exactly 1..n. Layout intent is only obeyable if it is
@@ -343,6 +366,7 @@ public static class AnalysisValidator
         string code,
         string subject,
         string what,
+        AnalysisGrouping? grouping,
         List<AnalysisDiagnostic> diagnostics)
     {
         if (values.Count == 0)
@@ -361,15 +385,17 @@ public static class AnalysisValidator
         diagnostics.Add(AnalysisDiagnostic.Error(
             code,
             subject,
-            $"The {what} are {string.Join(", ", actual.Select(static value => value.ToString(CultureInfo.InvariantCulture)))}, "
-                + $"but they must be 1 to {values.Count.ToString(CultureInfo.InvariantCulture)} with no gaps and no repeats."));
+            $"{what} are {string.Join(", ", actual.Select(static value => value.ToString(CultureInfo.InvariantCulture)))}, "
+                + $"but they must be 1 to {values.Count.ToString(CultureInfo.InvariantCulture)} with no gaps and no repeats.",
+            grouping));
     }
 
-    /// <summary>Every node in exactly one container — not none, and not two.</summary>
+    /// <summary>Every node in exactly one container of this grouping — not none, and not two.</summary>
     private static void CheckMembership(
         AnalysisResult result,
         Dictionary<string, AnalysisNode> nodesById,
         Dictionary<string, List<string>> membership,
+        AnalysisGrouping grouping,
         List<AnalysisDiagnostic> diagnostics)
     {
         foreach (var node in result.Nodes)
@@ -387,15 +413,19 @@ public static class AnalysisValidator
                 diagnostics.Add(AnalysisDiagnostic.Error(
                     AnalysisDiagnosticCodes.NodeInNoContainer,
                     node.Id,
-                    $"Node '{node.Id}' is in no container. Every node belongs to exactly one."));
+                    $"{At(grouping)}node '{node.Id}' is in no container. Every node belongs to "
+                        + "exactly one cluster of each grouping.",
+                    grouping));
             }
             else if (owners.Count > 1)
             {
                 diagnostics.Add(AnalysisDiagnostic.Error(
                     AnalysisDiagnosticCodes.NodeInManyContainers,
                     node.Id,
-                    $"Node '{node.Id}' is listed by {owners.Count.ToString(CultureInfo.InvariantCulture)} "
-                        + $"containers ({string.Join(", ", owners)}). It belongs to exactly one."));
+                    $"{At(grouping)}node '{node.Id}' is listed by "
+                        + $"{owners.Count.ToString(CultureInfo.InvariantCulture)} containers "
+                        + $"({string.Join(", ", owners)}). It belongs to exactly one.",
+                    grouping));
             }
         }
     }
@@ -432,35 +462,39 @@ public static class AnalysisValidator
     }
 
     /// <summary>
-    /// The reading order references real nodes and repeats none.
+    /// One grouping's reading order references real nodes and repeats none.
     /// <para>
-    /// Not covering every node is a warning rather than an error: container order and rank already
-    /// define a complete traversal, so the application can fall back to one it derives rather than
-    /// spending a repair round — and money — on a list the model merely cut short.
+    /// Not covering every node is a warning rather than an error: container order and membership
+    /// order already define a complete traversal, so the application can fall back to one it derives
+    /// rather than spending a repair round — and money — on a list the model merely cut short.
     /// </para>
     /// </summary>
     private static void CheckReadingOrder(
         AnalysisResult result,
+        AnalysisGroupingView view,
         Dictionary<string, AnalysisNode> nodesById,
         List<AnalysisDiagnostic> diagnostics)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var id in result.ReadingOrder)
+        foreach (var id in view.ReadingOrder)
         {
             if (!nodesById.ContainsKey(id))
             {
                 diagnostics.Add(AnalysisDiagnostic.Error(
                     AnalysisDiagnosticCodes.UnknownNodeReference,
                     id,
-                    $"The reading order names '{id}', which is not a node in this result."));
+                    $"{At(view.Grouping)}the reading order names '{id}', which is not a node in this "
+                        + "result.",
+                    view.Grouping));
             }
             else if (!seen.Add(id))
             {
                 diagnostics.Add(AnalysisDiagnostic.Error(
                     AnalysisDiagnosticCodes.DuplicateReadingOrderEntry,
                     id,
-                    $"The reading order names '{id}' more than once."));
+                    $"{At(view.Grouping)}the reading order names '{id}' more than once.",
+                    view.Grouping));
             }
         }
 
@@ -471,14 +505,16 @@ public static class AnalysisValidator
             diagnostics.Add(AnalysisDiagnostic.Warning(
                 AnalysisDiagnosticCodes.IncompleteReadingOrder,
                 string.Empty,
-                $"The reading order leaves out {missing.ToString(CultureInfo.InvariantCulture)} node(s); "
-                    + "container order and node rank were used instead."));
+                $"{At(view.Grouping)}the reading order leaves out "
+                    + $"{missing.ToString(CultureInfo.InvariantCulture)} node(s); container order and "
+                    + "membership order were used instead.",
+                view.Grouping));
         }
     }
 
     /// <summary>
-    /// Whether each container is a path a reader can walk from its entry node, or a pile of files
-    /// that happen to sit together.
+    /// Whether each container of one grouping is a path a reader can walk from its entry node, or a
+    /// pile of files that happen to sit together.
     /// <para>
     /// This is the closest the application comes to checking the thing it exists for. A reviewer
     /// starts at the entry node and follows the change outwards; a node no edge leads to is one they
@@ -490,12 +526,17 @@ public static class AnalysisValidator
     /// unstated, and failing the run over it would cost a repair round to buy an edge the model
     /// might invent rather than find. Only edges with both ends inside the container count: a
     /// cross-container edge is drawn faintly and kept out of the layout (§0.6), so it is not
-    /// something the reader follows to get here.
+    /// something the reader follows to get here. That is also why this rule is worth running twice —
+    /// an edge inside a dependency-flow cluster may cross two clusters of the other grouping, and a
+    /// gap the reviewer will actually meet only exists in one of the two pictures.
     /// </para>
     /// </summary>
-    private static void CheckReachability(AnalysisResult result, List<AnalysisDiagnostic> diagnostics)
+    private static void CheckReachability(
+        AnalysisResult result,
+        AnalysisGroupingView view,
+        List<AnalysisDiagnostic> diagnostics)
     {
-        foreach (var container in result.Containers)
+        foreach (var container in view.Containers)
         {
             var members = new HashSet<string>(container.NodeIds, StringComparer.Ordinal);
 
@@ -548,8 +589,10 @@ public static class AnalysisValidator
                     diagnostics.Add(AnalysisDiagnostic.Warning(
                         AnalysisDiagnosticCodes.UnreachableNode,
                         nodeId,
-                        $"Nothing leads to '{nodeId}' from '{container.EntryNodeId}', the start of "
-                            + $"container '{container.Id}'. A reader reaches it without being told why."));
+                        $"{At(view.Grouping)}nothing leads to '{nodeId}' from '{container.EntryNodeId}', "
+                            + $"the start of container '{container.Id}'. A reader reaches it without "
+                            + "being told why.",
+                        view.Grouping));
                 }
             }
         }
@@ -567,7 +610,8 @@ public static class AnalysisValidator
     }
 
     /// <summary>
-    /// Fields that ran to more than twice the length they were asked for.
+    /// Fields that ran to more than twice the length they were asked for, on everything the two
+    /// groupings share.
     /// <para>
     /// Warnings, always. The prompt states every budget in <see cref="AnalysisFieldBudgets"/>, and a
     /// model that overshoots has still answered the question — the text is simply longer than the
@@ -581,54 +625,67 @@ public static class AnalysisValidator
     /// seeing, which is a model being verbose everywhere rather than once.
     /// </para>
     /// </summary>
-    private static void CheckFieldLengths(AnalysisResult result, List<AnalysisDiagnostic> diagnostics)
+    private static void CheckSharedFieldLengths(AnalysisResult result, List<AnalysisDiagnostic> diagnostics)
     {
-        Report(string.Empty, "summary", result.Summary, AnalysisFieldBudgets.OverallSummary);
+        Report(diagnostics, string.Empty, "summary", result.Summary, AnalysisFieldBudgets.OverallSummary, null);
 
         foreach (var risk in result.OverallRisks)
         {
-            Report(string.Empty, "risk", risk, AnalysisFieldBudgets.Risk);
-        }
-
-        foreach (var container in result.Containers)
-        {
-            Report(container.Id, "title", container.Title, AnalysisFieldBudgets.ContainerTitle);
-            Report(container.Id, "summary", container.Summary, AnalysisFieldBudgets.ContainerSummary);
-            Report(container.Id, "explanation", container.Explanation, AnalysisFieldBudgets.ContainerExplanation);
-
-            foreach (var risk in container.Risks)
-            {
-                Report(container.Id, "risk", risk, AnalysisFieldBudgets.Risk);
-            }
+            Report(diagnostics, string.Empty, "risk", risk, AnalysisFieldBudgets.Risk, null);
         }
 
         foreach (var node in result.Nodes)
         {
-            Report(node.Id, "title", node.Title, AnalysisFieldBudgets.NodeTitle);
-            Report(node.Id, "whatChanged", node.WhatChanged, AnalysisFieldBudgets.NodeProse);
-            Report(node.Id, "whyItChanged", node.WhyItChanged, AnalysisFieldBudgets.NodeProse);
-            Report(node.Id, "howItAffectsOthers", node.HowItAffectsOthers, AnalysisFieldBudgets.NodeProse);
-            Report(node.Id, "implementationNotes", node.ImplementationNotes, AnalysisFieldBudgets.NodeProse);
+            Report(diagnostics, node.Id, "title", node.Title, AnalysisFieldBudgets.NodeTitle, null);
+            Report(diagnostics, node.Id, "whatChanged", node.WhatChanged, AnalysisFieldBudgets.NodeProse, null);
+            Report(diagnostics, node.Id, "whyItChanged", node.WhyItChanged, AnalysisFieldBudgets.NodeProse, null);
+            Report(diagnostics, node.Id, "howItAffectsOthers", node.HowItAffectsOthers, AnalysisFieldBudgets.NodeProse, null);
+            Report(diagnostics, node.Id, "implementationNotes", node.ImplementationNotes, AnalysisFieldBudgets.NodeProse, null);
 
             foreach (var risk in node.Risks)
             {
-                Report(node.Id, "risk", risk, AnalysisFieldBudgets.Risk);
+                Report(diagnostics, node.Id, "risk", risk, AnalysisFieldBudgets.Risk, null);
             }
         }
+    }
 
-        void Report(string subject, string field, string? value, int budget)
+    /// <inheritdoc cref="CheckSharedFieldLengths"/>
+    private static void CheckContainerFieldLengths(
+        AnalysisGroupingView view,
+        List<AnalysisDiagnostic> diagnostics)
+    {
+        foreach (var container in view.Containers)
         {
-            if (!AnalysisFieldBudgets.IsOverlong(value, budget))
-            {
-                return;
-            }
+            Report(diagnostics, container.Id, "title", container.Title, AnalysisFieldBudgets.ContainerTitle, view.Grouping);
+            Report(diagnostics, container.Id, "summary", container.Summary, AnalysisFieldBudgets.ContainerSummary, view.Grouping);
+            Report(diagnostics, container.Id, "explanation", container.Explanation, AnalysisFieldBudgets.ContainerExplanation, view.Grouping);
 
-            diagnostics.Add(AnalysisDiagnostic.Warning(
-                AnalysisDiagnosticCodes.VerboseField,
-                subject,
-                $"The {field} {(subject.Length == 0 ? "of the change as a whole" : $"of '{subject}'")} is "
-                    + $"{value!.Length} characters against a budget of {budget}. It will be shown truncated."));
+            foreach (var risk in container.Risks)
+            {
+                Report(diagnostics, container.Id, "risk", risk, AnalysisFieldBudgets.Risk, view.Grouping);
+            }
         }
+    }
+
+    private static void Report(
+        List<AnalysisDiagnostic> diagnostics,
+        string subject,
+        string field,
+        string? value,
+        int budget,
+        AnalysisGrouping? grouping)
+    {
+        if (!AnalysisFieldBudgets.IsOverlong(value, budget))
+        {
+            return;
+        }
+
+        diagnostics.Add(AnalysisDiagnostic.Warning(
+            AnalysisDiagnosticCodes.VerboseField,
+            subject,
+            $"The {field} {(subject.Length == 0 ? "of the change as a whole" : $"of '{subject}'")} is "
+                + $"{value!.Length} characters against a budget of {budget}. It will be shown truncated.",
+            grouping));
     }
 }
 

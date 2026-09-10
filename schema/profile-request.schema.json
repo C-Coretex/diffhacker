@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.9/profile-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.10/profile-request.schema.json",
   "title": "ProfileRequest",
   "description": "Names the repository a profile.get, profile.generate or profile.delete call applies to. The path travels on every call rather than being held as host state, because the host has no notion of a current repository: the renderer owns which one is open, and a stale host-side selection would be a way to write one repository's profile against another's path.",
   "type": "object",

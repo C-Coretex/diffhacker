@@ -460,6 +460,31 @@ export class AnalysisScreen {
     return this.page.getByRole('button', { name: en.toolLog.contextLabel });
   }
 
+  // ------------------------------------------------------ Iteration 11: grouping modes
+
+  /**
+   * The diagram's wrapper, which carries the grouping it is drawing. Asserted against rather than
+   * the toolbar's prose, so "which picture is this?" has one answer that does not depend on copy.
+   */
+  get graphSurface(): Locator {
+    return this.page.locator('[data-grouping-mode]');
+  }
+
+  /** One of the two grouping buttons. `mode` is the wire value, as the schema spells it. */
+  groupingOption(mode: 'dependency_flow' | 'change_clusters'): Locator {
+    return this.page.getByTestId(`grouping-${mode}`);
+  }
+
+  /** The one-line explanation of the grouping on screen — requirement 3. */
+  get groupingExplanation(): Locator {
+    return this.page.getByTestId('grouping-explanation');
+  }
+
+  /** Whether the next run should ask for the second grouping. Beside the Analyse button. */
+  get changeClustersToggle(): Locator {
+    return this.page.getByTestId('toggle-change-clusters');
+  }
+
   // ------------------------------------------------------- Iteration 9: explanations
 
   /** The band's toggle, which unfolds the rest of the overview. */

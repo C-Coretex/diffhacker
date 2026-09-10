@@ -1,30 +1,40 @@
 import * as Popover from '@radix-ui/react-popover';
 import { ChevronsDownUp, ChevronsUpDown, Info, Maximize2 } from 'lucide-react';
-import type { AnalysisView } from '@/contracts';
+import type { AnalysisGroupingMode, AnalysisView } from '@/contracts';
 import { useT } from '@/i18n/useT';
 import { Button } from '@/components/ui/button';
 import type { ProjectColour } from '@/graph/palette';
 import { useAppStore } from '@/store/appStore';
 import { GraphLegend } from './GraphLegend';
+import { GroupingPicker, groupingBodyKey } from './GroupingPicker';
 import { NodeSearch } from './NodeSearch';
 
 /**
- * The strip above the canvas: find a file, fit the whole change on screen, fold every cluster away,
- * and look up what a line or a colour means.
+ * The strip above the canvas: switch grouping, find a file, fit the whole change on screen, fold
+ * every cluster away, and look up what a line or a colour means.
  *
  * Collapse-all is one button rather than two, and its label says which way it will go, because a
  * reviewer who has folded thirty clusters wants one click to get them back.
+ *
+ * The grouping picker comes first, and the line under it names what the picture on screen is
+ * organised by. It is one line of prose in a toolbar because the alternative — leaving the reviewer
+ * to work out why the same change now has eleven clusters instead of three — is the confusion the
+ * two groupings would otherwise cause.
  */
 export function GraphToolbar({
   view,
   colours,
   onSelectSearchHit,
   onFitView,
+  onChangeGrouping,
+  groupingBusy,
 }: {
   view: AnalysisView;
   colours: readonly ProjectColour[];
   onSelectSearchHit: (nodeId: string) => void;
   onFitView: () => void;
+  onChangeGrouping: (grouping: AnalysisGroupingMode) => void;
+  groupingBusy: boolean;
 }) {
   const t = useT();
   const collapsed = useAppStore((state) => state.graphCollapsed);
@@ -36,7 +46,14 @@ export function GraphToolbar({
   const allCollapsed = containerIds.length > 0 && containerIds.every((id) => collapsed.has(id));
 
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+      <GroupingPicker
+        active={view.grouping}
+        available={view.availableGroupings}
+        onChange={onChangeGrouping}
+        busy={groupingBusy}
+      />
+
       <NodeSearch view={view} onSelect={onSelectSearchHit} />
 
       <Button variant="ghost" size="sm" onClick={onFitView}>
@@ -94,6 +111,13 @@ export function GraphToolbar({
           </Popover.Portal>
         </Popover.Root>
       </div>
+
+      <p
+        className="w-full text-xs text-muted-foreground"
+        data-testid="grouping-explanation"
+      >
+        {t(groupingBodyKey(view.grouping))}
+      </p>
     </div>
   );
 }

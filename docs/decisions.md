@@ -968,3 +968,132 @@ did — §0.2.5 puts every changed file on the diagram and a list of them cannot
 The queue is put down by its own button, and by following an edge out of the cluster: `openDiffFor`
 keeps `diffContainerId` only while the node being opened is in that container. A queue that kept
 pointing at a cluster the reviewer had left would be a queue they no longer chose.
+
+## Grouping modes
+
+### One pass produces both groupings
+
+Iteration 11 named the choice and left it open: extend the result so one pass produces both
+groupings, or run a second pass lazily on the first switch. It was decided as the first, and the
+reason is where the tokens actually are.
+
+Almost everything an analysis costs is exploration and node prose. The nodes carry `whatChanged`,
+`whyItChanged`, `howItAffectsOthers`, `implementationNotes` and their risks — on a three-hundred-file
+change that is the overwhelming majority of the output, and **both groupings share every word of
+it**. A second grouping is a second container list and a second reading order: perhaps ten to twenty
+containers of a couple of hundred characters each, plus three hundred node ids. Single-digit percent.
+
+A lazy second pass, by contrast, is a second conversation. Either it explores the repository again —
+which is the expensive half, and would cost roughly what the first run cost — or it is handed the
+first result back as input, which on a large change is tens of thousands of input tokens and a
+grouping decided without ever having looked at the code. And it would arrive as a charge from
+clicking a toggle, needing a cost estimate, a confirmation, progress reporting and a failure path,
+for a view the iteration text describes as "a genuinely good complementary view, not a consolation
+prize".
+
+So everybody pays a little and nobody pays a lot — with one exception, below.
+
+### The second grouping can be turned off, and then it is not in the request at all
+
+[docs/iterations/iteration-14-follow-ups.txt](iterations/iteration-14-follow-ups.txt) asks for an
+option to disable parts of an analysis, and this is the first part to get one: a remembered toggle
+beside the Analyse button, defaulting to on.
+
+What makes it worth having is that turning it off takes the work out of the *request* rather than
+discarding the answer. `AnalysisPrompt.SystemPrompt(changeClusters: false)` never mentions the second
+grouping, and `AnalysisResponseSchema.For(false)` removes `clusterContainers` and
+`clusterReadingOrder` from the schema the model answers in. That matters more than it sounds:
+`StructuredOutput.PromptSuffix` appends the schema to the system prompt *as well as* sending it as
+the provider's response format, so every character of the schema is paid for twice on each of up to
+three hundred turns.
+
+The variant is derived from the one schema in `/schema` at runtime rather than kept as a second file.
+Two files would be two things to bump and a way for the variant to stop matching the contract the
+validator enforces.
+
+An analysis produced that way holds one grouping, says so in `AnalysisView.availableGroupings`, and
+the control offering the other is disabled with its reason rather than hidden — the view is unbought,
+not missing.
+
+### Order is a list's order, not a number on the node
+
+`rank` was an integer on the node and `entry_point` was one of its states. Neither can describe two
+groupings: a node sits at one position per grouping, and may start a cluster in one while sitting in
+the middle of another. So the model no longer states either. A container's `nodeIds` **is** the
+reading order, entry node first, and `entryNodeId` is the single declaration of where to start.
+
+This turned out to be a reduction rather than a trade. It deleted `rank_not_dense` — a dense 1..n
+across three hundred nodes was a repair round models spent regularly — along with `many_entry_nodes`
+and `entry_state_disagrees`, which existed only because one fact was stated in two places that could
+disagree. Five error codes became two.
+
+The wire kept both. `AnalysisNodeInfo.rank` is the index in the active grouping's container plus one,
+and `entry_point` is added to the entry node's states by `AnalysisWire`. So the renderer, the boxes,
+the legend and the end-to-end suite were untouched by any of it — which is also why
+`AnalysisAgreementTests` now pins a deliberate divergence between the two node-state enums instead of
+their equality.
+
+### The projection chooses a grouping; the renderer never sees two
+
+`AnalysisWire.ToWire` already derived everything that differs between groupings — container
+membership onto each node, `crossesContainers`, the container-then-rank sort, the resolved reading
+order. Giving it a grouping parameter was the whole of the renderer-facing change: `AnalysisView`
+keeps its shape and only its content becomes per-grouping, so `buildElkGraph`, `toFlowGraph`,
+`containerQueue`, `neighboursOf`, `collectRisks` and `searchGraph` did not change at all.
+
+Sending both groupings over the bridge and switching in TypeScript was the alternative. It would have
+duplicated the projection, made the statistics that depend on grouping the renderer's problem, and
+doubled the container payload on every read — to save a call that takes milliseconds against an ELK
+re-layout that has to happen either way. `analysis.setGrouping` returns a whole view, the same
+arrangement `analysis.get` and `analysis.run` already use.
+
+It also spends nothing, and there is no path from it to the runner. That is requirement 2, and
+[10-grouping-modes.spec.ts](../tests/e2e/specs/10-grouping-modes.spec.ts) proves it the only way it
+can be proved: by counting what the provider was asked for, across a switch, a switch back, and a
+restart.
+
+### Four statistics move with the grouping, and are recomputed rather than stored twice
+
+`containerCount`, the two container sizes and `riskCount`'s container term depend on how the change
+was grouped. `Analysis.StatisticsFor` recomputes those from the stored document, following the
+precedent `Analysis.ReadingOrder` already set: everything needed is in the document, and a second
+stored copy of twenty numbers is a second thing that can be stale.
+
+### Diagnostics are filtered to the picture on screen
+
+Cluster, entry-point and reading-order rules run once per grouping, so their findings belong to one
+grouping. `AnalysisDiagnostic` records which, each message names it in prose so a repair round stays
+actionable, and the projection shows the reviewer the observations about the change as a whole plus
+the ones about the grouping they are looking at. A warning that nothing leads to a node in a cluster
+that does not exist in the current view is not something a reviewer can act on.
+
+### An old analysis opens in dependency flow rather than failing
+
+The contract renamed the fields that carry a grouping, so a document written before Iteration 11 has
+none of the new names and would deserialise into a result with no clusters at all — an analysis
+someone paid for, opening as an empty diagram.
+
+`LegacyAnalysisDocument` upgrades it on read instead: the old `containers` become the dependency-flow
+grouping with each container's members sorted by the rank they carried, `readingOrder` becomes
+`dependencyReadingOrder`, `entry_point` is dropped now that the container declares the entry node,
+and no change-clusters grouping is invented. It is detected by shape rather than by the row's schema
+version — a document is upgradeable exactly when it has the old field and not the new one, and
+reading that off the JSON cannot disagree with itself. The precedent is `Analysis.ChangedFiles`,
+where an analysis older than schema 1.8 opens with no line counts rather than not at all.
+
+### The chosen grouping is the second thing a reviewer writes into a stored analysis
+
+Database schema 7 adds a nullable `grouping_mode` column beside `reviewed_json`, and
+`IAnalysisStore.SetGroupingAsync` is the second method that changes a stored analysis. The invariant
+worth keeping is the one that still holds: **neither can touch the document.** Which of two groupings
+someone is reading is not part of the model's answer.
+
+Null means "never chose one", and then the application-wide default applies — the grouping last
+chosen anywhere, which is what a new analysis opens in. A re-run writes a new row and so opens at
+that default again, exactly as it starts with nothing marked reviewed.
+
+The renderer's own view state divides the same way. `graphCollapsed` and `diffContainerId` hold
+*container* ids, and the other grouping's containers are different clusters, so `setAnalysis` resets
+them on a grouping change. The file open in the diff panel, the reviewed marks, the panel width and
+the band folds are node-keyed or presentational and survive — a reviewer who switches grouping while
+reading a file is still reading that file.

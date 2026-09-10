@@ -137,6 +137,91 @@ public sealed class AnalysisRunnerTests
     }
 
     [Fact]
+    public async Task A_run_that_wants_both_groupings_stores_both_of_them()
+    {
+        var harness = new Harness();
+
+        await harness.RunAsync(TestContext.Current.CancellationToken);
+
+        var stored = harness.Store.Saved.ShouldHaveSingleItem();
+
+        stored.AvailableGroupings.ShouldBe(
+            [AnalysisGrouping.DependencyFlow, AnalysisGrouping.ChangeClusters]);
+
+        // And the same nodes in each: Iteration 11's verification step 1, asserted where the answer
+        // is stored rather than where it is drawn.
+        var nodes = stored.Document.Nodes.Select(static node => node.Id).ToHashSet(StringComparer.Ordinal);
+
+        foreach (var grouping in stored.AvailableGroupings)
+        {
+            stored.Document.For(grouping).Containers
+                .SelectMany(static container => container.NodeIds)
+                .ToHashSet(StringComparer.Ordinal)
+                .SetEquals(nodes)
+                .ShouldBeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task A_run_that_wants_one_grouping_asks_for_the_smaller_prompt_and_the_smaller_schema()
+    {
+        // Both halves, because either one alone is a contradiction: a schema with a field the prompt
+        // never mentions, or a prompt asking for a field the schema forbids.
+        var harness = new Harness { Options = new AnalysisRunOptions { ChangeClusters = false } };
+        harness.Sessions.Answers = [Serialize(AnalysisFixtures.DependencyOnly())];
+
+        var result = await harness.RunAsync(TestContext.Current.CancellationToken);
+
+        result.Succeeded.ShouldBeTrue();
+
+        var conversation = harness.Sessions.Session.Conversation.ShouldNotBeNull();
+
+        conversation.SystemPrompt.ShouldNotContain("clusterContainers");
+        conversation.ResponseFormat.ShouldNotBeNull().SchemaJson.ShouldNotContain("clusterContainers");
+
+        // And the answer is accepted rather than sent back for a grouping nobody asked for.
+        harness.Sessions.Session.Rejections.ShouldBeEmpty();
+        harness.Store.Saved.ShouldHaveSingleItem()
+            .AvailableGroupings.ShouldBe([AnalysisGrouping.DependencyFlow]);
+    }
+
+    [Fact]
+    public async Task A_run_that_wanted_both_groupings_rejects_an_answer_with_one()
+    {
+        var harness = new Harness();
+
+        harness.Sessions.Answers =
+            [Serialize(AnalysisFixtures.DependencyOnly()), Serialize(AnalysisFixtures.Valid())];
+
+        var result = await harness.RunAsync(TestContext.Current.CancellationToken);
+
+        result.Succeeded.ShouldBeTrue();
+
+        harness.Sessions.Session.Rejections.ShouldHaveSingleItem()
+            .ShouldContain(message => message.Contains("change-clusters grouping is empty"));
+    }
+
+    [Fact]
+    public async Task The_statistics_stored_describe_the_grouping_an_analysis_opens_in()
+    {
+        // Three container counts are in play — two groupings and the changeset — and the stored
+        // record is the dependency-flow one, because that is the picture an analysis opens on.
+        var harness = new Harness();
+
+        await harness.RunAsync(TestContext.Current.CancellationToken);
+
+        var stored = harness.Store.Saved.ShouldHaveSingleItem();
+
+        stored.Statistics.ContainerCount.ShouldBe(2);
+        stored.StatisticsFor(AnalysisGrouping.DependencyFlow).ContainerCount.ShouldBe(2);
+        stored.StatisticsFor(AnalysisGrouping.ChangeClusters).ContainerCount.ShouldBe(3);
+
+        // The numbers that are not about grouping do not move.
+        stored.StatisticsFor(AnalysisGrouping.ChangeClusters).NodeCount
+            .ShouldBe(stored.Statistics.NodeCount);
+    }
+
+    [Fact]
     public async Task Repair_rounds_scale_up_with_how_many_files_changed()
     {
         // Every round re-emits the whole document at the model's output rate, so a fixed count
@@ -319,8 +404,11 @@ public sealed class AnalysisRunnerTests
         return result with
         {
             Nodes = [.. result.Nodes.Where(static node => node.FilePath != AnalysisFixtures.IconPath)],
-            Containers = [.. result.Containers.Where(static container => container.Id != "removed-assets")],
-            ReadingOrder = [AnalysisFixtures.ContractPath, AnalysisFixtures.CallerPath],
+            DependencyContainers =
+                [.. result.DependencyContainers.Where(static container => container.Id != "removed-assets")],
+            DependencyReadingOrder = [AnalysisFixtures.ContractPath, AnalysisFixtures.CallerPath],
+            ClusterContainers = [.. result.ClusterContainers.Where(static container => container.Id != "assets")],
+            ClusterReadingOrder = [AnalysisFixtures.ContractPath, AnalysisFixtures.CallerPath],
         };
     }
 
@@ -343,6 +431,9 @@ public sealed class AnalysisRunnerTests
 
         public FakeGitClient Git { get; } = new();
 
+        /// <summary>What the run asks the model for. Both groupings unless a test says otherwise.</summary>
+        public AnalysisRunOptions Options { get; set; } = AnalysisRunOptions.Default;
+
         public Task<AnalysisRunResult> RunAsync(CancellationToken cancellationToken)
         {
             var runner = new AnalysisRunner(
@@ -356,7 +447,7 @@ public sealed class AnalysisRunnerTests
                 TimeProvider.System,
                 NullLogger<AnalysisRunner>.Instance);
 
-            return runner.RunAsync("/repo", null, cancellationToken);
+            return runner.RunAsync("/repo", Options, null, cancellationToken);
         }
     }
 
@@ -654,6 +745,12 @@ public sealed class AnalysisRunnerTests
             bool reviewed,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException("A run does not mark anything reviewed.");
+
+        public ValueTask SetGroupingAsync(
+            string analysisId,
+            AnalysisGrouping grouping,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("A run does not choose which grouping to read it in.");
     }
 
     private sealed class FakeGitClient : IGitClient

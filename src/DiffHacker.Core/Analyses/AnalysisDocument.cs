@@ -24,17 +24,61 @@ public sealed record AnalysisResult
     /// <summary>Risks belonging to the change as a whole.</summary>
     public IReadOnlyList<string> OverallRisks { get; init; } = [];
 
-    /// <summary>Node ids in the order a reviewer should walk the whole change.</summary>
-    public IReadOnlyList<string> ReadingOrder { get; init; } = [];
+    /// <summary>
+    /// The dependency-flow grouping: clusters that keep a complete change path intact.
+    /// <para>
+    /// The two groupings are four flat properties rather than a list of grouping objects because a
+    /// schema definition may not reference another one, and a grouping needs the container
+    /// definition. Ask for one through <see cref="For"/> rather than reading these directly.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<AnalysisContainer> DependencyContainers { get; init; } = [];
 
-    public IReadOnlyList<AnalysisContainer> Containers { get; init; } = [];
+    /// <inheritdoc cref="DependencyContainers"/>
+    public IReadOnlyList<string> DependencyReadingOrder { get; init; } = [];
+
+    /// <summary>
+    /// The change-clusters grouping: the same nodes regrouped by theme. Empty when the run was not
+    /// asked for it, and on an analysis written before groupings existed.
+    /// </summary>
+    public IReadOnlyList<AnalysisContainer> ClusterContainers { get; init; } = [];
+
+    /// <inheritdoc cref="ClusterContainers"/>
+    public IReadOnlyList<string> ClusterReadingOrder { get; init; } = [];
 
     public IReadOnlyList<AnalysisNode> Nodes { get; init; } = [];
 
     public IReadOnlyList<AnalysisEdge> Edges { get; init; } = [];
+
+    /// <summary>
+    /// The groupings this result actually holds. Dependency flow always; change clusters only when
+    /// the run produced them, which is what lets a control offering the other one be disabled rather
+    /// than left to fail.
+    /// </summary>
+    public IReadOnlyList<AnalysisGrouping> Groupings => ClusterContainers.Count > 0
+        ? [AnalysisGrouping.DependencyFlow, AnalysisGrouping.ChangeClusters]
+        : [AnalysisGrouping.DependencyFlow];
+
+    /// <summary>One grouping, named. A grouping the result does not hold reads as empty, never throws.</summary>
+    public AnalysisGroupingView For(AnalysisGrouping grouping) => grouping switch
+    {
+        AnalysisGrouping.DependencyFlow => new AnalysisGroupingView
+        {
+            Grouping = grouping,
+            Containers = DependencyContainers,
+            ReadingOrder = DependencyReadingOrder,
+        },
+        AnalysisGrouping.ChangeClusters => new AnalysisGroupingView
+        {
+            Grouping = grouping,
+            Containers = ClusterContainers,
+            ReadingOrder = ClusterReadingOrder,
+        },
+        _ => throw new ArgumentOutOfRangeException(nameof(grouping), grouping, "Unknown grouping."),
+    };
 }
 
-/// <summary>One cluster of interconnected change.</summary>
+/// <summary>One cluster of interconnected change, within one grouping.</summary>
 public sealed record AnalysisContainer
 {
     public required string Id { get; init; }
@@ -47,15 +91,23 @@ public sealed record AnalysisContainer
 
     public IReadOnlyList<string> Risks { get; init; } = [];
 
-    /// <summary>Where this container sits among the containers, from 1.</summary>
+    /// <summary>Where this container sits among the containers of its grouping, from 1.</summary>
     public required int DisplayOrder { get; init; }
 
-    /// <summary>The node a reviewer starts from. Exactly one per container.</summary>
+    /// <summary>The node a reviewer starts from: the first of <see cref="NodeIds"/>. One per container.</summary>
     public required string EntryNodeId { get; init; }
 
     /// <summary>
-    /// Ids of the nodes in this container. Membership is declared here rather than on the node so
-    /// that "in two containers" and "in none" are both things the validator can see and name.
+    /// Ids of the nodes in this container, in the order they are read. Membership is declared here
+    /// rather than on the node so that "in two containers" and "in none" are both things the
+    /// validator can see and name — and, since Iteration 11, because a node belongs to one container
+    /// per grouping and could not carry a single answer.
+    /// <para>
+    /// The <i>order</i> is here for the same reason. Rank used to be an integer on the node; two
+    /// groupings cannot both be described by one integer, and expressing the order as the order of
+    /// this list also removed a whole class of repair round — a dense 1..n across three hundred
+    /// nodes was something models got wrong regularly.
+    /// </para>
     /// </summary>
     public IReadOnlyList<string> NodeIds { get; init; } = [];
 }
@@ -99,9 +151,11 @@ public sealed record AnalysisNode
     /// <summary>How much this node matters, 1 to 5.</summary>
     public required int Importance { get; init; }
 
-    /// <summary>Position within its own container, from 1. Rank 1 is the entry node.</summary>
-    public required int Rank { get; init; }
-
+    /// <summary>
+    /// What is true of this node, in every grouping. Where it starts a cluster is not here: that
+    /// belongs to a container of one grouping, and <see cref="AnalysisContainer.EntryNodeId"/> says
+    /// it. The wire adds an entry_point state for the active grouping.
+    /// </summary>
     public IReadOnlyList<AnalysisNodeState> States { get; init; } = [];
 }
 
@@ -138,9 +192,6 @@ public enum AnalysisNodeState
 
     [EnumMember(Value = "risky")]
     Risky,
-
-    [EnumMember(Value = "entry_point")]
-    EntryPoint,
 }
 
 /// <summary>Whether an edge is backed by code or inferred.</summary>

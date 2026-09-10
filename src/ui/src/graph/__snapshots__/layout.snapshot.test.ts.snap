@@ -37,6 +37,69 @@ exports[`ELK layout > lays a collapsed container out as one box 1`] = `
 }
 `;
 
+exports[`ELK layout > lays the other grouping out as its own diagram 1`] = `
+{
+  "children": [
+    {
+      "children": [
+        {
+          "children": [],
+          "height": 96,
+          "id": "src/Contract.cs",
+          "width": 260,
+          "x": 24,
+          "y": 48,
+        },
+      ],
+      "height": 168,
+      "id": "contracts",
+      "width": 308,
+      "x": 24,
+      "y": 24,
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "height": 96,
+          "id": "src/Caller.cs",
+          "width": 260,
+          "x": 24,
+          "y": 48,
+        },
+      ],
+      "height": 168,
+      "id": "callers",
+      "width": 308,
+      "x": 380,
+      "y": 24,
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "height": 96,
+          "id": "src/Notes.md",
+          "width": 260,
+          "x": 24,
+          "y": 48,
+        },
+      ],
+      "height": 168,
+      "id": "documentation",
+      "width": 308,
+      "x": 24,
+      "y": 240,
+    },
+  ],
+  "height": 432,
+  "id": "root",
+  "width": 712,
+  "x": 0,
+  "y": 0,
+}
+`;
+
 exports[`ELK layout > places a fixed graph the same way every time 1`] = `
 {
   "children": [

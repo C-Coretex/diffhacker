@@ -10,6 +10,14 @@ namespace DiffHacker.Core.Analyses;
 /// counted from the changeset and from the graph the model returned, so the figures cannot flatter
 /// the result they describe.
 /// </para>
+/// <para>
+/// Four of them depend on how the change was grouped — the container count, the two container sizes
+/// and the container term inside <see cref="RiskCount"/> — so they are computed for one grouping.
+/// The record stored with an analysis is the dependency-flow one, and
+/// <see cref="Analysis.StatisticsFor"/> recomputes those four for the other grouping on read, the
+/// way <see cref="Analysis.ReadingOrderFor"/> is already resolved on read. Nothing about the changeset
+/// or the node set moves between groupings.
+/// </para>
 /// </summary>
 public sealed record AnalysisStatistics
 {
@@ -49,6 +57,7 @@ public sealed record AnalysisStatistics
 
     public static AnalysisStatistics From(
         AnalysisResult result,
+        AnalysisGrouping grouping,
         ChangesetStatistics changeset,
         AnalysisGraph graph)
     {
@@ -56,12 +65,13 @@ public sealed record AnalysisStatistics
         ArgumentNullException.ThrowIfNull(changeset);
         ArgumentNullException.ThrowIfNull(graph);
 
-        var containerSizes = result.Containers.Select(static c => c.NodeIds.Count).ToArray();
+        var containers = result.For(grouping).Containers;
+        var containerSizes = containers.Select(static c => c.NodeIds.Count).ToArray();
 
         return new AnalysisStatistics
         {
             Changeset = changeset,
-            ContainerCount = result.Containers.Count,
+            ContainerCount = containers.Count,
             NodeCount = result.Nodes.Count,
             EdgeCount = result.Edges.Count,
             DirectEdgeCount = result.Edges.Count(static e => e.Kind is AnalysisEdgeKind.Direct),
@@ -75,7 +85,7 @@ public sealed record AnalysisStatistics
                 node.Risks.Count > 0 || node.States.Contains(AnalysisNodeState.Risky)),
 
             RiskCount = result.OverallRisks.Count
-                + result.Containers.Sum(static c => c.Risks.Count)
+                + containers.Sum(static c => c.Risks.Count)
                 + result.Nodes.Sum(static n => n.Risks.Count)
                 + result.Edges.Sum(static e => e.Risks.Count),
 

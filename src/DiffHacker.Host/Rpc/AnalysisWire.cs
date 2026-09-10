@@ -8,6 +8,7 @@ using DiffHacker.Core.Changes;
 // aliased rather than left to whichever using directive wins.
 using DomainEdge = DiffHacker.Core.Analyses.AnalysisEdge;
 using DomainEdgeKind = DiffHacker.Core.Analyses.AnalysisEdgeKind;
+using DomainNode = DiffHacker.Core.Analyses.AnalysisNode;
 using DomainNodeState = DiffHacker.Core.Analyses.AnalysisNodeState;
 
 namespace DiffHacker.Host.Rpc;
@@ -15,11 +16,19 @@ namespace DiffHacker.Host.Rpc;
 /// <summary>
 /// Domain to wire for the analysis contracts.
 /// <para>
-/// Two things happen here that the model was deliberately not asked to do. Container membership is
-/// resolved onto each node, and each edge is told whether it crosses a container boundary — both
-/// derivable from what the model said, and both things the renderer would otherwise recompute on
-/// every frame. Nothing is invented: an edge crosses containers because of where its ends were put,
-/// not because anyone decided it does.
+/// <b>This is where a grouping is chosen.</b> The stored document holds two groupings of one node
+/// set; a view is one of them, and everything that differs between them is derived right here rather
+/// than sent twice and switched inside the renderer. Container membership is resolved onto each
+/// node, each node is given its rank from where its container lists it, the entry node is given its
+/// entry_point state, each edge is told whether it crosses a container boundary, and the four
+/// statistics that depend on the grouping are recomputed. Nothing is invented: an edge crosses
+/// containers because of where its ends were put in <i>this</i> grouping, not because anyone decided
+/// it does — which is exactly why the same edge is drawn faint in one picture and solid in the other.
+/// </para>
+/// <para>
+/// Keeping it here means one projection rather than two implementations of it, and a switch is a
+/// call that returns a whole view — the arrangement every other <c>analysis.*</c> method already
+/// uses. Re-laying the diagram out dwarfs the cost of that call.
 /// </para>
 /// <para>
 /// The container, node and edge shapes duplicate the ones the model answers in, because a schema
@@ -29,9 +38,14 @@ namespace DiffHacker.Host.Rpc;
 /// </summary>
 internal static class AnalysisWire
 {
-    /// <summary>What the renderer is shown when a repository has never been analysed.</summary>
-    public static AnalysisView Empty(string repositoryPath) => new(
+    /// <summary>
+    /// What the renderer is shown when a repository has never been analysed. It still carries
+    /// <paramref name="produceChangeClusters"/>, because the control that binds to it is about what
+    /// the next run will spend and is on screen before any analysis exists.
+    /// </summary>
+    public static AnalysisView Empty(string repositoryPath, bool produceChangeClusters) => new(
         analysisId: null,
+        availableGroupings: [AnalysisGroupingMode.Dependency_flow],
         changedFiles: [],
         containers: [],
         costUsd: null,
@@ -39,6 +53,7 @@ internal static class AnalysisWire
         diagnostics: [],
         durationMs: null,
         edges: [],
+        grouping: AnalysisGroupingMode.Dependency_flow,
         hasAnalysis: false,
         headCommit: null,
         inputTokens: null,
@@ -46,6 +61,7 @@ internal static class AnalysisWire
         nodes: [],
         outputTokens: null,
         overallRisks: [],
+        produceChangeClusters: produceChangeClusters,
         providerDisplayName: null,
         readingOrder: [],
         repairRounds: null,
@@ -55,32 +71,40 @@ internal static class AnalysisWire
         statistics: null,
         summary: string.Empty);
 
-    public static AnalysisView ToWire(Analysis analysis)
+    public static AnalysisView ToWire(
+        Analysis analysis,
+        AnalysisGrouping grouping,
+        bool produceChangeClusters)
     {
         ArgumentNullException.ThrowIfNull(analysis);
 
         var document = analysis.Document;
+        var view = document.For(grouping);
 
         var containerOf = new Dictionary<string, string>(StringComparer.Ordinal);
         var order = new Dictionary<string, int>(StringComparer.Ordinal);
+        var ranks = new Dictionary<string, int>(StringComparer.Ordinal);
+        var entryNodeIds = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var container in document.Containers)
+        foreach (var container in view.Containers)
         {
             order[container.Id] = container.DisplayOrder;
+            entryNodeIds.Add(container.EntryNodeId);
 
-            foreach (var nodeId in container.NodeIds)
+            for (var position = 0; position < container.NodeIds.Count; position++)
             {
+                var nodeId = container.NodeIds[position];
                 containerOf[nodeId] = container.Id;
+
+                // The order the container listed its members in, turned into the number the renderer
+                // was written against. The first is 1, and validation makes that the entry node.
+                ranks[nodeId] = position + 1;
             }
         }
 
-        var ranks = document.Nodes.ToDictionary(
-            static node => node.Id,
-            static node => node.Rank,
-            StringComparer.Ordinal);
-
         return new AnalysisView(
             analysisId: analysis.Id,
+            availableGroupings: [.. analysis.AvailableGroupings.Select(ToWire)],
             changedFiles:
             [
                 .. analysis.ChangedFiles.Select(static file => new ChangedFileFactsInfo(
@@ -95,7 +119,7 @@ internal static class AnalysisWire
             ],
             containers:
             [
-                .. document.Containers
+                .. view.Containers
                     .OrderBy(static container => container.DisplayOrder)
                     .Select(static container => new AnalysisContainerInfo(
                         displayOrder: container.DisplayOrder,
@@ -111,11 +135,16 @@ internal static class AnalysisWire
             createdAtUtc: analysis.CreatedAtUtc,
             diagnostics:
             [
-                .. analysis.Diagnostics.Select(static diagnostic => new AnalysisDiagnosticInfo(
-                    code: diagnostic.Code,
-                    message: diagnostic.Message,
-                    severity: ToWire(diagnostic.Severity),
-                    subject: diagnostic.Subject)),
+                // Only what describes the picture on screen: the observations about the change as a
+                // whole, plus the ones about this grouping. A warning naming a cluster the reviewer
+                // is not looking at is one they cannot act on.
+                .. analysis.Diagnostics
+                    .Where(diagnostic => diagnostic.Grouping is null || diagnostic.Grouping == grouping)
+                    .Select(static diagnostic => new AnalysisDiagnosticInfo(
+                        code: diagnostic.Code,
+                        message: diagnostic.Message,
+                        severity: ToWire(diagnostic.Severity),
+                        subject: diagnostic.Subject)),
             ],
             durationMs: (int)analysis.Duration.TotalMilliseconds,
             edges:
@@ -128,6 +157,7 @@ internal static class AnalysisWire
                     sourceNodeId: edge.SourceNodeId,
                     targetNodeId: edge.TargetNodeId)),
             ],
+            grouping: ToWire(grouping),
             hasAnalysis: true,
             headCommit: analysis.HeadCommit,
             inputTokens: Saturate(analysis.Usage.InputTokens),
@@ -135,12 +165,13 @@ internal static class AnalysisWire
             nodes:
             [
                 // Sorted the way the diagram is read — container order, then rank — so the renderer
-                // is handed the layout intent rather than having to reconstruct it.
+                // is handed the layout intent rather than having to reconstruct it. Both keys belong
+                // to the active grouping, so switching reorders the list.
                 .. document.Nodes
                     .OrderBy(node => containerOf.TryGetValue(node.Id, out var id) && order.TryGetValue(id, out var at)
                         ? at
                         : int.MaxValue)
-                    .ThenBy(node => ranks[node.Id])
+                    .ThenBy(node => ranks.TryGetValue(node.Id, out var rank) ? rank : int.MaxValue)
                     .ThenBy(static node => node.Id, StringComparer.Ordinal)
                     .Select(node => new AnalysisNodeInfo(
                         containerId: containerOf.TryGetValue(node.Id, out var containerId) ? containerId : string.Empty,
@@ -150,10 +181,10 @@ internal static class AnalysisWire
                         id: node.Id,
                         implementationNotes: node.ImplementationNotes,
                         importance: node.Importance,
-                        rank: node.Rank,
+                        rank: ranks.TryGetValue(node.Id, out var nodeRank) ? nodeRank : 0,
                         risks: node.Risks,
                         startLine: node.StartLine,
-                        states: [.. node.States.Select(ToWire)],
+                        states: [.. StatesOf(node, entryNodeIds)],
                         symbol: node.Symbol,
                         title: node.Title,
                         whatChanged: node.WhatChanged,
@@ -161,14 +192,38 @@ internal static class AnalysisWire
             ],
             outputTokens: Saturate(analysis.Usage.OutputTokens),
             overallRisks: document.OverallRisks,
+            produceChangeClusters: produceChangeClusters,
             providerDisplayName: analysis.ProviderDisplayName,
-            readingOrder: analysis.ReadingOrder,
+            readingOrder: analysis.ReadingOrderFor(grouping),
             repairRounds: analysis.RepairRounds,
             repositoryPath: analysis.RepositoryPath,
             reviewedNodeIds: analysis.ReviewedNodeIds,
             schemaVersion: analysis.SchemaVersion,
-            statistics: ToWire(analysis.Statistics),
+            statistics: ToWire(analysis.StatisticsFor(grouping)),
             summary: document.Summary);
+    }
+
+    /// <summary>
+    /// A node's states, plus <c>entry_point</c> when it starts a container of the active grouping.
+    /// <para>
+    /// The model no longer says this, and could not: with two groupings a node may start a cluster in
+    /// one and sit in the middle of another, so one state on the node had no honest value to hold.
+    /// Derived here instead, from the single place a grouping declares it.
+    /// </para>
+    /// </summary>
+    private static IEnumerable<AnalysisNodeInfoState> StatesOf(
+        DomainNode node,
+        HashSet<string> entryNodeIds)
+    {
+        foreach (var state in node.States)
+        {
+            yield return ToWire(state);
+        }
+
+        if (entryNodeIds.Contains(node.Id))
+        {
+            yield return AnalysisNodeInfoState.Entry_point;
+        }
     }
 
     private static bool CrossesContainers(Dictionary<string, string> containerOf, DomainEdge edge) =>
@@ -220,8 +275,26 @@ internal static class AnalysisWire
         DomainNodeState.Deleted => AnalysisNodeInfoState.Deleted,
         DomainNodeState.UnchangedRelevant => AnalysisNodeInfoState.Unchanged_relevant,
         DomainNodeState.Risky => AnalysisNodeInfoState.Risky,
-        DomainNodeState.EntryPoint => AnalysisNodeInfoState.Entry_point,
         _ => throw new ArgumentOutOfRangeException(nameof(state), state, "Unmapped node state."),
+    };
+
+    /// <inheritdoc cref="ToWire(DomainNodeState)"/>
+    private static AnalysisGroupingMode ToWire(AnalysisGrouping grouping) => grouping switch
+    {
+        AnalysisGrouping.DependencyFlow => AnalysisGroupingMode.Dependency_flow,
+        AnalysisGrouping.ChangeClusters => AnalysisGroupingMode.Change_clusters,
+        _ => throw new ArgumentOutOfRangeException(nameof(grouping), grouping, "Unmapped grouping."),
+    };
+
+    /// <summary>
+    /// The other direction, for the one request that names a grouping. Exhaustive for the same reason
+    /// as the rest: a wire value with no domain meaning should fail here rather than be guessed at.
+    /// </summary>
+    public static AnalysisGrouping FromWire(SetGroupingMode grouping) => grouping switch
+    {
+        SetGroupingMode.Dependency_flow => AnalysisGrouping.DependencyFlow,
+        SetGroupingMode.Change_clusters => AnalysisGrouping.ChangeClusters,
+        _ => throw new ArgumentOutOfRangeException(nameof(grouping), grouping, "Unmapped grouping."),
     };
 
     /// <inheritdoc cref="ToWire(DomainNodeState)"/>

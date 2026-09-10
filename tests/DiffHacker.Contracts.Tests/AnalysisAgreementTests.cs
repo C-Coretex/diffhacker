@@ -27,18 +27,56 @@ public sealed class AnalysisAgreementTests
     }
 
     [Fact]
-    public void The_two_node_shapes_agree_apart_from_the_container_the_host_resolves()
+    public void The_two_node_shapes_agree_apart_from_what_the_host_resolves_per_grouping()
     {
+        // containerId and rank are both properties of the *active grouping* rather than of the node:
+        // the document holds two groupings, so a node sits in one container per grouping and at one
+        // position per grouping, and neither could be stated once on the node. The host resolves
+        // both from the grouping it is projecting.
         Shape<AnalysisNodeInfo>()
-            .Where(static entry => entry.Name is not ("containerId" or "states"))
+            .Where(static entry => entry.Name is not ("containerId" or "rank" or "states"))
             .ShouldBe(
                 Shape<AnalysisNode>().Where(static entry => entry.Name != "states"),
                 ignoreOrder: true);
 
-        // The states arrays hold differently-named copies of the same enum, so they are compared
-        // by their values instead, just below.
+        Names<AnalysisNode>().ShouldNotContain("rank");
+        Names<AnalysisNodeInfo>().ShouldContain("rank");
+
+        // The states arrays hold differently-named copies of nearly the same enum, so they are
+        // compared by their values instead, just below.
         Names<AnalysisNodeInfo>().ShouldContain("states");
         Names<AnalysisNode>().ShouldContain("states");
+    }
+
+    [Fact]
+    public void The_result_carries_both_groupings_and_the_view_carries_one_of_them()
+    {
+        // Two sibling pairs at the root rather than a list of grouping objects, because a definition
+        // may not reference another one and a grouping needs the container definition.
+        foreach (var field in new[]
+        {
+            "dependencyContainers", "dependencyReadingOrder", "clusterContainers", "clusterReadingOrder",
+        })
+        {
+            Names<AnalysisResult>().ShouldContain(field);
+        }
+
+        // The view is a projection of one of them, so it has one container list and one reading
+        // order, and says which grouping they belong to.
+        Names<AnalysisView>().ShouldContain("containers");
+        Names<AnalysisView>().ShouldContain("readingOrder");
+        Names<AnalysisView>().ShouldContain("grouping");
+        Names<AnalysisView>().ShouldContain("availableGroupings");
+        Names<AnalysisView>().ShouldNotContain("clusterContainers");
+    }
+
+    [Fact]
+    public void The_two_grouping_enums_agree()
+    {
+        string[] expected = ["dependency_flow", "change_clusters"];
+
+        WireValues<AnalysisGroupingMode>().ShouldBe(expected, ignoreOrder: true);
+        WireValues<SetGroupingMode>().ShouldBe(expected, ignoreOrder: true);
     }
 
     [Fact]
@@ -50,12 +88,17 @@ public sealed class AnalysisAgreementTests
     }
 
     [Fact]
-    public void The_two_node_state_enums_agree()
+    public void The_two_node_state_enums_agree_apart_from_the_entry_point_the_host_derives()
     {
-        string[] expected = ["changed", "added", "deleted", "unchanged_relevant", "risky", "entry_point"];
+        // The one deliberate divergence in the pair, and the reason for it: being a starting point is
+        // a fact about a container of one grouping, not about the node, so the model no longer says
+        // it and could not — a node may start a cluster in one grouping and sit in the middle of
+        // another. The host adds it for whichever grouping it is projecting, which is why the wire
+        // still carries it and the renderer's badge never changed.
+        string[] shared = ["changed", "added", "deleted", "unchanged_relevant", "risky"];
 
-        WireValues<AnalysisNodeState>().ShouldBe(expected, ignoreOrder: true);
-        WireValues<AnalysisNodeInfoState>().ShouldBe(expected, ignoreOrder: true);
+        WireValues<AnalysisNodeState>().ShouldBe(shared, ignoreOrder: true);
+        WireValues<AnalysisNodeInfoState>().ShouldBe([.. shared, "entry_point"], ignoreOrder: true);
     }
 
     [Fact]
@@ -72,11 +115,20 @@ public sealed class AnalysisAgreementTests
     {
         // Pinned so that dropping a field from both copies at once is still a failure. Every one
         // of these is either shown to the reviewer or used to lay the diagram out.
+        Names<AnalysisNodeInfo>().ShouldBe(
+            [
+                "id", "containerId", "filePath", "symbol", "startLine", "endLine", "title",
+                "whatChanged", "whyItChanged", "howItAffectsOthers", "implementationNotes", "risks",
+                "importance", "rank", "states",
+            ],
+            ignoreOrder: true);
+
+        // And what the model is asked for is that list minus the two the host resolves per grouping.
         Names<AnalysisNode>().ShouldBe(
             [
                 "id", "filePath", "symbol", "startLine", "endLine", "title", "whatChanged",
                 "whyItChanged", "howItAffectsOthers", "implementationNotes", "risks", "importance",
-                "rank", "states",
+                "states",
             ],
             ignoreOrder: true);
     }

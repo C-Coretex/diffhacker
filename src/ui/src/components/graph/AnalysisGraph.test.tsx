@@ -18,7 +18,7 @@ import { AnalysisGraph } from './AnalysisGraph';
  * seam the snapshot test uses.
  */
 function renderGraph() {
-  return render(<AnalysisGraph view={twoContainerView()} />);
+  return render(<AnalysisGraph view={twoContainerView()} onChangeGrouping={() => {}} groupingBusy={false} />);
 }
 
 /** ELK runs asynchronously; nothing is on the canvas until it answers. */
@@ -94,6 +94,8 @@ describe('AnalysisGraph', () => {
     const view = twoContainerView();
     render(
       <AnalysisGraph
+        onChangeGrouping={() => {}}
+        groupingBusy={false}
         view={{
           ...view,
           changedFiles: view.changedFiles.map((file) =>
@@ -118,6 +120,8 @@ describe('AnalysisGraph', () => {
     const view = twoContainerView();
     render(
       <AnalysisGraph
+        onChangeGrouping={() => {}}
+        groupingBusy={false}
         view={{
           ...view,
           nodes: view.nodes.map((node) =>
@@ -246,6 +250,8 @@ describe('AnalysisGraph', () => {
     const view = twoContainerView();
     render(
       <AnalysisGraph
+        onChangeGrouping={() => {}}
+        groupingBusy={false}
         view={{
           ...view,
           nodes: view.nodes.map((node) =>
@@ -285,6 +291,8 @@ describe('AnalysisGraph', () => {
     const view = twoContainerView();
     render(
       <AnalysisGraph
+        onChangeGrouping={() => {}}
+        groupingBusy={false}
         view={{
           ...view,
           containers: view.containers.map((container) =>
@@ -414,6 +422,8 @@ describe('AnalysisGraph', () => {
     const view = twoContainerView();
     render(
       <AnalysisGraph
+        onChangeGrouping={() => {}}
+        groupingBusy={false}
         view={{
           ...view,
           nodes: view.nodes.map((node) =>

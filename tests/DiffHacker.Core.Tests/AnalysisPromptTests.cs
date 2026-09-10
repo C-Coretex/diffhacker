@@ -93,7 +93,7 @@ public sealed partial class AnalysisPromptTests
 
         prompt.ShouldContain("not weaker");
         prompt.ShouldContain("not a last resort");
-        prompt.ShouldContain("reachable from that container's entry node");
+        prompt.ShouldContain("reachable from its container's entry node");
     }
 
     [Fact]
@@ -107,8 +107,82 @@ public sealed partial class AnalysisPromptTests
         prompt.ShouldContain("No node names a file that is not in the changed-file list");
         prompt.ShouldContain("exactly one container");
         prompt.ShouldContain("exactly one entry node");
+        prompt.ShouldContain("first entry of its nodeIds");
         prompt.ShouldContain("no gaps and no repeats");
         prompt.ShouldContain("reading order lists every node once");
+        prompt.ShouldContain("lists no node twice");
+
+        // Iteration 11: those five are checked once per grouping, and the prompt says so where a
+        // model can act on it rather than after the answer comes back.
+        prompt.ShouldContain("once for EACH grouping");
+    }
+
+    [Fact]
+    public void The_prompt_asks_for_two_groupings_and_says_what_each_one_is_for()
+    {
+        // Iteration 11's whole difficulty is that the two groupings conflict, so the prompt has to
+        // state the conflict rather than describe grouping twice and hope for two answers.
+        var prompt = Prompt();
+
+        prompt.ShouldContain("GROUP THE SAME NODES TWICE");
+        prompt.ShouldContain("dependencyContainers");
+        prompt.ShouldContain("clusterContainers");
+        prompt.ShouldContain("Same nodes, same explanations, same edges");
+    }
+
+    [Fact]
+    public void The_prompt_says_a_dependency_path_stays_whole_even_across_concerns()
+    {
+        // The defining property of the default grouping, and the thing a model will otherwise undo:
+        // splitting a path at a concern boundary is exactly what the other grouping is for.
+        var prompt = Prompt();
+
+        prompt.ShouldContain("keep a COMPLETE change path");
+        prompt.ShouldContain("spans database, auth and API");
+        prompt.ShouldContain("Do not cut a path because it crosses concerns");
+    }
+
+    [Fact]
+    public void The_prompt_says_change_clusters_is_a_real_view_and_not_a_consolation_prize()
+    {
+        // The iteration text is explicit that the second grouping is "a genuinely good complementary
+        // view, not a consolation prize". A model that treats it as a rough draft produces the first
+        // grouping with the labels changed, which is worth nothing to switch to.
+        var prompt = Prompt();
+
+        prompt.ShouldContain("not a fallback and not a rough draft");
+        prompt.ShouldContain("what areas did this touch");
+        prompt.ShouldContain("has been given nothing");
+    }
+
+    [Fact]
+    public void A_run_that_wants_one_grouping_is_never_told_about_the_other()
+    {
+        // The opt-out is only worth having if it takes the work out of the request. A prompt that
+        // described the second grouping and then forbade it would cost the tokens of the
+        // description on every one of up to three hundred turns.
+        var prompt = Prompt(changeClusters: false);
+
+        prompt.ShouldNotContain("clusterContainers");
+        prompt.ShouldNotContain("clusterReadingOrder");
+        prompt.ShouldNotContain("GROUP THE SAME NODES TWICE");
+
+        // And it still says the thing dependency flow is for, plus that the other view is not
+        // wanted — so a model does not compromise between two groupings it was asked for one of.
+        prompt.ShouldContain("keep a COMPLETE change path");
+        prompt.ShouldContain("not wanted on this run");
+    }
+
+    [Fact]
+    public void Dropping_the_second_grouping_makes_the_request_measurably_smaller()
+    {
+        // Measured rather than assumed, because this is the only reason the opt-out exists. The
+        // schema shrinks too — see AnalysisResponseSchemaTests — and both halves are re-sent every
+        // turn, the schema twice over.
+        var both = AnalysisPrompt.SystemPrompt(changeClusters: true).Length;
+        var one = AnalysisPrompt.SystemPrompt(changeClusters: false).Length;
+
+        one.ShouldBeLessThan(both);
     }
 
     [Fact]
@@ -240,8 +314,8 @@ public sealed partial class AnalysisPromptTests
     /// The system prompt with runs of whitespace collapsed, so an assertion matches a phrase
     /// wherever the paragraph happens to wrap.
     /// </summary>
-    private static string Prompt() =>
-        WhitespaceRuns().Replace(AnalysisPrompt.SystemPrompt(), " ");
+    private static string Prompt(bool changeClusters = true) =>
+        WhitespaceRuns().Replace(AnalysisPrompt.SystemPrompt(changeClusters), " ");
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRuns();

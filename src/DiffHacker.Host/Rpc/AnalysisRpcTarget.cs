@@ -9,12 +9,18 @@ using StreamJsonRpc;
 namespace DiffHacker.Host.Rpc;
 
 /// <summary>
-/// The analysis surface: run one, read the stored one back, or mark part of it reviewed.
+/// The analysis surface: run one, read the stored one back, switch which grouping it is read in, or
+/// mark part of it reviewed.
 /// <para>
-/// <c>get</c> and <c>run</c> return the whole <see cref="AnalysisView"/> rather than a delta, so the
-/// renderer replaces its state instead of merging — the same arrangement <see cref="ProfileRpcTarget"/>
-/// uses, and for the same reason: an analysis is one artifact and half of a new one on top of half
-/// of an old one is not any analysis at all.
+/// <c>get</c>, <c>run</c> and <c>setGrouping</c> return the whole <see cref="AnalysisView"/> rather
+/// than a delta, so the renderer replaces its state instead of merging — the same arrangement
+/// <see cref="ProfileRpcTarget"/> uses, and for the same reason: an analysis is one artifact and half
+/// of a new one on top of half of an old one is not any analysis at all.
+/// </para>
+/// <para>
+/// <c>setGrouping</c> spends nothing, and that is the requirement rather than a happy accident: both
+/// groupings came out of the run that was already paid for, so switching reads the stored document a
+/// second way. It never touches the runner, and there is no path from it to one.
 /// </para>
 /// <para>
 /// <c>setReviewed</c> is the exception, and returns only <see cref="ReviewedState"/>. It keeps the
@@ -30,9 +36,20 @@ namespace DiffHacker.Host.Rpc;
 public sealed partial class AnalysisRpcTarget(
     IAnalysisStore store,
     IAnalysisRunner runner,
+    IAppSettingStore settings,
     RunEventNotifier runEvents,
     ILogger<AnalysisRpcTarget> logger)
 {
+    /// <summary>
+    /// The grouping last chosen anywhere, which is what an analysis that has none of its own opens
+    /// in. Application-wide rather than per repository: it is a habit about how someone reads, not a
+    /// fact about a project.
+    /// </summary>
+    private const string DefaultGroupingKey = "analysis.grouping.default";
+
+    /// <summary>Whether runs should ask for the second grouping. The remembered answer, overridable per run.</summary>
+    private const string ProduceClustersKey = "analysis.grouping.clusters";
+
     [JsonRpcMethod("analysis.get")]
     public async Task<AnalysisView> GetAsync(AnalysisRequest request, CancellationToken cancellationToken)
     {
@@ -42,9 +59,18 @@ public sealed partial class AnalysisRpcTarget(
             .GetLatestAsync(request.RepositoryPath, cancellationToken)
             .ConfigureAwait(false);
 
+        var produceClusters = await ProduceClustersAsync(null, cancellationToken).ConfigureAwait(false);
+
         // Reading never runs anything. That is the whole promise of persisting the result: the
         // conversation happened once and was paid for once.
-        return stored is null ? AnalysisWire.Empty(request.RepositoryPath) : AnalysisWire.ToWire(stored);
+        if (stored is null)
+        {
+            return AnalysisWire.Empty(request.RepositoryPath, produceClusters);
+        }
+
+        var grouping = await ResolveGroupingAsync(stored, cancellationToken).ConfigureAwait(false);
+
+        return AnalysisWire.ToWire(stored, grouping, produceClusters);
     }
 
     [JsonRpcMethod("analysis.run")]
@@ -52,12 +78,25 @@ public sealed partial class AnalysisRpcTarget(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        var produceClusters = await ProduceClustersAsync(request.ChangeClusters, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Remembered before the run rather than after it, so a run that is cancelled or fails still
+        // leaves the control showing what the reviewer chose.
+        await settings
+            .SetAsync(ProduceClustersKey, produceClusters ? "true" : "false", cancellationToken)
+            .ConfigureAwait(false);
+
         AnalysisRunResult result;
 
         try
         {
             result = await runner
-                .RunAsync(request.RepositoryPath, runEvents, cancellationToken)
+                .RunAsync(
+                    request.RepositoryPath,
+                    new AnalysisRunOptions { ChangeClusters = produceClusters },
+                    runEvents,
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (GitClientException ex)
@@ -77,7 +116,101 @@ public sealed partial class AnalysisRpcTarget(
             throw Failure(result);
         }
 
-        return AnalysisWire.ToWire(result.Analysis);
+        // A fresh run has no remembered grouping of its own, so it opens in whichever the reviewer
+        // was last reading — clamped to what this answer actually holds.
+        var grouping = await ResolveGroupingAsync(result.Analysis, cancellationToken).ConfigureAwait(false);
+
+        return AnalysisWire.ToWire(result.Analysis, grouping, produceClusters);
+    }
+
+    /// <summary>
+    /// Shows the stored analysis in the other grouping. Requirement 2: this cannot re-run anything,
+    /// and the only reason it can be instant is that the run produced both.
+    /// </summary>
+    [JsonRpcMethod("analysis.setGrouping")]
+    public async Task<AnalysisView> SetGroupingAsync(
+        SetGroupingRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var stored = await store
+            .GetLatestAsync(request.RepositoryPath, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (stored is null)
+        {
+            throw RpcErrors.Failure(
+                "analysis_not_found",
+                $"No analysis is stored for '{request.RepositoryPath}'.",
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["path"] = request.RepositoryPath });
+        }
+
+        var grouping = AnalysisWire.FromWire(request.Grouping);
+
+        // Refused rather than quietly substituted. An analysis produced before groupings existed, or
+        // by a run that was told not to bother with the second one, genuinely does not have it, and
+        // showing dependency flow while the control reads "change clusters" would be a lie the
+        // reviewer has no way to see through.
+        if (!stored.AvailableGroupings.Contains(grouping))
+        {
+            throw RpcErrors.Failure(
+                "analysis_grouping_unavailable",
+                $"Analysis {stored.Id} does not hold the '{AnalysisGroupingNames.Of(grouping)}' "
+                    + "grouping. Re-run the analysis to produce it.",
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["grouping"] = AnalysisGroupingNames.Of(grouping),
+                });
+        }
+
+        await store.SetGroupingAsync(stored.Id, grouping, cancellationToken).ConfigureAwait(false);
+
+        await settings
+            .SetAsync(DefaultGroupingKey, AnalysisGroupingNames.Of(grouping), cancellationToken)
+            .ConfigureAwait(false);
+
+        var produceClusters = await ProduceClustersAsync(null, cancellationToken).ConfigureAwait(false);
+
+        return AnalysisWire.ToWire(stored with { Grouping = grouping }, grouping, produceClusters);
+    }
+
+    /// <summary>
+    /// Which grouping to show: the one remembered against this analysis, else the one last chosen
+    /// anywhere, else dependency flow — and never one this analysis does not hold.
+    /// </summary>
+    private async Task<AnalysisGrouping> ResolveGroupingAsync(
+        Analysis analysis,
+        CancellationToken cancellationToken)
+    {
+        var stored = analysis.Grouping;
+
+        if (stored is null)
+        {
+            var setting = await settings.GetAsync(DefaultGroupingKey, cancellationToken).ConfigureAwait(false);
+            stored = AnalysisGroupingNames.Parse(setting);
+        }
+
+        return stored is { } grouping && analysis.AvailableGroupings.Contains(grouping)
+            ? grouping
+            : AnalysisGrouping.DependencyFlow;
+    }
+
+    /// <summary>
+    /// Whether a run should ask for the second grouping: what the caller said, else what is
+    /// remembered, else yes. Absent means "remembered" rather than "no", so a renderer that does not
+    /// know about the field cannot silently make analyses cheaper and less useful.
+    /// </summary>
+    private async Task<bool> ProduceClustersAsync(bool? requested, CancellationToken cancellationToken)
+    {
+        if (requested is { } asked)
+        {
+            return asked;
+        }
+
+        var setting = await settings.GetAsync(ProduceClustersKey, cancellationToken).ConfigureAwait(false);
+
+        return !string.Equals(setting, "false", StringComparison.Ordinal);
     }
 
     [JsonRpcMethod("analysis.setReviewed")]

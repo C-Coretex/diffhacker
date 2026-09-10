@@ -41,42 +41,44 @@ internal static class AnalysisFixtures
             Project = new ProjectReference("DiffHacker", "src", "DiffHacker.csproj"),
         };
 
-    /// <summary>A result that passes every rule, for a test to break one thing in.</summary>
+    /// <summary>
+    /// A result that passes every rule, for a test to break one thing in.
+    /// <para>
+    /// It holds both groupings, because that is what a run produces: two clusters that keep the
+    /// contract-to-caller path whole, and three thematic ones that split it. A fixture with one
+    /// grouping would let every per-grouping rule pass having been checked once.
+    /// </para>
+    /// </summary>
     public static AnalysisResult Valid() => new()
     {
         Summary = "The contract grew a field and its one caller was updated to pass it.",
         OverallRisks = ["The icon was removed without a replacement being added."],
-        ReadingOrder = [ContractPath, CallerPath, IconPath],
-        Containers =
+        DependencyReadingOrder = [ContractPath, CallerPath, IconPath],
+        DependencyContainers =
         [
-            new AnalysisContainer
-            {
-                Id = "contract-and-caller",
-                Title = "The contract and its caller",
-                Summary = "A field was added and the call site follows it.",
-                Explanation = "The contract is the decision; the caller is the consequence.",
-                Risks = [],
-                DisplayOrder = 1,
-                EntryNodeId = ContractPath,
-                NodeIds = [ContractPath, CallerPath],
-            },
-            new AnalysisContainer
-            {
-                Id = "removed-assets",
-                Title = "Removed assets",
-                Summary = "An icon nothing references any more.",
-                Explanation = "Unrelated to the contract change; grouped separately for that reason.",
-                Risks = [],
-                DisplayOrder = 2,
-                EntryNodeId = IconPath,
-                NodeIds = [IconPath],
-            },
+            Container(
+                "contract-and-caller",
+                displayOrder: 1,
+                nodeIds: [ContractPath, CallerPath],
+                summary: "A field was added and the call site follows it."),
+            Container(
+                "removed-assets",
+                displayOrder: 2,
+                nodeIds: [IconPath],
+                summary: "An icon nothing references any more."),
+        ],
+        ClusterReadingOrder = [ContractPath, CallerPath, IconPath],
+        ClusterContainers =
+        [
+            Container("contracts", displayOrder: 1, nodeIds: [ContractPath]),
+            Container("call-sites", displayOrder: 2, nodeIds: [CallerPath]),
+            Container("assets", displayOrder: 3, nodeIds: [IconPath]),
         ],
         Nodes =
         [
-            Node(ContractPath, rank: 1, importance: 5, states: [AnalysisNodeState.Changed, AnalysisNodeState.EntryPoint]),
-            Node(CallerPath, rank: 2, importance: 2, states: [AnalysisNodeState.Changed]),
-            Node(IconPath, rank: 1, importance: 1, states: [AnalysisNodeState.Deleted, AnalysisNodeState.EntryPoint]),
+            Node(ContractPath, importance: 5),
+            Node(CallerPath, importance: 2),
+            Node(IconPath, importance: 1, states: [AnalysisNodeState.Deleted]),
         ],
         Edges =
         [
@@ -91,9 +93,30 @@ internal static class AnalysisFixtures
         ],
     };
 
+    /// <summary>The same result from a run that was not asked for the second grouping.</summary>
+    public static AnalysisResult DependencyOnly() =>
+        Valid() with { ClusterContainers = [], ClusterReadingOrder = [] };
+
+    /// <summary>A container whose entry node is the first of its members, as validation requires.</summary>
+    public static AnalysisContainer Container(
+        string id,
+        int displayOrder,
+        IReadOnlyList<string> nodeIds,
+        string? summary = null,
+        string? entryNodeId = null) => new()
+        {
+            Id = id,
+            Title = $"The {id} cluster",
+            Summary = summary ?? $"What {id} is about.",
+            Explanation = $"The longer account of {id}.",
+            Risks = [],
+            DisplayOrder = displayOrder,
+            EntryNodeId = entryNodeId ?? nodeIds[0],
+            NodeIds = nodeIds,
+        };
+
     public static AnalysisNode Node(
         string path,
-        int rank,
         int importance = 3,
         IReadOnlyList<AnalysisNodeState>? states = null,
         string? id = null) => new()
@@ -107,14 +130,13 @@ internal static class AnalysisFixtures
             ImplementationNotes = string.Empty,
             Risks = [],
             Importance = importance,
-            Rank = rank,
             States = states ?? [AnalysisNodeState.Changed],
         };
 
     /// <summary>The messages of every error, for an assertion that names what it expects.</summary>
     public static IReadOnlyList<string> ErrorsOf(AnalysisResult result) =>
-        AnalysisValidator.Validate(result, Changeset()).ErrorMessages;
+        Check(result).ErrorMessages;
 
-    public static AnalysisValidation Check(AnalysisResult result) =>
-        AnalysisValidator.Validate(result, Changeset());
+    public static AnalysisValidation Check(AnalysisResult result, bool expectChangeClusters = true) =>
+        AnalysisValidator.Validate(result, Changeset(), expectChangeClusters);
 }
