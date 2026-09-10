@@ -19,6 +19,7 @@ function emptyView(): AnalysisView {
     edges: [],
     diagnostics: [],
     changedFiles: [],
+    reviewedNodeIds: [],
   };
 }
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.8/documentation-export-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.9/documentation-export-request.schema.json",
   "title": "DocumentationExportRequest",
   "description": "Parameters for profile.exportDocumentation, the one call in the entire application that writes into the user's repository. It carries the token from the preview the user approved; the host recomputes that token from what it is about to write and refuses if it differs, so no file can be written that was not shown first, byte for byte.",
   "type": "object",

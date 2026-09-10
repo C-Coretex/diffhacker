@@ -403,3 +403,77 @@ export function stubTwoClusterResult(paths: readonly string[]) {
     ],
   };
 }
+
+/**
+ * A result shaped for Iteration 10's navigation: one node with three predecessors and two
+ * successors, and one node that names a place inside a file rather than the whole of it.
+ *
+ * Verification step 5 asks for exactly that fan — "from a node with three predecessors and two
+ * successors, confirm the navigation offers a labelled choice" — and no other fixture here produces
+ * one. The last path goes in a cluster of its own so one of the choices has a cluster to name, which
+ * is the part of a label that says something a file name does not.
+ *
+ * Takes six paths. `hubIndex` is the third, so the first three point at it and the last two follow.
+ */
+export function stubReviewResult(
+  paths: readonly string[],
+  region?: { path: string; startLine: number; endLine: number },
+) {
+  if (paths.length !== 6) {
+    throw new Error(`stubReviewResult needs exactly six paths, got ${paths.length}.`);
+  }
+
+  const [first, second, third, hub, fourth, aside] = paths as unknown as [
+    string, string, string, string, string, string,
+  ];
+
+  const main = [first, second, third, hub, fourth];
+  const base = stubAnalysisResult(paths);
+
+  return {
+    ...base,
+    readingOrder: [first, second, third, hub, fourth, aside],
+    containers: [
+      {
+        id: 'the-change',
+        title: 'The change itself',
+        summary: 'Everything that had to move together.',
+        explanation: 'One cluster, held together by the reason the change was made.',
+        risks: ['The whole cluster has to ship at once.'],
+        displayOrder: 1,
+        entryNodeId: first,
+        nodeIds: main,
+      },
+      {
+        id: 'the-aside',
+        title: 'The aside',
+        summary: 'One file that follows from the rest without being part of it.',
+        explanation: 'Kept apart so a reader knows it is a consequence, not a cause.',
+        risks: [],
+        displayOrder: 2,
+        entryNodeId: aside,
+        nodeIds: [aside],
+      },
+    ],
+    nodes: base.nodes.map((node) => {
+      const inMain = main.includes(node.filePath);
+      const rank = inMain ? main.indexOf(node.filePath) + 1 : 1;
+
+      return {
+        ...node,
+        rank,
+        startLine: region?.path === node.filePath ? region.startLine : 0,
+        endLine: region?.path === node.filePath ? region.endLine : 0,
+        symbol: region?.path === node.filePath ? 'tenantAware' : '',
+        states: rank === 1 ? ['changed', 'entry_point'] : ['changed'],
+      };
+    }),
+    edges: [
+      { sourceNodeId: first, targetNodeId: hub, kind: 'direct', explanation: `${hub} reads the contract ${first} defines.`, risks: [] },
+      { sourceNodeId: second, targetNodeId: hub, kind: 'direct', explanation: `${hub} was renamed out from under ${second}.`, risks: [] },
+      { sourceNodeId: third, targetNodeId: hub, kind: 'conceptual', explanation: `${third} only makes sense once ${hub} is understood.`, risks: [] },
+      { sourceNodeId: hub, targetNodeId: fourth, kind: 'direct', explanation: `${fourth} is deleted because ${hub} absorbed it.`, risks: ['Nothing else was checked for references to it.'] },
+      { sourceNodeId: hub, targetNodeId: aside, kind: 'conceptual', explanation: `${aside} is the consequence of ${hub} changing shape.`, risks: [] },
+    ],
+  };
+}

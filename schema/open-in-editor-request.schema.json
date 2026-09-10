@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.9/open-in-editor-request.schema.json",
+  "title": "OpenInEditorRequest",
+  "description": "Parameters of editor.open. Says which file and which editor, never which command: whether the editor is handed a two-sided diff or a single file at a line is decided by the host from which sides of the file actually exist, so the renderer cannot ask for a comparison against a side that is not there.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repositoryPath", "path", "line", "editor"],
+  "properties": {
+    "repositoryPath": {
+      "type": "string",
+      "description": "Absolute path to the worktree root."
+    },
+    "path": {
+      "type": "string",
+      "description": "Repository-relative path of the file, as git spells it."
+    },
+    "previousPath": {
+      "type": "string",
+      "description": "Where the file was before it moved, for a rename or a copy. Absent otherwise."
+    },
+    "line": {
+      "type": "integer",
+      "description": "Line to put the cursor on, counting from 1. Zero when the node covers the whole file, which the host reads as the top."
+    },
+    "editor": {
+      "title": "OpenInEditorRequestEditor",
+      "type": "string",
+      "description": "Which editor to launch. vscode and visual_studio are the two the host discovers for itself; custom runs the command the user configured, and is rejected when they have configured none.",
+      "enum": ["vscode", "visual_studio", "custom"]
+    }
+  }
+}

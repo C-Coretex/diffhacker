@@ -33,6 +33,7 @@ export function testView(overrides: Partial<AnalysisView> = {}): AnalysisView {
       file('src/Caller.cs', 'modified', 4, 1, 'C#', 'DiffHacker.Core'),
       file('src/Notes.md', 'added', 20, 0, 'Markdown', 'docs'),
     ],
+    reviewedNodeIds: [],
     ...overrides,
   };
 }
@@ -54,6 +55,50 @@ export function twoContainerView(): AnalysisView {
       edge('src/Contract.cs', 'src/Notes.md', 'conceptual', true),
       edge('src/Caller.cs', 'src/Notes.md', 'conceptual', true),
     ],
+  });
+}
+
+/**
+ * A node with three predecessors and two successors, which is the shape Iteration 10's verification
+ * step 5 names: "from a node with three predecessors and two successors, confirm the navigation offers
+ * a labelled choice". One of the successors is in another cluster, so the label has something to say
+ * beyond the file name.
+ *
+ * The reading order is complete and deliberately not the order the nodes are declared in, so a test
+ * that walks it is testing the order rather than the array.
+ */
+export function fanInFanOutView(): AnalysisView {
+  const ids = [
+    'src/A.cs',
+    'src/B.cs',
+    'src/C.cs',
+    'src/Hub.cs',
+    'src/Down1.cs',
+    'src/Down2.cs',
+  ];
+
+  return testView({
+    readingOrder: ['src/A.cs', 'src/B.cs', 'src/C.cs', 'src/Hub.cs', 'src/Down1.cs', 'src/Down2.cs'],
+    containers: [
+      container('core', 1, 'src/A.cs', ['src/A.cs', 'src/B.cs', 'src/C.cs', 'src/Hub.cs', 'src/Down1.cs']),
+      container('docs', 2, 'src/Down2.cs', ['src/Down2.cs']),
+    ],
+    nodes: [
+      node('src/A.cs', 'core', 1, ['changed', 'entry_point']),
+      node('src/B.cs', 'core', 2, ['changed']),
+      node('src/C.cs', 'core', 3, ['changed']),
+      node('src/Hub.cs', 'core', 4, ['changed']),
+      node('src/Down1.cs', 'core', 5, ['changed']),
+      node('src/Down2.cs', 'docs', 1, ['added', 'entry_point']),
+    ],
+    edges: [
+      edge('src/A.cs', 'src/Hub.cs', 'direct'),
+      edge('src/B.cs', 'src/Hub.cs', 'direct'),
+      edge('src/C.cs', 'src/Hub.cs', 'conceptual'),
+      edge('src/Hub.cs', 'src/Down1.cs', 'direct'),
+      edge('src/Hub.cs', 'src/Down2.cs', 'conceptual', true),
+    ],
+    changedFiles: ids.map((id) => file(id, 'modified', 3, 1, 'C#', 'DiffHacker.Core')),
   });
 }
 

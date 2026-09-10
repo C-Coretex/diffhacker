@@ -206,6 +206,41 @@ export class RepoSet {
     return repo;
   }
 
+  /**
+   * One of every file kind the diff viewer has to open sensibly — Iteration 10 requirement 8, and
+   * its verification step 3 — plus a file past the size at which the viewer stops highlighting.
+   *
+   * `awkward()` covers the same ground for the changed-file list, but this one is built around what
+   * the *viewer* has to survive rather than what the list has to count, and it is deliberately small
+   * enough that every node fits on the diagram at once.
+   */
+  reviewable(): GitRepo {
+    const repo = this.track(GitRepo.create('reviewable'));
+
+    repo
+      .write('src/cache.ts', longText(30))
+      .write('src/old-name.ts', 'export const moved = true;\n')
+      .write('src/gone.ts', 'export const doomed = true;\n')
+      .writeBinary('assets/logo.png')
+      .commitAll('baseline');
+
+    // modified — and long enough that a node naming lines 20 to 24 has somewhere to scroll to.
+    repo.write('src/cache.ts', `${longText(30)}export const tenantAware = true;\n`);
+
+    // renamed, deleted, added, untracked-in-the-same-breath, and a binary that changed.
+    repo.rename('src/old-name.ts', 'src/new-name.ts');
+    repo.remove('src/gone.ts');
+    repo.write('src/brand-new.ts', 'export const fresh = 1;\n');
+    repo.writeBinary('assets/logo.png', 2048);
+
+    // ~1.7 MB: past the megabyte at which the viewer drops highlighting, and well under the five
+    // the host refuses outright, so it exercises the band between the two. Each line is about eleven
+    // bytes, which is where the count comes from.
+    repo.write('src/huge.ts', longText(150_000));
+
+    return repo;
+  }
+
   bare(): GitRepo {
     return this.track(GitRepo.createBare('bare'));
   }

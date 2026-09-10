@@ -235,6 +235,66 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         runner.Runs.ShouldBe(0);
     }
 
+    [Fact]
+    public async Task A_new_analysis_has_nothing_marked_reviewed()
+    {
+        var view = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        view.ReviewedNodeIds.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Marking_nodes_reviewed_answers_with_every_mark_and_the_analysis_it_belongs_to()
+    {
+        var view = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        var state = await _target.SetReviewedAsync(
+            new SetNodesReviewedRequest(nodeIds: ["src/Caller.cs"], repositoryPath: "/repo", reviewed: true),
+            TestContext.Current.CancellationToken);
+
+        state.AnalysisId.ShouldBe(view.AnalysisId);
+        state.ReviewedNodeIds.ShouldBe(["src/Caller.cs"]);
+
+        // And the next read of the whole view agrees, so the interface cannot end up showing marks
+        // the stored analysis does not have.
+        (await _target.GetAsync(Request(), TestContext.Current.CancellationToken))
+            .ReviewedNodeIds.ShouldBe(["src/Caller.cs"]);
+    }
+
+    [Fact]
+    public async Task A_node_that_is_not_in_the_analysis_is_refused_by_name_and_nothing_is_written()
+    {
+        await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        var failure = await Should.ThrowAsync<LocalRpcException>(async () => await _target.SetReviewedAsync(
+            new SetNodesReviewedRequest(
+                // One good id and one invented one. The whole call is refused rather than half
+                // applied: a partly-applied mark is a state the reviewer would have to find by
+                // counting.
+                nodeIds: ["src/Caller.cs", "src/Invented.cs"],
+                repositoryPath: "/repo",
+                reviewed: true),
+            TestContext.Current.CancellationToken));
+
+        var data = failure.ErrorData.ShouldBeOfType<RpcErrorData>();
+
+        data.Code.ShouldBe("analysis_node_not_found");
+        data.Args.ShouldNotBeNull()["nodeId"].ShouldBe("src/Invented.cs");
+
+        (await _target.GetAsync(Request(), TestContext.Current.CancellationToken))
+            .ReviewedNodeIds.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Marking_a_repository_that_has_never_been_analysed_says_so()
+    {
+        var failure = await Should.ThrowAsync<LocalRpcException>(async () => await _target.SetReviewedAsync(
+            new SetNodesReviewedRequest(nodeIds: ["src/Caller.cs"], repositoryPath: "/repo", reviewed: true),
+            TestContext.Current.CancellationToken));
+
+        failure.ErrorData.ShouldBeOfType<RpcErrorData>().Code.ShouldBe("analysis_not_found");
+    }
+
     private AnalysisRpcTarget Target() => new(
         _store,
         _runner,

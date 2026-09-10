@@ -9,12 +9,17 @@ using StreamJsonRpc;
 namespace DiffHacker.Host.Rpc;
 
 /// <summary>
-/// The analysis surface: run one, or read the stored one back.
+/// The analysis surface: run one, read the stored one back, or mark part of it reviewed.
 /// <para>
-/// Both methods return the whole <see cref="AnalysisView"/> rather than a delta, so the renderer
-/// replaces its state instead of merging — the same arrangement <see cref="ProfileRpcTarget"/>
+/// <c>get</c> and <c>run</c> return the whole <see cref="AnalysisView"/> rather than a delta, so the
+/// renderer replaces its state instead of merging — the same arrangement <see cref="ProfileRpcTarget"/>
 /// uses, and for the same reason: an analysis is one artifact and half of a new one on top of half
 /// of an old one is not any analysis at all.
+/// </para>
+/// <para>
+/// <c>setReviewed</c> is the exception, and returns only <see cref="ReviewedState"/>. It keeps the
+/// convention — the whole of what changed, never a patch to it — while declining to send three
+/// hundred nodes and every explanation on them back across the bridge each time a checkbox moves.
 /// </para>
 /// <para>
 /// There is no cancel method. A run is stopped through <c>$/cancelRequest</c>, which StreamJsonRpc
@@ -73,6 +78,51 @@ public sealed partial class AnalysisRpcTarget(
         }
 
         return AnalysisWire.ToWire(result.Analysis);
+    }
+
+    [JsonRpcMethod("analysis.setReviewed")]
+    public async Task<ReviewedState> SetReviewedAsync(
+        SetNodesReviewedRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var stored = await store
+            .GetLatestAsync(request.RepositoryPath, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (stored is null)
+        {
+            throw RpcErrors.Failure(
+                "analysis_not_found",
+                $"No analysis is stored for '{request.RepositoryPath}'.",
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["path"] = request.RepositoryPath });
+        }
+
+        // Checked against the document here rather than inside the store, because whether an id
+        // belongs to this analysis is a question about the model's answer, and this is the layer
+        // holding it. A single unknown id rejects the whole call: a partly-applied mark is a state
+        // the reviewer would have to discover by counting.
+        var known = stored.Document.Nodes
+            .Select(static node => node.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var nodeId in request.NodeIds)
+        {
+            if (!known.Contains(nodeId))
+            {
+                throw RpcErrors.Failure(
+                    "analysis_node_not_found",
+                    $"'{nodeId}' is not a node of analysis {stored.Id}.",
+                    new Dictionary<string, string>(StringComparer.Ordinal) { ["nodeId"] = nodeId });
+            }
+        }
+
+        var marks = await store
+            .SetNodesReviewedAsync(stored.Id, request.NodeIds, request.Reviewed, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new ReviewedState(analysisId: stored.Id, reviewedNodeIds: marks);
     }
 
     /// <summary>

@@ -647,6 +647,13 @@ public sealed class AnalysisRunnerTests
             Saved.Clear();
             return ValueTask.CompletedTask;
         }
+
+        public ValueTask<IReadOnlyList<string>> SetNodesReviewedAsync(
+            string analysisId,
+            IReadOnlyList<string> nodeIds,
+            bool reviewed,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("A run does not mark anything reviewed.");
     }
 
     private sealed class FakeGitClient : IGitClient

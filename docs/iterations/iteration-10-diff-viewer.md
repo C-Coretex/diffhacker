@@ -8,11 +8,59 @@
 |---|---|
 | **Depends on** | [9](iteration-09-explanations.md) |
 | **Blocks** | 12 |
-| **Status** | Not started |
+| **Status** | Complete, apart from macOS and Linux and one deliberate omission — see **Where it stands** |
 
 ## Goal
 
 Close the loop from "understand the change" to "review the code".
+
+## Where it stands
+
+All ten numbered requirements are implemented. The decisions taken along the way — how Monaco fits
+inside the unchanged Content-Security-Policy, why double-clicking no longer zooms, why unchanged-region
+folding is off for a node that names lines, where reviewed marks live, and how the external editor is
+handed two paths — are in [docs/decisions.md](../decisions.md#reading-the-code), together with the
+answers to **Raise before implementing**.
+
+**The gesture.** Requirement 1's warning was taken at its word: Iteration 9 spent the single click on
+keeping a hover card open, so `onNodeClick` still pins and the diff is opened another way. There are
+three — a row of buttons **on the box** (open the diff, hand it to VS Code or Visual Studio, mark it
+read), a **double-click** on the box, and the **Open the diff** button on the card. Pressing any
+button on a box dismisses the pinned card first, because pressing it says the reading is over.
+
+**A cluster opens whole.** Its title bar carries *Open every file*, and a double-click on the region
+does the same: the panel lists every file in the cluster in the analysis's reading order, marks the
+ones already read, and previous/next then walk that list rather than the whole change. Leaving the
+queue is one button, and following an edge out of the cluster leaves it too.
+
+**In the panel.** Previous and next are named buttons at the top rather than chevrons at the bottom,
+because they are what a reviewer presses on every one of three hundred files. The explanation folds
+away and stays folded across files. *Whole file* turns off Monaco's unchanged-region folding, since
+"is this safe" is often a question about the code the diff did not touch. And full screen is a mode
+of its own, entered and left by one button or by `Escape` — separate from the splitter, whose travel
+still stops short of the left edge so that dragging never costs the reviewer sight of where they are.
+
+**Deliberately not done: reviewed marks do not survive a re-analysis.** The marks live in schema 6's
+`reviewed_json` column on the analysis row, which is the literal reading of "persisted with the
+analysis"; a re-run writes a new row and therefore starts with nothing marked. Carrying them forward
+would be behaviour the iteration did not ask for, so it is reported rather than smuggled in.
+`SqliteAnalysisStoreTests.Marks_belong_to_one_analysis_and_do_not_leak_into_the_next_run` pins it, so
+changing it later is a decision rather than a discovery.
+
+**One thing beyond the requirements.** `changedFileFactsInfo` gained `previousPath`. Without it the
+committed side of a renamed file is read from the new path, finds nothing, and every rename draws as
+an addition — and requirement 8's "renamed file (both paths shown)" has nothing to show. It is pinned
+in `AnalysisAgreementTests` with the other per-file facts.
+
+**Measured, not assumed.** Requirement 9's threshold is one megabyte, above which the editor is given
+plaintext with the minimap off and says so. In the end-to-end suite a ~1.7 MB file opens in about
+180 ms; the host still refuses anything over five megabytes before it reaches the bridge.
+
+**Not verified: macOS and Linux.** CI is deliberately deferred and this machine is Windows, so
+WebView2 is the only renderer any of this has run on — the same gap Iterations 8 and 9 reported, and
+a wider one here. Monaco's worker, its fonts and the Content-Security-Policy interaction have only
+been exercised on Chromium; WKWebView and WebKitGTK need not agree about a classic worker served from
+a custom scheme, and that is the first thing to check when those platforms are tried.
 
 ## Context
 

@@ -30,6 +30,13 @@ public sealed record ChangedFileFacts
     /// </summary>
     public required string Path { get; init; }
 
+    /// <summary>
+    /// Where the file was before it moved, or null when it did not. Kept because the committed side
+    /// of a renamed file lives at the old path — reading it from the new one finds nothing and the
+    /// viewer would show a rename as an addition.
+    /// </summary>
+    public string? PreviousPath { get; init; }
+
     public required ChangeStatus Status { get; init; }
 
     /// <summary>
@@ -62,6 +69,7 @@ public sealed record ChangedFileFacts
         return new ChangedFileFacts
         {
             Path = file.Path,
+            PreviousPath = file.PreviousPath,
             Status = file.Status,
             LinesAdded = file.LinesAdded,
             LinesRemoved = file.LinesRemoved,

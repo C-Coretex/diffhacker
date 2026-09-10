@@ -56,6 +56,16 @@ public sealed record Analysis
     public IReadOnlyList<AnalysisDiagnostic> Diagnostics { get; init; } = [];
 
     /// <summary>
+    /// Ids of the nodes the reviewer has marked reviewed. The one part of a stored analysis the user
+    /// writes rather than the model, and the reason it sits here rather than inside
+    /// <see cref="Document"/>: the document is the model's answer unedited, and this is not part of
+    /// it. Keyed by node id — which <see cref="AnalysisNodeId"/> derives from the file path — so a
+    /// mark means the same thing after a re-run and after a change of grouping mode. Empty on an
+    /// analysis written before schema 6.
+    /// </summary>
+    public IReadOnlyList<string> ReviewedNodeIds { get; init; } = [];
+
+    /// <summary>
     /// Every tool call in the order the model made them — requirement 7. Kept whole rather than
     /// summarised, because the question it answers later is "what did it actually look at", and a
     /// count cannot answer that.

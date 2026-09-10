@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckIcon, CopyIcon } from 'lucide-react';
+import { CheckIcon, CopyIcon, FileDiffIcon } from 'lucide-react';
 import type {
   AnalysisContainerInfo,
   AnalysisEdgeInfo,
@@ -10,7 +10,9 @@ import type {
 } from '@/contracts';
 import { useT } from '@/i18n/useT';
 import { copyText } from '@/lib/clipboard';
+import { useAppStore } from '@/store/appStore';
 import { Badge } from '@/components/ui/badge';
+import { ChangeStats, NodeExplanation } from '@/components/analysis/NodeExplanation';
 import { RiskColumn } from '@/components/analysis/RiskList';
 import { basename } from '@/graph/truncate';
 
@@ -56,6 +58,15 @@ export function NodeHoverCard({
           <CopyPathButton path={node.filePath} />
         </div>
 
+        {/*
+          Iteration 10 requirement 1's gesture, decided deliberately rather than by taking the click
+          back. Iteration 9 spent the single click on keeping this card open — because hovering alone
+          lost the card while the reviewer was reaching for it — so the diff opens from the card,
+          which is where the explanation and the risks already are, or from a double-click on the box
+          for anyone who would rather not aim at a button.
+        */}
+        <OpenDiffButton node={node} />
+
         <p className="break-all font-mono text-[11px] text-muted-foreground">
           {node.filePath}
           {node.symbol && ` · ${t('analysis.hover.nodeSymbol', { symbol: node.symbol })}`}
@@ -87,17 +98,27 @@ export function NodeHoverCard({
         </p>
       </header>
 
-      <div className="grid grid-cols-[1.6fr_1fr] gap-3 p-3">
-        <div className="flex min-w-0 flex-col gap-2.5">
-          <Prose label={t('analysis.nodeWhatChanged')} value={node.whatChanged} />
-          <Prose label={t('analysis.nodeWhyItChanged')} value={node.whyItChanged} />
-          <Prose label={t('analysis.nodeAffects')} value={node.howItAffectsOthers} />
-          <Prose label={t('analysis.nodeNotes')} value={node.implementationNotes} />
-        </div>
-
-        <RiskColumn risks={node.risks} className="min-w-0 self-start" />
-      </div>
+      <NodeExplanation node={node} className="p-3" />
     </article>
+  );
+}
+
+/** Opens the diff panel on this node, and makes it the reviewer's current position. */
+function OpenDiffButton({ node }: { node: AnalysisNodeInfo }) {
+  const t = useT();
+  const openDiff = useAppStore((state) => state.openDiffFor);
+
+  return (
+    <button
+      type="button"
+      onClick={() => openDiff(node.id, node.containerId)}
+      title={t('analysis.graph.openDiffHint')}
+      data-testid="open-diff"
+      className="flex items-center gap-1.5 self-start rounded border border-border bg-secondary/60 px-2 py-1 text-xs font-medium hover:bg-accent"
+    >
+      <FileDiffIcon className="size-3.5" aria-hidden />
+      {t('analysis.graph.openDiff')}
+    </button>
   );
 }
 
@@ -206,48 +227,6 @@ export function ContainerHoverCard({
         <RiskColumn risks={container.risks} className="min-w-0 self-start" />
       </div>
     </article>
-  );
-}
-
-/** One labelled prose field. Absent rather than blank when the model had nothing to say. */
-function Prose({ label, value }: { label: string; value: string }) {
-  if (!value) return null;
-
-  return (
-    <div>
-      <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-        {label}
-      </h4>
-      <p className="whitespace-pre-wrap text-sm leading-relaxed">{value}</p>
-    </div>
-  );
-}
-
-/**
- * The line counts and status git recorded when the run happened.
- *
- * Absent rather than zero, all the way from git: a binary or a submodule pointer has no countable
- * line change, and "+0 −0" would claim it was touched and nothing happened.
- */
-function ChangeStats({ facts }: { facts: ChangedFileFactsInfo | undefined }) {
-  const t = useT();
-
-  if (!facts) return <span>{t('analysis.graph.noCounts')}</span>;
-
-  const counts = facts.isBinary
-    ? t('analysis.graph.binary')
-    : facts.linesAdded === undefined && facts.linesRemoved === undefined
-      ? t('analysis.graph.noCounts')
-      : `+${facts.linesAdded ?? 0} −${facts.linesRemoved ?? 0}`;
-
-  return (
-    <span className="tabular-nums">
-      {counts}
-      {' · '}
-      {facts.status}
-      {facts.language && ` · ${facts.language}`}
-      {facts.project && ` · ${facts.project}`}
-    </span>
   );
 }
 

@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronRight } from 'lucide-react';
+import { AlertTriangle, ChevronRight, FilesIcon } from 'lucide-react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import { translate as t } from '@/i18n/translate';
 import { cn } from '@/lib/utils';
@@ -6,6 +6,7 @@ import { COLLAPSED_HEIGHT, COLLAPSED_WIDTH } from '@/graph/elkOptions';
 import type { CollapsedContainerNodeData } from '@/graph/flowGraph';
 import { projectColourStyle } from '@/graph/palette';
 import { useAppStore } from '@/store/appStore';
+import { useGraphActions } from './graphActions';
 
 /**
  * A cluster the reviewer folded away.
@@ -23,6 +24,7 @@ export function CollapsedContainerNode({ data }: NodeProps<Node<CollapsedContain
   const { container, nodeCount, entryLabel, linesAdded, linesRemoved, riskCount, colourSlots, isMatch } =
     data;
   const toggle = useAppStore((state) => state.toggleContainerCollapsed);
+  const actions = useGraphActions();
 
   return (
     <div
@@ -74,6 +76,27 @@ export function CollapsedContainerNode({ data }: NodeProps<Node<CollapsedContain
             <AlertTriangle className="size-3" aria-hidden />
             <span className="tabular-nums">{riskCount}</span>
           </span>
+        )}
+
+        {/*
+          A folded cluster can still be read whole — `openContainer` unfolds it on the way, the same
+          as every other "take me to this file" does. Deciding to read a cluster and having to expand
+          it first are two different actions for one intention.
+        */}
+        {actions && nodeCount > 0 && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              actions.openContainer(container);
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+            data-testid={`container-open-all-${container.id}`}
+            className="nodrag nopan flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 hover:bg-accent"
+          >
+            <FilesIcon className="size-3" aria-hidden />
+            {t('analysis.graph.openContainer')}
+          </button>
         )}
 
         <span className="ml-auto flex items-center gap-0.5" aria-hidden>

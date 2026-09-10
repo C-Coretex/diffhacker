@@ -35,6 +35,12 @@ public sealed partial class RepositoryWriteTests
         ["src/DiffHacker.Storage/Secrets/MachineDerivedMasterKeyProtector.cs"] = "the salt file",
         ["src/DiffHacker.Host/AppPaths.cs"] = "the data and log directories",
         ["src/DiffHacker.Host/Logging/LoggingSetup.cs"] = "log.txt",
+
+        // Iteration 10. An external diff tool takes two file paths and the committed side of a change
+        // is a git object, so something has to materialise it. This writes it under
+        // AppPaths.DiffCacheDirectory — inside the application's own data directory — and checks the
+        // containment itself before writing, which is why this entry is not a hole in the rule above.
+        ["src/DiffHacker.Host/Editor/HeadBlobExtractor.cs"] = "the extracted HEAD side, in the diff cache",
     };
 
     [Fact]

@@ -10,6 +10,11 @@ namespace DiffHacker.Core.Settings;
 /// interface that could not express it cannot accidentally be made to. Reopening an analysis reads
 /// from here and never starts a conversation — the money was spent once.
 /// </para>
+/// <para>
+/// <see cref="SetNodesReviewedAsync"/> is the one method here that changes a stored analysis, and it
+/// is still not an exception to the paragraph above: it writes the reviewer's own marks, which live
+/// beside the model's answer rather than inside it. Nothing here can edit the document.
+/// </para>
 /// </summary>
 public interface IAnalysisStore
 {
@@ -27,4 +32,18 @@ public interface IAnalysisStore
 
     /// <summary>Forgets every analysis of a repository.</summary>
     ValueTask DeleteAsync(string repositoryPath, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Marks or unmarks nodes of one analysis as reviewed, and returns every id now marked — not
+    /// only the ones this call touched — so the caller never has to read back what it just wrote.
+    /// <para>
+    /// Ids are taken on trust here. Whether a node belongs to the analysis is a question about the
+    /// document, and the caller holding the document is the one that can answer it.
+    /// </para>
+    /// </summary>
+    ValueTask<IReadOnlyList<string>> SetNodesReviewedAsync(
+        string analysisId,
+        IReadOnlyList<string> nodeIds,
+        bool reviewed,
+        CancellationToken cancellationToken);
 }

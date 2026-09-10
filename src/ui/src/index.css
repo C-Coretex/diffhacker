@@ -184,3 +184,19 @@
     overflow: hidden;
   }
 }
+
+/*
+  The one Monaco style DiffHacker adds.
+
+  Requirement 1: a node that names a place inside a file opens *at* that place, and the reader has to
+  be able to see which lines the node is about once they get there. Monaco has no built-in for "these
+  lines are the subject", so this is the decoration `MonacoDiff` attaches — a tint plus a left marker,
+  visible against both of Monaco's themes without being mistaken for a change marker of its own.
+
+  Outside `@layer base` deliberately: Monaco writes its own rules at run time, and a layered rule
+  loses to an unlayered one however specific it is.
+*/
+.diffhacker-node-region {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--primary);
+}

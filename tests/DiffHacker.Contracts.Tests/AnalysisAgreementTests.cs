@@ -129,8 +129,12 @@ public sealed class AnalysisAgreementTests
         // Pinned, so dropping one is a decision rather than an accident. Every one of these is on a
         // box: the path it is matched by, the status word, the two line counts, the binary flag
         // that explains their absence, the language, and the project that picks the fill colour.
+        //
+        // previousPath joined them in Iteration 10, for the diff viewer rather than the box: the
+        // committed side of a renamed file lives at the old path, so reading it from the new one
+        // would show every rename as an addition.
         Names<ChangedFileFactsInfo>().ShouldBe(
-            ["path", "status", "linesAdded", "linesRemoved", "isBinary", "language", "project"],
+            ["path", "previousPath", "status", "linesAdded", "linesRemoved", "isBinary", "language", "project"],
             ignoreOrder: true);
     }
 

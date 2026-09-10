@@ -10,10 +10,18 @@ import {
   type Node,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { AnalysisView } from '@/contracts';
+import type { AnalysisContainerInfo, AnalysisView } from '@/contracts';
 import { useT } from '@/i18n/useT';
+import { containerQueue } from '@/components/diff/containerQueue';
+import { useEditors, useOpenInEditor } from '@/components/diff/useEditors';
+import { useReviewMarks } from '@/components/diff/useReviewMarks';
 import { buildElkGraph } from '@/graph/elkGraph';
-import { toFlowGraph, type FlowGraph, type ReadingEdgeData } from '@/graph/flowGraph';
+import {
+  toFlowGraph,
+  type FlowGraph,
+  type GraphHighlight,
+  type ReadingEdgeData,
+} from '@/graph/flowGraph';
 import { NODE_HEIGHT, NODE_WIDTH } from '@/graph/elkOptions';
 import { projectColourStyle } from '@/graph/palette';
 import { createWorkerLayout, inProcessLayout, type LayoutRunner } from '@/graph/runLayout';
@@ -23,6 +31,7 @@ import { CollapsedContainerNode } from './CollapsedContainerNode';
 import { ContainerNode } from './ContainerNode';
 import { BundleEdge, CrossContainerEdge, EdgeMarkers, ReadingEdge } from './edges';
 import { FileNode } from './FileNode';
+import { GraphActionsProvider, type GraphActions } from './graphActions';
 import { GraphHoverCard } from './GraphHoverCard';
 import { GraphToolbar } from './GraphToolbar';
 import { ContainerHoverCard, EdgeHoverCard, NodeHoverCard } from './hoverCards';
@@ -64,6 +73,14 @@ function GraphSurface({ view }: { view: AnalysisView }) {
   const focusedNodeId = useAppStore((state) => state.graphFocusedNodeId);
   const revealNode = useAppStore((state) => state.revealGraphNode);
   const onlyRenderVisible = useAppStore((state) => state.graphOnlyRenderVisible);
+  const currentNodeId = useAppStore((state) => state.diffNodeId);
+  const reviewedNodeIds = useAppStore((state) => state.reviewedNodeIds);
+  const openDiff = useAppStore((state) => state.openDiffFor);
+  const openContainerDiff = useAppStore((state) => state.openContainerDiff);
+  const diffPanelWidth = useAppStore((state) => state.diffPanelWidth);
+
+  /** The width the last centring was done at, so a drag pans without animating. */
+  const lastWidth = useRef(diffPanelWidth);
 
   const { setCenter, fitView } = useReactFlow();
 
@@ -72,6 +89,55 @@ function GraphSurface({ view }: { view: AnalysisView }) {
   const [laidOutOnce, setLaidOutOnce] = useState(false);
 
   const hover = useHoverTarget();
+
+  // Asked once for the whole diagram rather than once per box. @see graphActions.ts
+  const editors = useEditors();
+  const openInEditor = useOpenInEditor();
+  const marks = useReviewMarks(view.repositoryPath);
+
+  /**
+   * Reading a cluster whole, from wherever that was asked for — its title bar, or a double-click on
+   * it. The queue's first file is the analysis's own reading order restricted to the cluster, so
+   * "open every file" opens them in the sequence the model recommended rather than in the order it
+   * happened to list them.
+   */
+  const openWholeContainer = useCallback(
+    (container: AnalysisContainerInfo) => {
+      const first = containerQueue(view, container.id)[0];
+      if (first) openContainerDiff(container.id, first.id);
+    },
+    [view, openContainerDiff],
+  );
+
+  /**
+   * What the boxes and the title bars are allowed to do.
+   *
+   * Every one of them dismisses the pinned card first. Iteration 9 made a click on a box keep that
+   * box's card open; pressing a button *on* the box says the reading is over and something should
+   * happen, and leaving the card up would drop it over the panel that just opened.
+   */
+  const actions = useMemo<GraphActions>(
+    () => ({
+      editors,
+      openDiff: (node) => {
+        hover.unpin();
+        openDiff(node.id, node.containerId);
+      },
+      openContainer: (container) => {
+        hover.unpin();
+        openWholeContainer(container);
+      },
+      toggleReviewed: (node, reviewed) => {
+        hover.unpin();
+        marks.mark([node.id], reviewed);
+      },
+      openInEditor: (node, facts, editor) => {
+        hover.unpin();
+        openInEditor({ node, facts, repositoryPath: view.repositoryPath }, editor);
+      },
+    }),
+    [editors, hover, openDiff, openWholeContainer, marks, openInEditor, view.repositoryPath],
+  );
 
   // One worker for the life of the surface. Building an ELK instance is not cheap and collapsing a
   // container has to feel immediate.
@@ -93,8 +159,10 @@ function GraphSurface({ view }: { view: AnalysisView }) {
       matchedNodeIds: new Set(hits.map((hit) => hit.nodeId)),
       matchedContainerIds: new Set(hits.filter((hit) => hit.field === 'containerTitle').map((hit) => hit.containerId)),
       focusedNodeId: focusedNodeId ?? null,
+      currentNodeId: currentNodeId ?? null,
+      reviewedNodeIds,
     };
-  }, [view, search, focusedNodeId]);
+  }, [view, search, focusedNodeId, currentNodeId, reviewedNodeIds]);
 
   const elkGraph = useMemo(() => buildElkGraph(view, collapsed), [view, collapsed]);
 
@@ -180,6 +248,11 @@ function GraphSurface({ view }: { view: AnalysisView }) {
 
   // Centring happens after the node exists in the laid-out graph, which — when the container had
   // to be expanded first — is a relayout later than the click.
+  //
+  // `diffPanelWidth` is a dependency, and that is requirement 10 rather than a nicety: dragging the
+  // divider narrows the canvas without moving the viewport, so the node the reviewer is reading
+  // slides out of the strip they can still see. Re-centring on every drag keeps the promise that
+  // their position is visible in the diagram at all times, including at the panel's widest.
   useEffect(() => {
     if (!focusedNodeId) return;
 
@@ -193,9 +266,13 @@ function GraphSurface({ view }: { view: AnalysisView }) {
     setCenter(
       (parent?.position.x ?? 0) + placed.position.x + NODE_WIDTH / 2,
       (parent?.position.y ?? 0) + placed.position.y + NODE_HEIGHT / 2,
-      { zoom: 1, duration: 400 },
+      // No animation while the divider is moving: sixty queued four-hundred-millisecond pans is a
+      // canvas that keeps drifting after the pointer has stopped.
+      { zoom: 1, duration: diffPanelWidth === lastWidth.current ? 400 : 0 },
     );
-  }, [focusedNodeId, graph.nodes, setCenter]);
+
+    lastWidth.current = diffPanelWidth;
+  }, [focusedNodeId, graph.nodes, setCenter, diffPanelWidth]);
 
   if (layoutError !== null) {
     return (
@@ -206,76 +283,103 @@ function GraphSurface({ view }: { view: AnalysisView }) {
   }
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col">
-      <GraphToolbar
-        view={view}
-        colours={graph.colours}
-        onSelectSearchHit={focusNode}
-        onFitView={() => void fitView({ duration: 300 })}
-      />
+    <GraphActionsProvider value={actions}>
+      <div className="relative flex h-full min-h-0 flex-col">
+        <GraphToolbar
+          view={view}
+          colours={graph.colours}
+          onSelectSearchHit={focusNode}
+          onFitView={() => void fitView({ duration: 300 })}
+        />
 
-      <div className="relative min-h-0 flex-1">
-        <EdgeMarkers />
+        <div className="relative min-h-0 flex-1">
+          <EdgeMarkers />
 
-        {!laidOutOnce && (
-          <p className="absolute inset-0 z-10 flex items-center justify-center text-sm text-muted-foreground">
-            {t('analysis.graph.layingOut')}
-          </p>
-        )}
+          {!laidOutOnce && (
+            <p className="absolute inset-0 z-10 flex items-center justify-center text-sm text-muted-foreground">
+              {t('analysis.graph.layingOut')}
+            </p>
+          )}
 
-        <ReactFlow
-          nodes={graph.nodes}
-          edges={graph.edges}
-          nodeTypes={NODE_TYPES}
-          edgeTypes={EDGE_TYPES}
-          fitView
-          minZoom={0.05}
-          maxZoom={2}
-          // Requirement 9: zoom, pan, fit and a minimap — and nothing that moves a node. There is
-          // no manual layout in this product and so nothing to persist (§0.6).
-          nodesDraggable={false}
-          nodesConnectable={false}
-          edgesFocusable={false}
-          elementsSelectable
-          panOnScroll
-          proOptions={{ hideAttribution: false }}
-          onlyRenderVisibleElements={onlyRenderVisible}
-          aria-label={t('analysis.graph.canvasLabel')}
-          // Iteration 9's whole interaction. Hovering costs nothing but a lookup in the view the
-          // screen already holds — no call of any kind leaves the renderer because a pointer moved.
-          onNodeMouseEnter={(event, node) =>
-            enter(node.type === 'file' ? 'node' : 'container', node.id, event)
-          }
-          onNodeMouseLeave={() => hover.hide()}
-          onEdgeMouseEnter={(event, edge) => enter('edge', edge.id, event)}
-          onEdgeMouseLeave={() => hover.hide()}
-          // And clicking keeps the card. Hovering is for glancing; anyone who wants to read the
-          // explanation, scroll it or select out of it should not have to hold a hand still.
-          onNodeClick={(event, node) =>
-            keep(node.type === 'file' ? 'node' : 'container', node.id, event)
-          }
-          onEdgeClick={(event, edge) => keep('edge', edge.id, event)}
-          // Clicking the background is how you put the card away again.
-          onPaneClick={() => hover.unpin()}
-          // Panning or zooming moves the diagram out from under an anchored card.
-          onMoveStart={() => hover.hide()}
-        >
-          <Background gap={24} className="!bg-background" />
-          <Controls showInteractive={false} />
-          <MiniMap
-            pannable
-            zoomable
-            nodeStrokeWidth={2}
-            nodeColor={(node) => minimapColour(node)}
-            className="!bg-card"
-          />
-        </ReactFlow>
+          <ReactFlow
+            nodes={graph.nodes}
+            edges={graph.edges}
+            nodeTypes={NODE_TYPES}
+            edgeTypes={EDGE_TYPES}
+            fitView
+            minZoom={0.05}
+            maxZoom={2}
+            // Requirement 9: zoom, pan, fit and a minimap — and nothing that moves a node. There is
+            // no manual layout in this product and so nothing to persist (§0.6).
+            nodesDraggable={false}
+            nodesConnectable={false}
+            edgesFocusable={false}
+            elementsSelectable
+            panOnScroll
+            proOptions={{ hideAttribution: false }}
+            onlyRenderVisibleElements={onlyRenderVisible}
+            aria-label={t('analysis.graph.canvasLabel')}
+            // Iteration 9's whole interaction. Hovering costs nothing but a lookup in the view the
+            // screen already holds — no call of any kind leaves the renderer because a pointer moved.
+            onNodeMouseEnter={(event, node) =>
+              enter(node.type === 'file' ? 'node' : 'container', node.id, event)
+            }
+            onNodeMouseLeave={() => hover.hide()}
+            onEdgeMouseEnter={(event, edge) => enter('edge', edge.id, event)}
+            onEdgeMouseLeave={() => hover.hide()}
+            // And clicking keeps the card. Hovering is for glancing; anyone who wants to read the
+            // explanation, scroll it or select out of it should not have to hold a hand still.
+            onNodeClick={(event, node) =>
+              keep(node.type === 'file' ? 'node' : 'container', node.id, event)
+            }
+            onEdgeClick={(event, edge) => keep('edge', edge.id, event)}
+            // Iteration 10's second way into the diff. The first is the row of buttons on the box
+            // itself; this is for anyone who would rather aim at the whole box than at a button on it.
+            // The single click stays what Iteration 9 spent it on.
+            //
+            // On a cluster it means the cluster: every file in it, as a queue. A double-click on a
+            // region and a press of its "open every file" button are the same intention.
+            onNodeDoubleClick={(_, node) => {
+              hover.unpin();
 
-        <GraphHoverCard controller={hover}>
-          <HoverContent view={view} target={hover.target} edges={graph.edges} />
-        </GraphHoverCard>
+              if (node.type === 'file') {
+                const target = view.nodes.find((candidate) => candidate.id === node.id);
+                if (target) openDiff(target.id, target.containerId);
+                return;
+              }
+
+              const container = view.containers.find((candidate) => candidate.id === node.id);
+              if (container) openWholeContainer(container);
+            }}
+            // Double-clicking no longer zooms, and it has to not: React Flow's zoom is d3-zoom, whose
+            // `dblclick.zoom` listener sits on the pane as a native handler and stops the event dead
+            // before React — which delivers every synthetic event at the document root — ever sees it.
+            // With it on, the handler above is simply never called. Nothing is lost: scroll, the
+            // controls and the Fit button are all still there, and now a double-click on the diagram
+            // means exactly one thing.
+            zoomOnDoubleClick={false}
+            // Clicking the background is how you put the card away again.
+            onPaneClick={() => hover.unpin()}
+            // Panning or zooming moves the diagram out from under an anchored card.
+            onMoveStart={() => hover.hide()}
+          >
+            <Background gap={24} className="!bg-background" />
+            <Controls showInteractive={false} />
+            <MiniMap
+              pannable
+              zoomable
+              nodeStrokeWidth={2}
+              nodeColor={(node) => minimapColour(node)}
+              className="!bg-card"
+            />
+          </ReactFlow>
+
+          <GraphHoverCard controller={hover}>
+            <HoverContent view={view} target={hover.target} edges={graph.edges} />
+          </GraphHoverCard>
+        </div>
       </div>
-    </div>
+    </GraphActionsProvider>
   );
 }
 
@@ -331,21 +435,33 @@ function applyEdgeHover(edges: readonly Edge[], hoveredId: string | null): Edge[
   });
 }
 
-/** Re-labels the existing nodes without touching a single coordinate. */
-function applyHighlight(
-  nodes: readonly Node[],
-  highlight: { matchedNodeIds: ReadonlySet<string>; matchedContainerIds: ReadonlySet<string>; focusedNodeId: string | null },
-): Node[] {
+/**
+ * Re-labels the existing nodes without touching a single coordinate.
+ *
+ * Iteration 10's two new channels come through here rather than through a relayout for exactly the
+ * reason the search highlight does: marking a node reviewed changes no position, and rearranging
+ * three hundred boxes because a checkbox moved would make every mark feel expensive.
+ */
+function applyHighlight(nodes: readonly Node[], highlight: GraphHighlight): Node[] {
   return nodes.map((node) => {
     const isMatch =
       node.type === 'file'
         ? highlight.matchedNodeIds.has(node.id)
         : highlight.matchedContainerIds.has(node.id);
     const isFocused = highlight.focusedNodeId === node.id;
+    const isCurrent = highlight.currentNodeId === node.id;
+    const isReviewed = highlight.reviewedNodeIds.has(node.id);
 
-    if (node.data.isMatch === isMatch && node.data.isFocused === isFocused) return node;
+    if (
+      node.data.isMatch === isMatch &&
+      node.data.isFocused === isFocused &&
+      node.data.isCurrent === isCurrent &&
+      node.data.isReviewed === isReviewed
+    ) {
+      return node;
+    }
 
-    return { ...node, data: { ...node.data, isMatch, isFocused } };
+    return { ...node, data: { ...node.data, isMatch, isFocused, isCurrent, isReviewed } };
   });
 }
 

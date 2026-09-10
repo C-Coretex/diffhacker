@@ -10,6 +10,7 @@ import type {
   DocumentationExportResult,
   DocumentationPreview,
   DocumentationRequest,
+  EditorSettings,
   EnvironmentInfo,
   FileContentInfo,
   FileContentRequest,
@@ -17,6 +18,7 @@ import type {
   FileDiffRequest,
   ForgetRecentRequest,
   HostInfo,
+  OpenInEditorRequest,
   OpenRepositoryRequest,
   OpenRepositoryResult,
   ProfileRequest,
@@ -24,9 +26,12 @@ import type {
   ProviderIdRequest,
   ProviderProfileList,
   RecentRepositoryList,
+  ReviewedState,
+  SaveEditorSettingsRequest,
   SaveProfileNotesRequest,
   SaveProfileRequest,
   SaveProviderRequest,
+  SetNodesReviewedRequest,
   TestConnectionResult,
   ToolCallEvent,
 } from '@/contracts';
@@ -91,6 +96,11 @@ export const RpcMethods = {
   exportDocumentation: 'profile.exportDocumentation',
   getAnalysis: 'analysis.get',
   runAnalysis: 'analysis.run',
+  setNodesReviewed: 'analysis.setReviewed',
+
+  describeEditors: 'editor.describe',
+  saveEditorSettings: 'editor.save',
+  openInEditor: 'editor.open',
 } as const;
 
 /**
@@ -320,4 +330,41 @@ export function runAnalysis(
     ANALYSIS_TIMEOUT_MS,
     request,
   );
+}
+
+/**
+ * Marks nodes reviewed or unreviewed, and answers with every mark — not a delta.
+ *
+ * The one analysis method that does not return the whole view. It returns the whole of what changed,
+ * which is the same convention; sending three hundred nodes and every explanation on them back for
+ * each checkbox is what it declines to do.
+ */
+export function setNodesReviewed(
+  client: RpcClient,
+  request: SetNodesReviewedRequest,
+): Promise<ReviewedState> {
+  return client.call<ReviewedState>(RpcMethods.setNodesReviewed, request);
+}
+
+/** Which external editors this machine has, and the command configured for one it does not. */
+export function describeEditors(client: RpcClient): Promise<EditorSettings> {
+  return client.call<EditorSettings>(RpcMethods.describeEditors);
+}
+
+export function saveEditorSettings(
+  client: RpcClient,
+  request: SaveEditorSettingsRequest,
+): Promise<EditorSettings> {
+  return client.call<EditorSettings>(RpcMethods.saveEditorSettings, request);
+}
+
+/**
+ * Opens one file in an external editor. Resolves once the editor has started, not once it has been
+ * closed, and rejects with a code the catalogue phrases when there is nothing to start.
+ *
+ * No command line crosses the bridge. The renderer names an editor and a file; the host decides
+ * whether that becomes a comparison or a single file at a line, from which sides actually exist.
+ */
+export function openInEditor(client: RpcClient, request: OpenInEditorRequest): Promise<void> {
+  return client.call<void>(RpcMethods.openInEditor, request);
 }

@@ -43,6 +43,7 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                statistics_json  AS StatisticsJson,
                diagnostics_json AS DiagnosticsJson,
                files_json       AS FilesJson,
+               reviewed_json    AS ReviewedJson,
                trace_json       AS TraceJson
           FROM analyses
         """;
@@ -59,10 +60,12 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
             INSERT INTO analyses
                 (id, repository_path, schema_version, created_at_utc, head_commit, provider_name,
                  model, input_tokens, output_tokens, cost_usd, duration_ms, repair_rounds,
-                 document_json, statistics_json, diagnostics_json, files_json, trace_json)
+                 document_json, statistics_json, diagnostics_json, files_json, reviewed_json,
+                 trace_json)
             VALUES (@id, @repositoryPath, @schemaVersion, @createdAtUtc, @headCommit, @providerName,
                     @model, @inputTokens, @outputTokens, @costUsd, @durationMs, @repairRounds,
-                    @documentJson, @statisticsJson, @diagnosticsJson, @filesJson, @traceJson);
+                    @documentJson, @statisticsJson, @diagnosticsJson, @filesJson, @reviewedJson,
+                    @traceJson);
             """,
             new
             {
@@ -85,6 +88,12 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                 statisticsJson = JsonSerializer.Serialize(analysis.Statistics, StorageJson.Options),
                 diagnosticsJson = JsonSerializer.Serialize(analysis.Diagnostics, StorageJson.Options),
                 filesJson = JsonSerializer.Serialize(analysis.ChangedFiles, StorageJson.Options),
+
+                // Null rather than "[]" for a fresh run, so a column that was never written looks
+                // the same as one written empty and neither reads as a claim about anything.
+                reviewedJson = analysis.ReviewedNodeIds.Count == 0
+                    ? null
+                    : JsonSerializer.Serialize(analysis.ReviewedNodeIds, StorageJson.Options),
                 traceJson = JsonSerializer.Serialize(
                     new AnalysisTrace(analysis.ToolCalls, analysis.ProgressMessages),
                     StorageJson.Options),
@@ -166,6 +175,83 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
             cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
+    public async ValueTask<IReadOnlyList<string>> SetNodesReviewedAsync(
+        string analysisId,
+        IReadOnlyList<string> nodeIds,
+        bool reviewed,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(nodeIds);
+
+        await using var connection = await database.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        // Read, modify and write inside one transaction: two windows toggling different nodes of the
+        // same analysis would otherwise each write a set that never saw the other's change.
+        await using var transaction = await connection
+            .BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var stored = await connection.QuerySingleOrDefaultAsync<string?>(new CommandDefinition(
+            "SELECT reviewed_json FROM analyses WHERE id = @analysisId;",
+            new { analysisId },
+            transaction,
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        var marks = new SortedSet<string>(Read(stored), StringComparer.Ordinal);
+
+        foreach (var nodeId in nodeIds)
+        {
+            if (reviewed)
+            {
+                marks.Add(nodeId);
+            }
+            else
+            {
+                marks.Remove(nodeId);
+            }
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE analyses SET reviewed_json = @reviewedJson WHERE id = @analysisId;",
+            new
+            {
+                analysisId,
+                reviewedJson = marks.Count == 0
+                    ? null
+                    : JsonSerializer.Serialize(marks, StorageJson.Options),
+            },
+            transaction,
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        // Sorted, so two callers that marked the same nodes in different orders are handed the same
+        // answer and the renderer's own ordering never depends on click order.
+        return [.. marks];
+    }
+
+    /// <summary>
+    /// The stored marks, tolerating both a column never written and one holding something this build
+    /// cannot read. A malformed set is worth losing quietly; it is a record of what someone clicked,
+    /// and refusing to open the analysis over it would be a far worse trade.
+    /// </summary>
+    private static List<string> Read(string? reviewedJson)
+    {
+        if (string.IsNullOrWhiteSpace(reviewedJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(reviewedJson, StorageJson.Options) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
     /// <summary>Both halves of a run's trace in one document, so the row has one JSON column.</summary>
     private sealed record AnalysisTrace(
         IReadOnlyList<LlmToolCallRecord> ToolCalls,
@@ -209,6 +295,9 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
         /// </summary>
         public string? FilesJson { get; init; }
 
+        /// <summary>Null before schema 6, and null again whenever nothing is marked.</summary>
+        public string? ReviewedJson { get; init; }
+
         public required string TraceJson { get; init; }
 
         public Analysis ToAnalysis()
@@ -243,6 +332,7 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                 ChangedFiles = FilesJson is null
                     ? []
                     : JsonSerializer.Deserialize<List<ChangedFileFacts>>(FilesJson, StorageJson.Options) ?? [],
+                ReviewedNodeIds = Read(ReviewedJson),
                 ToolCalls = trace?.ToolCalls ?? [],
                 ProgressMessages = trace?.ProgressMessages ?? [],
             };

@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { EditorSettingsForm } from './EditorSettingsForm';
 import { ProviderForm } from './ProviderForm';
 import { TestConnectionPanel } from './TestConnectionPanel';
 import { SecretBackendNotice } from './EnvironmentBanner';
@@ -151,6 +152,8 @@ export function SettingsScreen() {
           onDone={() => setEditing(undefined)}
         />
       )}
+
+      <EditorSettingsForm />
     </div>
   );
 }

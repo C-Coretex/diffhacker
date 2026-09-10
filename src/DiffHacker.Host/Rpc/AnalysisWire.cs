@@ -50,6 +50,7 @@ internal static class AnalysisWire
         readingOrder: [],
         repairRounds: null,
         repositoryPath: repositoryPath,
+        reviewedNodeIds: [],
         schemaVersion: null,
         statistics: null,
         summary: string.Empty);
@@ -88,6 +89,7 @@ internal static class AnalysisWire
                     linesAdded: file.LinesAdded,
                     linesRemoved: file.LinesRemoved,
                     path: file.Path,
+                    previousPath: file.PreviousPath,
                     project: file.Project,
                     status: ToWire(file.Status))),
             ],
@@ -163,6 +165,7 @@ internal static class AnalysisWire
             readingOrder: analysis.ReadingOrder,
             repairRounds: analysis.RepairRounds,
             repositoryPath: analysis.RepositoryPath,
+            reviewedNodeIds: analysis.ReviewedNodeIds,
             schemaVersion: analysis.SchemaVersion,
             statistics: ToWire(analysis.Statistics),
             summary: document.Summary);

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.9/set-nodes-reviewed-request.schema.json",
+  "title": "SetNodesReviewedRequest",
+  "description": "Parameters of analysis.setReviewed. Marks or unmarks nodes of the repository's most recent analysis. Takes a list rather than one id so that marking a whole container is one round trip rather than thirty.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repositoryPath", "nodeIds", "reviewed"],
+  "properties": {
+    "repositoryPath": {
+      "type": "string",
+      "description": "Absolute path to the worktree root."
+    },
+    "nodeIds": {
+      "type": "array",
+      "description": "Ids of the nodes to mark. Every id must belong to the stored analysis; one that does not is rejected and nothing is written.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reviewed": {
+      "type": "boolean",
+      "description": "True marks the nodes reviewed, false unmarks them. The same call does both so the interface has one toggle rather than two methods."
+    }
+  }
+}

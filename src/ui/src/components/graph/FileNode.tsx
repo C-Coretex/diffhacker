@@ -1,5 +1,5 @@
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
-import { AlertTriangle, ChevronsUp } from 'lucide-react';
+import { AlertTriangle, CheckCheck, ChevronsUp } from 'lucide-react';
 import type { AnalysisNodeInfoState } from '@/contracts';
 import { translate as t } from '@/i18n/translate';
 import { cn } from '@/lib/utils';
@@ -7,6 +7,7 @@ import { NODE_HEIGHT, NODE_WIDTH } from '@/graph/elkOptions';
 import type { FileNodeData } from '@/graph/flowGraph';
 import { projectColourStyle } from '@/graph/palette';
 import { basename, clamp, directoryContext } from '@/graph/truncate';
+import { NodeActions } from './NodeActions';
 
 /**
  * One box on the diagram.
@@ -38,12 +39,26 @@ import { basename, clamp, directoryContext } from '@/graph/truncate';
  * ELK never sees it, and the fade has a floor — §0.2.5 says every changed file is on the diagram,
  * and a box nobody can read is not really on it. It goes back to full the moment the pointer is on
  * it, the search matches it, or a jump lands on it.
+ *
+ * **Iteration 10 adds two more, and neither reuses a channel that was already spent.** Every colour,
+ * border style and badge on this box already means something, so:
+ *
+ * - *Current* — the node the diff panel is showing — is a heavy inset outline drawn **inside** the
+ *   box, distinct from the search ring and the jump ring, which are both drawn outside it. That is
+ *   requirement 6: the reviewer's position is visible in the diagram at all times, including when the
+ *   panel is at its widest and the diagram is down to a rail.
+ * - *Reviewed* is a tick in the footer and a lighter box. It reads as "done with", which is what it
+ *   means, and it never fades below the importance floor for the same reason that floor exists.
+ *
+ * **And the box carries its own controls** — open the diff, hand the file to an external editor, mark
+ * it read — drawn over the footer when the pointer is on it. They are `NodeActions`, and the note
+ * there explains why they arrive with the pointer rather than sitting on three hundred boxes at once.
  */
 export function FileNode({ data }: NodeProps<Node<FileNodeData>>) {
-  const { node, facts, colourSlot, isEntry, isMatch, isFocused } = data;
+  const { node, facts, colourSlot, isEntry, isMatch, isFocused, isCurrent, isReviewed } = data;
   const colour = projectColourStyle(colourSlot);
   const states = new Set(node.states);
-  const emphasis = emphasisFor(node.importance, isMatch || isFocused);
+  const emphasis = emphasisFor(node.importance, isMatch || isFocused || isCurrent);
 
   return (
     <div
@@ -53,6 +68,10 @@ export function FileNode({ data }: NodeProps<Node<FileNodeData>>) {
         emphasis.box,
         isMatch && 'ring-2 ring-ring ring-offset-1',
         isFocused && 'ring-4 ring-primary ring-offset-2',
+        // Inset rather than a third ring: two rings outside the box already mean two other things,
+        // and at the zoom a three-hundred-node diagram sits at they would be hard to tell apart.
+        isCurrent && 'outline-[3px] outline-offset-[-3px] outline-primary',
+        isReviewed && !isCurrent && 'opacity-80 saturate-50',
       )}
       style={{
         width: NODE_WIDTH,
@@ -64,6 +83,8 @@ export function FileNode({ data }: NodeProps<Node<FileNodeData>>) {
       data-node-id={node.id}
       data-entry={isEntry ? 'true' : undefined}
       data-emphasis={emphasis.level}
+      data-current={isCurrent ? 'true' : undefined}
+      data-reviewed={isReviewed ? 'true' : undefined}
     >
       {/* The saturated edge of the project colour. Colour never carries the category alone —
           the project name is printed in the footer and repeated in the legend — but this is what
@@ -112,6 +133,9 @@ export function FileNode({ data }: NodeProps<Node<FileNodeData>>) {
       </div>
 
       <div className="flex items-center gap-1 truncate pb-1 pl-3 pr-2 text-[10px] text-muted-foreground">
+        {isReviewed && (
+          <CheckCheck className="size-3 shrink-0 text-primary" aria-label={t('analysis.graph.reviewed')} />
+        )}
         <Stats added={facts?.linesAdded} removed={facts?.linesRemoved} binary={facts?.isBinary} />
         <span aria-hidden>·</span>
         <span>{statusLabel(facts?.status, states)}</span>
@@ -124,6 +148,12 @@ export function FileNode({ data }: NodeProps<Node<FileNodeData>>) {
           </>
         )}
       </div>
+
+      {/*
+        The controls that belong to this file, drawn over the footer when the pointer is on the box
+        or while the panel is showing it. See `NodeActions` for why they are not always there.
+      */}
+      <NodeActions node={node} facts={facts} isReviewed={isReviewed} isCurrent={isCurrent} />
 
       <Handle type="source" position={Position.Bottom} className="!h-1 !w-1 !border-0 !bg-transparent" />
     </div>

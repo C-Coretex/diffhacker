@@ -1,10 +1,11 @@
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, FilesIcon } from 'lucide-react';
 import type { Node, NodeProps } from '@xyflow/react';
 import { translate as t } from '@/i18n/translate';
 import { cn } from '@/lib/utils';
 import { CONTAINER_HEADER } from '@/graph/elkOptions';
 import type { ContainerNodeData } from '@/graph/flowGraph';
 import { useAppStore } from '@/store/appStore';
+import { useGraphActions } from './graphActions';
 
 /**
  * An expanded cluster: the region its nodes sit in, and a title bar above them.
@@ -15,10 +16,17 @@ import { useAppStore } from '@/store/appStore';
  *
  * The header height is `CONTAINER_HEADER`, the same constant ELK pads the container's top by, so
  * the title bar never sits over the first node.
+ *
+ * The title bar carries the cluster's own action beside the chevron: **open every file in it**. A
+ * cluster is the unit a reviewer actually reads — it is what the model decided belongs together — and
+ * making them pick its twelve boxes off the canvas one at a time is the alphabetical file list with
+ * extra steps. Opening it loads the whole cluster into the panel as a queue, in the analysis's own
+ * reading order.
  */
 export function ContainerNode({ data }: NodeProps<Node<ContainerNodeData>>) {
   const { container, nodeCount, isMatch } = data;
   const toggle = useAppStore((state) => state.toggleContainerCollapsed);
+  const actions = useGraphActions();
 
   return (
     <div
@@ -53,6 +61,25 @@ export function ContainerNode({ data }: NodeProps<Node<ContainerNodeData>>) {
         <span className="shrink-0 rounded bg-background px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
           {t('analysis.graph.fileCount', { count: nodeCount })}
         </span>
+
+        {actions && nodeCount > 0 && (
+          <button
+            type="button"
+            // Stopped for the same reason the chevron stops it: the surface turns a click on a
+            // container into a pinned card, and a card over the cluster whose files just opened is a
+            // card in the way.
+            onClick={(event) => {
+              event.stopPropagation();
+              actions.openContainer(container);
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+            data-testid={`container-open-all-${container.id}`}
+            className="nodrag nopan flex shrink-0 items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-[10px] hover:bg-accent"
+          >
+            <FilesIcon className="size-3" aria-hidden />
+            {t('analysis.graph.openContainer')}
+          </button>
+        )}
       </div>
     </div>
   );

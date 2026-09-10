@@ -220,6 +220,91 @@ public sealed class SqliteAnalysisStoreTests : IAsyncLifetime
             .ShouldNotBeNull().Document.Nodes.Count.ShouldBe(2);
     }
 
+    [Fact]
+    public async Task Marking_a_node_reviewed_survives_a_restart()
+    {
+        // Iteration 10 requirement 7: what makes a three-hundred-node review survivable is that
+        // closing the application does not throw it away.
+        await _store.SaveAsync(Sample(), TestContext.Current.CancellationToken);
+
+        await _store.SetNodesReviewedAsync(
+            "analysis1",
+            ["src/Contract.cs", "src/Caller.cs"],
+            reviewed: true,
+            TestContext.Current.CancellationToken);
+
+        await _database.DisposeAsync();
+        SqliteConnection.ClearAllPools();
+
+        _database = new AppDatabase(_directory.DatabaseFile, NullLogger<AppDatabase>.Instance);
+        _store = new SqliteAnalysisStore(_database);
+
+        (await _store.GetLatestAsync("/repo", TestContext.Current.CancellationToken))
+            .ShouldNotBeNull()
+            .ReviewedNodeIds.ShouldBe(["src/Caller.cs", "src/Contract.cs"]);
+    }
+
+    [Fact]
+    public async Task Unmarking_removes_only_what_it_was_asked_to_remove()
+    {
+        await _store.SaveAsync(Sample(), TestContext.Current.CancellationToken);
+
+        await _store.SetNodesReviewedAsync(
+            "analysis1",
+            ["src/Contract.cs", "src/Caller.cs"],
+            reviewed: true,
+            TestContext.Current.CancellationToken);
+
+        var remaining = await _store.SetNodesReviewedAsync(
+            "analysis1",
+            ["src/Contract.cs"],
+            reviewed: false,
+            TestContext.Current.CancellationToken);
+
+        // The answer is every id still marked, not the ones this call touched — which is what lets
+        // the interface replace its state from one response instead of reconciling a delta.
+        remaining.ShouldBe(["src/Caller.cs"]);
+    }
+
+    [Fact]
+    public async Task Marking_the_same_node_twice_does_not_record_it_twice()
+    {
+        await _store.SaveAsync(Sample(), TestContext.Current.CancellationToken);
+
+        await _store.SetNodesReviewedAsync(
+            "analysis1", ["src/Caller.cs"], reviewed: true, TestContext.Current.CancellationToken);
+
+        var marks = await _store.SetNodesReviewedAsync(
+            "analysis1", ["src/Caller.cs"], reviewed: true, TestContext.Current.CancellationToken);
+
+        marks.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task Marks_belong_to_one_analysis_and_do_not_leak_into_the_next_run()
+    {
+        // The consequence of storing marks on the analysis row, stated as a test rather than left to
+        // be discovered: a re-run is a new row and starts with nothing marked. Iteration 10 reports
+        // this deliberately.
+        await _store.SaveAsync(Sample(), TestContext.Current.CancellationToken);
+
+        await _store.SetNodesReviewedAsync(
+            "analysis1", ["src/Caller.cs"], reviewed: true, TestContext.Current.CancellationToken);
+
+        await _store.SaveAsync(
+            Sample() with { Id = "analysis2", CreatedAtUtc = DateTimeOffset.UnixEpoch.AddDays(1) },
+            TestContext.Current.CancellationToken);
+
+        (await _store.GetLatestAsync("/repo", TestContext.Current.CancellationToken))
+            .ShouldNotBeNull()
+            .ReviewedNodeIds.ShouldBeEmpty();
+
+        // And the older run kept its own, so nothing was overwritten on the way.
+        (await _store.FindAsync("analysis1", TestContext.Current.CancellationToken))
+            .ShouldNotBeNull()
+            .ReviewedNodeIds.ShouldBe(["src/Caller.cs"]);
+    }
+
     internal static Analysis Sample()
     {
         var document = new AnalysisResult

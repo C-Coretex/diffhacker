@@ -800,3 +800,171 @@ One consequence worth knowing: `localStorage` lives in the WebView's own profile
 `--data-dir` does not redirect — so unlike everything else the end-to-end suite touches, a theme it
 sets is written into the developer's real browser profile. The one test that changes it puts it back
 to "follow the system" in a `finally`.
+
+## Reading the code
+
+### Monaco lives inside the existing Content-Security-Policy, unchanged
+
+Iteration 10's largest open question was whether Monaco could be bundled without weakening the
+policy Iteration 1 set — the instruction was to stop and ask rather than widen it. It could, and the
+reason is *what* is imported rather than any concession made to it.
+
+Not the `monaco-editor` barrel, and not `editor.main`: both pull in the CSS, HTML, JSON and
+TypeScript **language services**, each with a worker of its own and a compiler behind it. §0.2.3
+makes this product language-agnostic, and it has no business running `tsserver` to colour a diff.
+`src/ui/src/components/diff/monaco/setup.ts` imports `editor.api` plus the eighty-one
+`basic-languages` contributions instead. Those are Monarch — a tokenizer that runs on the main
+thread — and each registers an id, its extensions and a lazy loader, so the grammars become
+eighty-one small chunks that load only when a reviewer opens a file in that language.
+
+That leaves exactly one worker, Monaco's own `editor.worker`, which computes the diff. Vite builds
+it through `?worker` as a classic IIFE bundle, because `worker.format: 'iife'` is already set for
+the ELK layout worker: WebView2 will not start a **module** worker served from the `diffhacker://`
+scheme. `worker-src 'self' blob:` and `style-src 'unsafe-inline'` were both granted in Iteration 1
+with a comment naming Monaco as the reason, and `font-src 'self'` covers `codicon.ttf`, which
+`ContentTypes.cs` already allows. No `getWorkerUrl` blob-bootstrap trick is used; that exists to work
+around bundlers that cannot emit a worker chunk, and reaching for it is the one thing that would have
+made the policy argue back.
+
+None of that is taken on trust. `09-diff-review.spec.ts` arms a `securitypolicyviolation` collector
+before the first editor exists and asserts it is still empty after six have been created and
+destroyed in a real window.
+
+**Monaco is a lazy chunk.** A static import would put roughly 3.7 MB in the first script the window
+parses, before the welcome screen has drawn. `AnalysisScreen` loads `DiffPanel` through
+`React.lazy`, which keeps the initial bundle at about 650 kB and defers the rest to the moment a
+reviewer first opens a file.
+
+### Double-clicking no longer zooms the diagram
+
+React Flow's zoom is d3-zoom, and d3-zoom's `dblclick.zoom` listener is a **native** handler on the
+pane. React delivers every synthetic event at the document root, which is above the pane — so the
+native listener runs first and stops the event dead, and `onNodeDoubleClick` is never called. With
+`zoomOnDoubleClick` on, the gesture simply does not exist.
+
+Turning it off costs nothing: scroll, the controls and the Fit button all still zoom, and a
+double-click on the diagram now means exactly one thing.
+
+### Unchanged-region folding starts off for a node that names lines
+
+Monaco folds unchanged runs to three lines with a control to open them, which is requirement 2's
+"expandable context" and is what makes a diff of a two-thousand-line file readable. It starts
+disabled when a node carries a line range, and that is requirement 1 winning a real conflict between
+the two.
+
+The lines a node is *about* are usually unchanged — a function whose caller moved, a type whose
+shape now matters — so folding is precisely what hides them, and "scroll to and highlight it" cannot
+be honoured on a line that was never rendered. Whole-file nodes, which is most of them, start folded.
+This was found by the end-to-end test rather than by reading the options.
+
+**And it is a control, not only a default.** The panel's *Whole file* button flips it either way,
+because "is this change safe" is often a question about the code the diff did **not** touch, and the
+only previous answer to it was opening the file somewhere else — which is the thing this iteration
+exists to stop. It follows the file rather than the session: "show me the whole of *this* file" is a
+question about this file. `MonacoDiff` applies it in an effect of its own, so pressing the button
+re-folds what is already loaded rather than rebuilding two models to change one boolean.
+
+### Reviewed state is a column on the analysis, and does not survive a re-run
+
+`reviewed_json` on `analyses` (schema 6), holding a JSON array of node ids. Additive and nullable,
+exactly as `files_json` was in schema 5, so an analysis written before it opens with nothing marked
+rather than failing to open.
+
+A column rather than a table of its own, because a mark belongs to one analysis and dies with it:
+`DELETE FROM analyses` already takes it, with no foreign key to remember and no orphan row to prune.
+The trade is stated plainly rather than hidden: **a re-analysis writes a new row and therefore starts
+with nothing marked.** That is the honest reading of "persisted with the analysis"; carrying marks
+forward across runs would be a behaviour nobody asked for, and `SqliteAnalysisStoreTests` pins the
+current one so it is a decision rather than a discovery.
+
+Ids, not indices. §0.6 makes node identity path-derived and stable across runs, so a mark keeps its
+meaning when the model rephrases a title — and Iteration 11 can switch grouping mode underneath it
+without touching the column.
+
+`IAnalysisStore.SetNodesReviewedAsync` is the first method on that interface that changes a stored
+analysis, and it is not an exception to "the analysis result is the model's, unedited": it writes the
+reviewer's own marks, which live beside the document rather than inside it. Nothing on the interface
+can edit the document.
+
+### The external editor is handed two paths, and the host decides which two
+
+An external diff tool takes two file paths, and the committed side of a change is a git object.
+`HeadBlobExtractor` materialises it under `AppPaths.DiffCacheDirectory` — the application's own data
+directory, never the repository — which is why it is the eighth entry on `RepositoryWriteTests.Allowed`
+and why that entry says what it writes to. §0.2.12 still holds: the documentation export remains the
+only thing that writes into a repository.
+
+The renderer names an editor, a file and a line; it never composes a command. The host decides
+whether that becomes `--diff` or `--goto` from **which sides actually exist**, so an added file (no
+committed side) opens rather than being compared against emptiness, and a deleted one opens its
+extracted committed copy. A renderer that chose would be able to ask for a comparison against
+nothing, and the answer to that is an editor showing an empty pane instead of a message.
+
+Every launch is `UseShellExecute = false` with an argument list. No shell is involved, so a path
+containing a space or a semicolon is one argument and cannot become two, and nothing in a
+user-configured command can turn into a second command.
+
+VS Code and Visual Studio are discovered rather than configured — `code`/`code.cmd` on `PATH` plus
+the usual install locations, and `vswhere.exe` for Visual Studio on Windows — so the interface offers
+a button per editor that is actually installed and nothing for one that is not. What is left to
+configure is everything else, which is what "the external editor command is user-configurable" has to
+mean once the common cases need no configuring. There is deliberately no "preferred editor" setting:
+picking a default from a list of one is a worse interface than a button that is simply there.
+
+One honest limitation, recorded in the extractor's own doc comment: `GetFileContentAsync` returns
+decoded text, so what lands in the cache is UTF-8 whatever the committed bytes were. For a Latin-1
+file the external editor sees the same characters written a different way. The diff is identical.
+
+### "Expand to full width" stops short of full width
+
+The iteration's fixed decisions say the diff panel can expand to full width; its verification step 10
+asks that the reviewer's position stay visible **in the graph** at all times, "including while the
+diff panel is expanded to full width". Both cannot be literally true.
+
+The splitter clamps at `container − DIFF_PANEL_MIN_GRAPH`, leaving the diagram a 260-pixel rail, and
+the rail stays centred on whatever the panel is showing — `diffPanelWidth` is a dependency of the
+centring effect, without animation while the divider is moving, because sixty queued four-hundred-
+millisecond pans is a canvas that keeps drifting after the pointer has stopped. The sentence that
+survives is the one with a reason behind it.
+
+**Full screen is the separate mode beside that, and it is deliberately separate.** The clamp is about
+*dragging*: a reviewer moving a divider has not asked to lose sight of where they are, and a rail that
+silently vanished at some width would be a rule nobody could see. Asking for the whole window by name
+is a different act — one button in, the same button out, `Escape` as well — so the diagram is hidden
+rather than shrunk. It is hidden, not unmounted: the diagram owns an ELK worker and a laid-out canvas
+that cost real time to build, and tearing them down would make leaving full screen slower than
+entering it.
+
+### The boxes on the diagram carry their own controls
+
+Iteration 10 first put "open the diff" only on the hover card, because Iteration 9 had spent the
+single click on pinning that card. That was one gesture too many: a reviewer who already knows which
+file they want had to summon a card to reach a button. The card is still where the *explanation*
+lives; the three things a reviewer does *to* a file — read its diff, hand it to an external editor,
+mark it read — are now on the box, drawn over the footer when the pointer is on it.
+
+Every one of those buttons stops its click and dismisses the pinned card first. The surface turns a
+click on a box into a kept card, so a button that let its click through would open a diff and drop a
+card over it in the same gesture; and pressing a button *on* a card's box says the reading is over.
+
+They reach the store through `GraphActionsContext` rather than by calling `useAppStore` themselves,
+and that is arithmetic rather than taste. Three hundred boxes reading four store slices each would be
+twelve hundred subscriptions, plus three hundred copies of the "which editors exist" question, to
+render a row that is invisible until a pointer arrives. The surface asks once and passes the answers
+down.
+
+### A cluster opens as a queue of its files
+
+A container is the unit a reviewer actually reads — it is the thing the model decided belongs
+together — so its title bar has *Open every file*, and a double-click on the region does the same.
+The panel then carries a strip listing every file in the cluster, with the reviewed ticks on it, and
+previous/next walk that list instead of the whole change.
+
+The order is the analysis's own reading order restricted to the cluster, which is the only ordering
+that makes opening one worth anything: a queue in declaration order would be the alphabetical file
+list with a smaller N. A member the reading order never mentions is still listed, after the ones it
+did — §0.2.5 puts every changed file on the diagram and a list of them cannot quietly drop one.
+
+The queue is put down by its own button, and by following an edge out of the cluster: `openDiffFor`
+keeps `diffContainerId` only while the node being opened is in that container. A queue that kept
+pointing at a cluster the reviewer had left would be a queue they no longer chose.

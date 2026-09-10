@@ -44,6 +44,28 @@ export class FakeTransport implements RpcTransport {
     this.receive({ jsonrpc: '2.0', id, result });
   }
 
+  /**
+   * Answers the oldest request for one method that has not been answered yet.
+   *
+   * Needed from Iteration 10 on, where a screen has several calls in flight at once: the diff panel
+   * asks for both sides of a file together, and its header asks which editors exist, so "the most
+   * recent request" stopped being enough to identify what a test meant to answer.
+   */
+  respondTo(method: string, result: unknown): void {
+    const match = this.sent
+      .map((raw) => JSON.parse(raw) as { id?: number; method: string })
+      .find((request) => request.method === method && request.id !== undefined && !this.answered.has(request.id));
+
+    if (match?.id === undefined) {
+      throw new Error(`No unanswered '${method}' request has been sent.`);
+    }
+
+    this.answered.add(match.id);
+    this.receive({ jsonrpc: '2.0', id: match.id, result });
+  }
+
+  private readonly answered = new Set<number>();
+
   /** Answers the most recent request with an error carrying a contract error code. */
   respondWithError(code: string, args?: Record<string, string>): void {
     const { id } = this.lastRequest();

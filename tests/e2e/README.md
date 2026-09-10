@@ -78,11 +78,17 @@ specs/
   03-settings-secrets-and-restart.spec.ts  providers, the promises about API keys, restart
   04-shell-guarantees.spec.ts            CSP enforcement, in-process serving, the handshake
   05-repository-profile.spec.ts          profiling a repository, editing it, writing its docs
+  06-analysis-pipeline.spec.ts           analysing, repairing, failing, cancelling, five hundred files
+  07-graph-rendering.spec.ts             the diagram: searched, collapsed, dragged, explained
+  08-explanations.spec.ts                hover cards, keeping one open, the risk register
+  09-diff-review.spec.ts                 Monaco, every awkward file kind, navigation, reviewed marks,
+                                         the controls on a box, a cluster opened whole, full screen
 src/
   appHarness.ts    launches the host, attaches over CDP, screenshots, tears down
   gitFixture.ts    builds real repositories in temp directories
   screens.ts       locators, one class per screen
   fixtures.ts      the `test` object with `diffhacker` and `repos`
   strings.ts       the application's catalogue, imported
+  stubProvider.ts  a scripted OpenAI-compatible endpoint, and the documents it answers with
   globalSetup.ts   sweeps temp directories earlier runs could not delete
 ```

@@ -23,7 +23,7 @@ public sealed partial class AppDatabase : IAsyncDisposable
     /// Bumped whenever <see cref="MigrateAsync"/> gains a step. Stored in the file, so an older
     /// build opening a newer database can say so rather than misreading it.
     /// </summary>
-    private const int CurrentSchemaVersion = 5;
+    private const int CurrentSchemaVersion = 6;
 
     private readonly string _connectionString;
     private readonly ILogger<AppDatabase> _logger;
@@ -285,6 +285,26 @@ public sealed partial class AppDatabase : IAsyncDisposable
                 ALTER TABLE analyses ADD COLUMN files_json TEXT NULL;
                 ALTER TABLE provider_profiles ADD COLUMN context_window_tokens INTEGER NULL;
                 """,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+
+        if (version < 6)
+        {
+            // Iteration 10: which nodes the reviewer has marked reviewed, as a JSON array of node
+            // ids. Nullable and additive for the same reason files_json was — a version-5 row reads
+            // back as "nothing reviewed" rather than as a failure, and the analysis still opens.
+            //
+            // A column on analyses rather than a table of its own, because a mark belongs to one
+            // analysis and dies with it: DELETE FROM analyses already takes it, with no foreign key
+            // to remember and no orphan row to prune. The trade is that a re-run starts a fresh row
+            // and therefore a fresh count, which is the honest reading of "persisted with the
+            // analysis".
+            //
+            // Ids, not indices. §0.6 makes node identity path-derived and stable across re-runs, so
+            // a mark keeps its meaning when the model rephrases a title, and Iteration 11 can switch
+            // grouping mode underneath it without touching this column.
+            await connection.ExecuteAsync(new CommandDefinition(
+                "ALTER TABLE analyses ADD COLUMN reviewed_json TEXT NULL;",
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
 

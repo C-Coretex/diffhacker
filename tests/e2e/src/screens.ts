@@ -248,6 +248,28 @@ export class SettingsScreen {
 
     await this.saveButton.click();
   }
+
+  // -------------------------------------------------- Iteration 10: the external editor commands
+
+  get editorDiffCommandField(): Locator {
+    return this.page.getByLabel(en.editors.diffLabel);
+  }
+
+  get editorOpenCommandField(): Locator {
+    return this.page.getByLabel(en.editors.openLabel);
+  }
+
+  get saveEditorCommandsButton(): Locator {
+    return this.page.getByRole('button', { name: en.editors.save, exact: true });
+  }
+
+  /** Configures the "anything else" editor, which is the one a test can point wherever it likes. */
+  async setEditorCommands(diff: string, open: string): Promise<void> {
+    await this.editorDiffCommandField.fill(diff);
+    await this.editorOpenCommandField.fill(open);
+    await this.saveEditorCommandsButton.click();
+    await expect(this.page.getByText(en.editors.saved, { exact: true })).toBeVisible();
+  }
 }
 
 export class ProfileScreen {
@@ -501,6 +523,195 @@ export class AnalysisScreen {
     await element.click();
     await expect(this.hoverCard).toHaveAttribute('data-pinned', 'true');
     return this.hoverCard;
+  }
+
+  // --------------------------------------------------- Iteration 10: the diff and the review
+
+  get diffPanel(): Locator {
+    return this.page.getByTestId('diff-panel');
+  }
+
+  /** Monaco's host element. Present only when there is a text diff to draw. */
+  get monaco(): Locator {
+    return this.page.getByTestId('monaco-diff');
+  }
+
+  /** The statement shown instead of an editor: binary, too large, or absent on both sides. */
+  get diffUnavailable(): Locator {
+    return this.page.getByTestId('diff-unavailable');
+  }
+
+  get closeDiffButton(): Locator {
+    return this.page.getByTestId('close-diff');
+  }
+
+  get toggleReviewedButton(): Locator {
+    return this.page.getByTestId('toggle-reviewed');
+  }
+
+  get diffSplitter(): Locator {
+    return this.page.getByTestId('diff-splitter');
+  }
+
+  get degradedNotice(): Locator {
+    return this.page.getByTestId('degraded-notice');
+  }
+
+  get nodeNavigator(): Locator {
+    return this.page.getByTestId('node-navigator');
+  }
+
+  get predecessorChoices(): Locator {
+    return this.page.getByTestId('predecessors').locator('li');
+  }
+
+  get successorChoices(): Locator {
+    return this.page.getByTestId('successors').locator('li');
+  }
+
+  get toggleLayoutButton(): Locator {
+    return this.page.getByTestId('toggle-layout');
+  }
+
+  get nextHunkButton(): Locator {
+    return this.page.getByTestId('next-hunk');
+  }
+
+  get renamedFrom(): Locator {
+    return this.page.getByTestId('renamed-from');
+  }
+
+  get nodeExplanation(): Locator {
+    return this.diffPanel.getByTestId('node-explanation');
+  }
+
+  /** The region marker Monaco draws over the lines a node is about. */
+  get highlightedRegion(): Locator {
+    return this.monaco.locator('.diffhacker-node-region');
+  }
+
+  /** Monaco's own root, so a test can tell "the element exists" from "the editor started". */
+  get monacoEditor(): Locator {
+    return this.monaco.locator('.monaco-diff-editor');
+  }
+
+  /**
+   * The one place an external editor's failure is reported.
+   *
+   * Over the workspace rather than inside the panel, because the buttons that ask for an editor are
+   * on two surfaces now — the panel's header and every box on the diagram — and a 260-pixel box has
+   * nowhere to put a sentence.
+   */
+  get editorError(): Locator {
+    return this.page.getByTestId('editor-error');
+  }
+
+  get dismissEditorErrorButton(): Locator {
+    return this.editorError.getByRole('button', { name: en.analysis.diff.dismissEditorError });
+  }
+
+  get readingOrderPosition(): Locator {
+    return this.page.getByTestId('reading-order-position');
+  }
+
+  get readingOrderNext(): Locator {
+    return this.page.getByTestId('reading-order-next');
+  }
+
+  get readingOrderPrevious(): Locator {
+    return this.page.getByTestId('reading-order-previous');
+  }
+
+  get fullScreenButton(): Locator {
+    return this.page.getByTestId('toggle-full-screen');
+  }
+
+  /** Folds and unfolds the unchanged runs Monaco hides by default. */
+  get wholeFileButton(): Locator {
+    return this.page.getByTestId('toggle-whole-file');
+  }
+
+  get explanationToggle(): Locator {
+    return this.page.getByTestId('toggle-explanation');
+  }
+
+  /** The cluster the reviewer opened whole, listed in the panel. */
+  get containerStrip(): Locator {
+    return this.page.getByTestId('container-strip');
+  }
+
+  queueFile(nodeId: string): Locator {
+    return this.page.getByTestId(`queue-${nodeId}`);
+  }
+
+  get leaveContainerButton(): Locator {
+    return this.page.getByTestId('leave-container');
+  }
+
+  // ---- the controls drawn on a box, which appear when the pointer is on it
+
+  nodeOpenDiffButton(nodeId: string): Locator {
+    return this.page.getByTestId(`node-open-diff-${nodeId}`);
+  }
+
+  nodeReviewedButton(nodeId: string): Locator {
+    return this.page.getByTestId(`node-toggle-reviewed-${nodeId}`);
+  }
+
+  nodeEditorButton(editor: string, nodeId: string): Locator {
+    return this.page.getByTestId(`node-open-in-${editor}-${nodeId}`);
+  }
+
+  /** "Open every file", on a cluster's title bar. */
+  containerOpenAllButton(containerId: string): Locator {
+    return this.page.getByTestId(`container-open-all-${containerId}`);
+  }
+
+  /** One labelled choice in the navigation, addressed by where it goes. */
+  neighbour(nodeId: string): Locator {
+    return this.page.getByTestId(`neighbour-${nodeId}`);
+  }
+
+  /** The overall progress indicator on the band's strip; the first is the overall one. */
+  get reviewProgress(): Locator {
+    return this.page.getByTestId('review-progress').first();
+  }
+
+  get openInCustomEditorButton(): Locator {
+    return this.page.getByTestId('open-in-custom');
+  }
+
+  get fitViewButton(): Locator {
+    return this.page.getByRole('button', { name: en.analysis.graph.fitView, exact: true });
+  }
+
+  /**
+   * Opens a node's diff the way the interface offers it: a double-click on its box.
+   *
+   * Fits the diagram first, and that is not a workaround for the test — it is a consequence of
+   * requirement 6. Opening a file pans the diagram to centre it, so the box a reviewer wants *next*
+   * may be off the visible canvas; a person zooms out or pans, and a test has to do the same. React
+   * Flow moves the canvas by transform rather than by scrolling, so Playwright's own scroll-into-view
+   * cannot do it.
+   */
+  async openDiff(nodeId: string): Promise<void> {
+    await this.fitViewButton.click();
+    await this.graphNode(nodeId).dblclick();
+    await expect(this.diffPanel).toHaveAttribute('data-node-id', nodeId);
+  }
+
+  /**
+   * Presses one of the buttons drawn on a box.
+   *
+   * They arrive with the pointer — three hundred permanent button rows would compete with the thing
+   * the diagram is for — so the box is hovered first. That is what a person does; `opacity: 0` is
+   * still "visible" to Playwright, but `pointer-events: none` is not clickable, and hovering is what
+   * lifts both.
+   */
+  async pressOnBox(nodeId: string, button: Locator): Promise<void> {
+    await this.fitViewButton.click();
+    await this.graphNode(nodeId).hover();
+    await button.click();
   }
 }
 

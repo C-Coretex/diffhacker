@@ -48,6 +48,8 @@ describe('AnalysisGraph', () => {
       graphFocusedNodeId: undefined,
       graphLegendOpen: false,
       graphOnlyRenderVisible: false,
+      diffNodeId: undefined,
+      reviewedNodeIds: new Set<string>(),
     });
   });
 
@@ -457,5 +459,180 @@ describe('AnalysisGraph', () => {
     // carries the category on its own.
     expect(within(legend).getByText('DiffHacker.Core')).toBeInTheDocument();
     expect(within(legend).getByText('docs')).toBeInTheDocument();
+  });
+
+  it('opens the diff on a double-click without spending the single one', async () => {
+    // Iteration 9 spent the single click on keeping a hover card open, so Iteration 10 takes the
+    // double rather than taking that back. Requirement 1's other route is the button on the card.
+    const user = insideTheCard();
+    renderGraph();
+    await boxes();
+
+    await user.click(screen.getByTestId('graph-node-src/Caller.cs'));
+    expect(useAppStore.getState().diffNodeId).toBeUndefined();
+
+    await user.dblClick(screen.getByTestId('graph-node-src/Caller.cs'));
+    expect(useAppStore.getState().diffNodeId).toBe('src/Caller.cs');
+  });
+
+  it('marks the reviewer’s position on the diagram, and moves it', async () => {
+    // Requirement 6. A ring of its own rather than a reuse of the search or jump ring, because all
+    // three can be true of different boxes at the same moment.
+    renderGraph();
+    await boxes();
+
+    useAppStore.getState().openDiffFor('src/Notes.md', 'docs');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('graph-node-src/Notes.md')).toHaveAttribute('data-current', 'true'),
+    );
+
+    expect(screen.getByTestId('graph-node-src/Caller.cs')).not.toHaveAttribute('data-current');
+
+    useAppStore.getState().openDiffFor('src/Caller.cs', 'core');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('graph-node-src/Caller.cs')).toHaveAttribute('data-current', 'true'),
+    );
+
+    expect(screen.getByTestId('graph-node-src/Notes.md')).not.toHaveAttribute('data-current');
+  });
+
+  it('shows on the box which files have been reviewed', async () => {
+    // Requirement 7, on the box rather than only in the panel: what makes a three-hundred-node review
+    // survivable is seeing at a glance what is left, and the panel only ever shows one node.
+    renderGraph();
+    await boxes();
+
+    useAppStore.getState().setReviewed(['src/Caller.cs'], true);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('graph-node-src/Caller.cs')).toHaveAttribute('data-reviewed', 'true'),
+    );
+
+    expect(screen.getByTestId('graph-node-src/Notes.md')).not.toHaveAttribute('data-reviewed');
+
+    useAppStore.getState().setReviewed(['src/Caller.cs'], false);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('graph-node-src/Caller.cs')).not.toHaveAttribute('data-reviewed'),
+    );
+  });
+
+  it('opens the diff from the hover card, which is where the explanation already is', async () => {
+    const user = insideTheCard();
+    renderGraph();
+    await boxes();
+
+    await user.click(screen.getByTestId('graph-node-src/Caller.cs'));
+
+    await user.click(await screen.findByTestId('open-diff'));
+
+    expect(useAppStore.getState().diffNodeId).toBe('src/Caller.cs');
+  });
+
+  it('opens the diff from the button on the box, and puts the pinned card away', async () => {
+    // The card is where the *explanation* lives; the box is where the actions live. A reviewer who
+    // already knows which file they want should not have to summon a card to reach a button — and
+    // pressing one means the reading is over, so the card goes with it rather than landing on top of
+    // the panel that just opened.
+    const user = insideTheCard();
+    renderGraph();
+    await boxes();
+
+    await user.click(screen.getByTestId('graph-node-src/Caller.cs'));
+    expect(await screen.findByTestId('graph-hover-card')).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('node-open-diff-src/Caller.cs'));
+
+    expect(useAppStore.getState().diffNodeId).toBe('src/Caller.cs');
+    await waitFor(() => expect(screen.queryByTestId('graph-hover-card')).not.toBeInTheDocument());
+  });
+
+  it('marks a file reviewed from the box it is drawn on', async () => {
+    const user = insideTheCard();
+    renderGraph();
+    await boxes();
+
+    await user.click(screen.getByTestId('node-toggle-reviewed-src/Caller.cs'));
+
+    expect(useAppStore.getState().reviewedNodeIds.has('src/Caller.cs')).toBe(true);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('graph-node-src/Caller.cs')).toHaveAttribute('data-reviewed', 'true'),
+    );
+
+    await user.click(screen.getByTestId('node-toggle-reviewed-src/Caller.cs'));
+    expect(useAppStore.getState().reviewedNodeIds.has('src/Caller.cs')).toBe(false);
+  });
+
+  it('offers an editor on the box only when the host found one', async () => {
+    // Requirement 3's "handle VS Code not being installed", answered by never drawing a button that
+    // cannot work. The diagram asks once for the whole canvas; every box reads that one answer.
+    const user = insideTheCard();
+    renderGraph();
+    await boxes();
+
+    expect(screen.queryByTestId('node-open-in-vscode-src/Caller.cs')).not.toBeInTheDocument();
+
+    useAppStore.getState().setEditors({
+      vsCodeAvailable: true,
+      visualStudioAvailable: false,
+      customDiffCommand: '',
+      customOpenCommand: '',
+    });
+
+    const button = await screen.findByTestId('node-open-in-vscode-src/Caller.cs');
+    expect(screen.queryByTestId('node-open-in-visual_studio-src/Caller.cs')).not.toBeInTheDocument();
+
+    // No client in jsdom, so nothing is sent — what is asserted is that pressing it neither throws
+    // nor pins a card over the box.
+    await user.click(button);
+    expect(screen.queryByTestId('graph-hover-card')).not.toBeInTheDocument();
+  });
+
+  it('opens every file in a cluster from its title bar', async () => {
+    // A cluster is the unit a reviewer actually reads — it is what the model decided belongs
+    // together — so it opens as a whole, in the analysis's own reading order, rather than being
+    // picked off the canvas one box at a time.
+    const user = insideTheCard();
+    renderGraph();
+    await boxes();
+
+    await user.click(screen.getByTestId('container-open-all-core'));
+
+    const state = useAppStore.getState();
+    expect(state.diffContainerId).toBe('core');
+    expect(state.diffNodeId).toBe('src/Contract.cs');
+    expect(state.graphFocusedNodeId).toBe('src/Contract.cs');
+  });
+
+  it('unfolds a collapsed cluster on the way to opening all of it', async () => {
+    const user = insideTheCard();
+    renderGraph();
+    await boxes();
+
+    useAppStore.getState().toggleContainerCollapsed('docs');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('graph-container-docs')).toHaveAttribute('data-collapsed', 'true'),
+    );
+
+    await user.click(screen.getByTestId('container-open-all-docs'));
+
+    const state = useAppStore.getState();
+    expect(state.diffNodeId).toBe('src/Notes.md');
+    expect(state.graphCollapsed.has('docs')).toBe(false);
+  });
+
+  it('opens a whole cluster on a double-click, the way a file opens on one', async () => {
+    const user = insideTheCard();
+    renderGraph();
+    await boxes();
+
+    await user.dblClick(screen.getByTestId('graph-container-docs'));
+
+    expect(useAppStore.getState().diffContainerId).toBe('docs');
+    expect(useAppStore.getState().diffNodeId).toBe('src/Notes.md');
   });
 });

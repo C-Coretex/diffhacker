@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.8/analysis-view.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.9/analysis-view.schema.json",
   "title": "AnalysisView",
   "description": "Everything the renderer is given about the stored analysis of one repository: the model's graph, the provenance of the run that produced it, the statistics the application computed alongside it, and the diagnostics validation raised. Returned by every analysis.* method, so the renderer replaces its state wholesale rather than merging. The document's fields are hoisted to the root rather than nested under an analysis object, because the contract generator cannot render a definition that references another definition and the container list needs one — the same flattening profile-state.schema.json applies. The container, node and edge shapes duplicate the ones in analysis-result.schema.json, because a schema here cannot reference one there; AnalysisAgreementTests holds the two copies together.",
   "type": "object",
@@ -15,7 +15,8 @@
     "nodes",
     "edges",
     "diagnostics",
-    "changedFiles"
+    "changedFiles",
+    "reviewedNodeIds"
   ],
   "properties": {
     "repositoryPath": {
@@ -122,6 +123,13 @@
       "description": "The changeset as it stood when the run happened, one entry per file. Kept beside the graph rather than folded onto each node because one file may yield several nodes, and because the legend needs the whole list; the renderer indexes it by path. Recorded at run time and stored, never re-read from the working tree — today's line counts on yesterday's analysis would be a different change.",
       "items": {
         "$ref": "#/$defs/changedFileFactsInfo"
+      }
+    },
+    "reviewedNodeIds": {
+      "type": "array",
+      "description": "Ids of the nodes the reviewer has marked reviewed, in no particular order. Empty until something is marked, and empty when there is no analysis. Keyed by node id rather than by position so a mark survives a re-run of the same changeset and a change of grouping mode.",
+      "items": {
+        "type": "string"
       }
     },
     "statistics": {
@@ -367,6 +375,10 @@
         "path": {
           "type": "string",
           "description": "Repository-relative path with forward slashes, exactly as git spells it. What a node's filePath is matched against."
+        },
+        "previousPath": {
+          "type": "string",
+          "description": "Where the file was before it moved, for a rename or a copy. Absent otherwise. The diff viewer needs it twice over: the committed side of a renamed file lives at the old path, and a reviewer looking at the rename has to be shown both."
         },
         "status": {
           "type": "string",

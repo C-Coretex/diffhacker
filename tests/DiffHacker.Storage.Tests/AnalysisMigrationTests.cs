@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace DiffHacker.Storage.Tests;
 
 /// <summary>
-/// The upgrades a fresh database never exercises: v3 to v4, and v4 to v5.
+/// The upgrades a fresh database never exercises: v3 to v4, v4 to v5, and v4 to v6.
 /// <para>
 /// Each builds the older schema by hand rather than by running the current migration with the
 /// version number rewound — that would test nothing, because the columns would already be there.
@@ -71,6 +71,40 @@ public sealed class AnalysisMigrationTests : IDisposable
 
             (await store.FindAsync("analysis1", TestContext.Current.CancellationToken))
                 .ShouldNotBeNull().ChangedFiles.ShouldNotBeEmpty();
+        }
+
+        SqliteConnection.ClearAllPools();
+    }
+
+    [Fact]
+    public async Task An_analysis_stored_before_reviewed_marks_existed_still_opens_and_can_be_marked()
+    {
+        // Iteration 10's half of the same question. An analysis written by Iteration 7 has no
+        // reviewed_json, and the only acceptable behaviour is that it opens with nothing marked and
+        // then accepts a mark like any other — not that it fails to open, and not that the column's
+        // absence is mistaken for a corrupt row.
+        await BuildVersion4DatabaseAsync(TestContext.Current.CancellationToken);
+
+        await using (var database = new AppDatabase(_directory.DatabaseFile, NullLogger<AppDatabase>.Instance))
+        {
+            var store = new SqliteAnalysisStore(database);
+
+            var stored = (await store.GetLatestAsync("/repo", TestContext.Current.CancellationToken))
+                .ShouldNotBeNull();
+
+            stored.ReviewedNodeIds.ShouldBeEmpty();
+
+            var marks = await store.SetNodesReviewedAsync(
+                stored.Id,
+                [stored.Document.Nodes[0].Id],
+                reviewed: true,
+                TestContext.Current.CancellationToken);
+
+            marks.ShouldBe([stored.Document.Nodes[0].Id]);
+
+            (await store.GetLatestAsync("/repo", TestContext.Current.CancellationToken))
+                .ShouldNotBeNull()
+                .ReviewedNodeIds.ShouldBe([stored.Document.Nodes[0].Id]);
         }
 
         SqliteConnection.ClearAllPools();

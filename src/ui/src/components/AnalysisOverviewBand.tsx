@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { RiskList } from '@/components/analysis/RiskList';
 import { collectRisks, RiskRegister } from '@/components/analysis/RiskRegister';
+import { ReviewProgress } from '@/components/diff/ReviewProgress';
 import { useAppStore } from '@/store/appStore';
 
 const stateLabels = {
@@ -81,6 +82,17 @@ export function AnalysisOverviewBand({ view }: { view: AnalysisView }) {
             {t('analysis.riskTotal', { count: riskCount })}
           </span>
         )}
+
+        {/*
+          Requirement 7's overall indicator, on the strip rather than inside the fold: how much of a
+          three-hundred-file review is left is the one number a reviewer wants without asking, and it
+          sits beside the risk count for the same reason.
+        */}
+        <ReviewProgress
+          nodeIds={view.nodes.map((node) => node.id)}
+          showLabel
+          className="ml-4"
+        />
 
         <button
           type="button"
@@ -242,6 +254,9 @@ function Clusters({ view }: { view: AnalysisView }) {
                   {t('analysis.overview.clusterSize', { count: container.nodeIds.length })}
                   {risks > 0 && ` · ${t('analysis.overview.clusterRisks', { count: risks })}`}
                 </span>
+
+                {/* Requirement 7's per-container half. Same set as the overall bar above. */}
+                <ReviewProgress nodeIds={container.nodeIds} className="mt-0.5 text-[11px]" />
               </button>
             </li>
           );

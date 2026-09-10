@@ -18,6 +18,12 @@ export interface FileNodeData extends Record<string, unknown> {
   readonly isEntry: boolean;
   readonly isMatch: boolean;
   readonly isFocused: boolean;
+
+  /** Whether the diff panel is showing this node — the reviewer's position (requirement 6). */
+  readonly isCurrent: boolean;
+
+  /** Whether the reviewer has marked it read (requirement 7). */
+  readonly isReviewed: boolean;
 }
 
 export interface ContainerNodeData extends Record<string, unknown> {
@@ -64,12 +70,20 @@ export interface GraphHighlight {
   readonly matchedNodeIds: ReadonlySet<string>;
   readonly matchedContainerIds: ReadonlySet<string>;
   readonly focusedNodeId: string | null;
+
+  /** The node the diff panel is showing, if any. */
+  readonly currentNodeId: string | null;
+
+  /** Everything the reviewer has marked read. */
+  readonly reviewedNodeIds: ReadonlySet<string>;
 }
 
 const NO_HIGHLIGHT: GraphHighlight = {
   matchedNodeIds: new Set(),
   matchedContainerIds: new Set(),
   focusedNodeId: null,
+  currentNodeId: null,
+  reviewedNodeIds: new Set(),
 };
 
 /**
@@ -162,6 +176,8 @@ export function toFlowGraph(
           isEntry: node.id === container.entryNodeId,
           isMatch: highlight.matchedNodeIds.has(node.id),
           isFocused: highlight.focusedNodeId === node.id,
+          isCurrent: highlight.currentNodeId === node.id,
+          isReviewed: highlight.reviewedNodeIds.has(node.id),
         } satisfies FileNodeData,
       });
     }

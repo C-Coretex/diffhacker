@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.8/analysis-progress.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.9/analysis-progress.schema.json",
   "title": "AnalysisProgress",
   "description": "Payload of the analysis.progress notification: what the model says it is doing, pushed from host to renderer while an analysis runs. Produced by the report_progress tool (Iteration 5) and rendered by the analysis screen (Iteration 7), which is why it is named for the run rather than for the tool.",
   "type": "object",

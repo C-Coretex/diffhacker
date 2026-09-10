@@ -54,6 +54,14 @@ public sealed class AppPaths
     /// <summary>Salt for the machine-derived fallback key. Random per install.</summary>
     public string SecretSaltFile => Path.Combine(DataDirectory, "secrets.salt");
 
+    /// <summary>
+    /// Committed file contents extracted so an external editor has two sides to compare. Here rather
+    /// than in the repository, and rather than in the system temp directory, because §0.2.12 makes
+    /// the application read-only with respect to what it reviews and because a file the reviewer is
+    /// still looking at should not be swept away by a cleaner that does not know they are.
+    /// </summary>
+    public string DiffCacheDirectory => Path.Combine(DataDirectory, "diff-cache");
+
     public void EnsureCreated()
     {
         Directory.CreateDirectory(DataDirectory);

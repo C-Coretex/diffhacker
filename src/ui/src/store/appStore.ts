@@ -3,6 +3,7 @@ import type {
   AnalysisProgress,
   AnalysisView,
   ChangesetResult,
+  EditorSettings,
   EnvironmentInfo,
   HostInfo,
   ProfileState,
@@ -168,6 +169,76 @@ interface AppState {
    */
   graphOnlyRenderVisible: boolean;
 
+  /**
+   * Which node the diff panel is showing, and therefore where the reviewer is.
+   *
+   * Requirement 6's "current position" and requirement 1's "which file is open" are one piece of
+   * state, because they are one fact. Separate from `graphFocusedNodeId`, which is what the search box
+   * put a ring on: a reviewer can search for a file to see where it sits without leaving the one they
+   * are reading, and collapsing the two would make every search a navigation.
+   *
+   * Undefined means the panel is closed and the diagram has the whole width.
+   */
+  diffNodeId?: string;
+
+  /**
+   * The cluster the reviewer opened *whole*, when they opened one.
+   *
+   * Opening a container puts every file in it into the panel as a queue — the cluster is the unit a
+   * reviewer actually reads, and picking its twelve boxes off the diagram one at a time is the
+   * alphabetical file list wearing a diagram's clothes. Set alongside `diffNodeId`, never instead of
+   * it: the panel still shows exactly one file, it just knows which list that file came from.
+   *
+   * Dropped the moment the reviewer follows an edge out of the cluster, because a queue that quietly
+   * kept pointing at the cluster they left would be a queue they no longer chose.
+   */
+  diffContainerId?: string;
+
+  /**
+   * Whether the panel has the window to itself.
+   *
+   * Requirement 6 is why the *splitter* stops short of the left edge: the reviewer's position has to
+   * stay visible in the diagram while they drag. This is not that — it is an explicit mode with an
+   * obvious way back out, asked for so a wide diff can be read on a laptop, and the diagram is one
+   * button away rather than a drag away. Reset when the panel closes.
+   */
+  diffFullScreen: boolean;
+
+  /**
+   * Whether the explanation under the code is unfolded.
+   *
+   * Kept across nodes rather than reset per file: a reviewer who folded the prose away to give the
+   * code the height did not fold away *that file's* prose, they said how they want to read.
+   */
+  diffExplanationOpen: boolean;
+
+  /**
+   * The last external-editor failure, from wherever it was asked for.
+   *
+   * One field for both surfaces — the buttons on a box and the buttons in the panel — because it is
+   * one message about one thing that did not happen, and a box on the diagram has no room to say it.
+   */
+  editorError?: string;
+
+  /**
+   * Ids of the nodes marked reviewed, seeded from the stored analysis and written back through
+   * `analysis.setReviewed`. A set rather than an array because the node boxes ask "is this one
+   * marked" three hundred times per paint.
+   */
+  reviewedNodeIds: ReadonlySet<string>;
+
+  /** Set while a mark is in flight, so a failed call can put the box back the way it was. */
+  reviewedError?: string;
+
+  /**
+   * Width of the diff panel in pixels. Session state, not persisted: §0.6 keeps hand layout out of
+   * this product, and a remembered panel width is the same kind of promise for a different surface.
+   */
+  diffPanelWidth: number;
+
+  /** Which external editors are available, from `editor.describe`. Undefined until asked. */
+  editors?: EditorSettings;
+
   setConnected(hostInfo: HostInfo): void;
   setDetached(): void;
   setConnectionError(message: string): void;
@@ -224,7 +295,33 @@ interface AppState {
   setGraphOverviewOpen(open: boolean): void;
   setGraphBandOpen(open: boolean): void;
   setGraphOnlyRenderVisible(enabled: boolean): void;
+
+  openDiffFor(nodeId: string, containerId: string): void;
+  openContainerDiff(containerId: string, firstNodeId: string): void;
+  leaveContainerQueue(): void;
+  closeDiff(): void;
+  setReviewed(nodeIds: readonly string[], reviewed: boolean): void;
+  applyReviewedState(nodeIds: readonly string[]): void;
+  failReviewed(message: string | undefined): void;
+  setDiffPanelWidth(width: number): void;
+  setDiffFullScreen(fullScreen: boolean): void;
+  setDiffExplanationOpen(open: boolean): void;
+  setEditorError(message: string | undefined): void;
+  setEditors(editors: EditorSettings): void;
 }
+
+/**
+ * How wide the diff panel opens, and how narrow it may be dragged.
+ *
+ * `DIFF_PANEL_MIN_GRAPH` is requirement 10, as a number. The iteration's fixed decisions say the panel
+ * "can expand to full width", and its own verification step asks that the current position stay
+ * visible **in the graph** at all times, including then — so "full width" is as wide as it goes while
+ * the diagram keeps a rail, and the rail is kept centred on the node being read. A panel that covered
+ * the diagram entirely would satisfy one of those sentences by breaking the other.
+ */
+export const DIFF_PANEL_DEFAULT_WIDTH = 720;
+export const DIFF_PANEL_MIN_WIDTH = 420;
+export const DIFF_PANEL_MIN_GRAPH = 260;
 
 /** The graph view's own state, in one place so both reset paths use the same words. */
 const graphDefaults = {
@@ -235,6 +332,11 @@ const graphDefaults = {
   graphDetailsOpen: false,
   graphOverviewOpen: false,
   graphBandOpen: true,
+  diffNodeId: undefined,
+  diffContainerId: undefined,
+  diffFullScreen: false,
+  reviewedError: undefined,
+  editorError: undefined,
 } as const;
 
 export const useAppStore = create<AppState>((set) => ({
@@ -266,6 +368,14 @@ export const useAppStore = create<AppState>((set) => ({
 
   ...graphDefaults,
   graphOnlyRenderVisible: false,
+
+  // Not in graphDefaults, and deliberately: the marks are not this session's view of an analysis, they
+  // are part of it. setAnalysis seeds them from what the host stored rather than clearing them.
+  reviewedNodeIds: new Set<string>() as ReadonlySet<string>,
+  diffPanelWidth: DIFF_PANEL_DEFAULT_WIDTH,
+
+  // Not in graphDefaults either: this one is how the reviewer reads, not what they are reading.
+  diffExplanationOpen: true,
 
   setConnected: (hostInfo) => set({ connection: 'connected', hostInfo, connectionError: undefined }),
   setDetached: () => set({ connection: 'detached' }),
@@ -375,6 +485,11 @@ export const useAppStore = create<AppState>((set) => ({
       // clusters the reviewer never collapsed, using ids that happen to match; carrying the search
       // across would highlight a file that is no longer in the change.
       ...(state.analysisView?.analysisId === analysisView.analysisId ? {} : graphDefaults),
+
+      // The marks come from the host every time, in both branches. They are the one thing on this
+      // screen the reviewer authored, and the stored analysis is the only authority on them — a
+      // re-read that kept a local set would show marks a restart would then lose.
+      reviewedNodeIds: new Set(analysisView.reviewedNodeIds),
     })),
   failAnalysis: (message) => set({ analysis: 'error', analysisError: message }),
 
@@ -434,6 +549,78 @@ export const useAppStore = create<AppState>((set) => ({
   setGraphOverviewOpen: (graphOverviewOpen) => set({ graphOverviewOpen }),
   setGraphBandOpen: (graphBandOpen) => set({ graphBandOpen }),
   setGraphOnlyRenderVisible: (graphOnlyRenderVisible) => set({ graphOnlyRenderVisible }),
+
+  // Opening a diff is also a navigation, so it expands the container and centres the diagram the same
+  // way every other "take me to this file" does. Requirement 6 is the other half of the same set: the
+  // node the panel is showing is the node the diagram rings as current.
+  openDiffFor: (nodeId, containerId) =>
+    set((state) => {
+      const next = new Set(state.graphCollapsed);
+      next.delete(containerId);
+
+      return {
+        graphCollapsed: next,
+        graphFocusedNodeId: nodeId,
+        diffNodeId: nodeId,
+        // Following an edge out of the cluster the reviewer opened whole ends that queue. Keeping it
+        // would leave the strip pointing at a list the panel is no longer walking.
+        diffContainerId: state.diffContainerId === containerId ? containerId : undefined,
+        reviewedError: undefined,
+        editorError: undefined,
+      };
+    }),
+
+  // Opening a cluster is opening its first file *and* remembering the list. Everything else — the
+  // fold, the focus ring, the centring — is what opening any file does, because it is one.
+  openContainerDiff: (containerId, firstNodeId) =>
+    set((state) => {
+      const next = new Set(state.graphCollapsed);
+      next.delete(containerId);
+
+      return {
+        graphCollapsed: next,
+        graphFocusedNodeId: firstNodeId,
+        diffNodeId: firstNodeId,
+        diffContainerId: containerId,
+        reviewedError: undefined,
+        editorError: undefined,
+      };
+    }),
+
+  // Puts the queue down without closing the file being read. "Next" goes back to meaning the next
+  // file in the whole change, which is what the reviewer is asking for by leaving.
+  leaveContainerQueue: () => set({ diffContainerId: undefined }),
+
+  closeDiff: () =>
+    set({ diffNodeId: undefined, diffContainerId: undefined, diffFullScreen: false }),
+
+  // Applied before the call is made, so the checkbox answers the click rather than the network. The
+  // host's answer replaces the whole set through applyReviewedState, and a failure puts it back.
+  setReviewed: (nodeIds, reviewed) =>
+    set((state) => {
+      const next = new Set(state.reviewedNodeIds);
+
+      for (const nodeId of nodeIds) {
+        if (reviewed) next.add(nodeId);
+        else next.delete(nodeId);
+      }
+
+      return { reviewedNodeIds: next, reviewedError: undefined };
+    }),
+
+  applyReviewedState: (nodeIds) => set({ reviewedNodeIds: new Set(nodeIds) }),
+
+  failReviewed: (reviewedError) => set({ reviewedError }),
+
+  setDiffPanelWidth: (diffPanelWidth) => set({ diffPanelWidth }),
+
+  setDiffFullScreen: (diffFullScreen) => set({ diffFullScreen }),
+
+  setDiffExplanationOpen: (diffExplanationOpen) => set({ diffExplanationOpen }),
+
+  setEditorError: (editorError) => set({ editorError }),
+
+  setEditors: (editors) => set({ editors }),
 }));
 
 /**

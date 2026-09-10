@@ -337,6 +337,29 @@ Run from the repository root.
 - **A node id keeps its file path as its whole prefix** — `src/Cache.cs`, or `src/Cache.cs#eviction`
   when one file holds two unrelated changes. §0.6's "stable across re-runs" is enforced by
   `AnalysisNodeId`, not hoped for.
+- **Reviewed marks are node ids on the analysis row**, in schema 6's nullable `reviewed_json`.
+  `IAnalysisStore.SetNodesReviewedAsync` is the only method there that changes a stored analysis, and
+  it still cannot touch the document — the marks sit beside the model's answer, never inside it. A
+  re-run writes a new row and so starts with nothing marked; that is deliberate and pinned by
+  `SqliteAnalysisStoreTests`. See [docs/decisions.md](docs/decisions.md#reading-the-code).
+- **The renderer never composes a command line.** `editor.open` takes an editor, a file and a line;
+  whether that becomes `--diff` or `--goto` is decided host-side from which sides of the file exist.
+  `HeadBlobExtractor` is the eighth entry on `RepositoryWriteTests.Allowed` and writes only under
+  `AppPaths.DiffCacheDirectory` — §0.2.12's one repository write path is still the doc export alone.
+- **Monaco needed no CSP relaxation, and must not be given one.** `monaco/setup.ts` imports
+  `editor.api` plus the `basic-languages` contributions — never the barrel or `editor.main`, which
+  drag in four language services and their workers. The one worker left is `editor.worker`, built as
+  a classic IIFE like the ELK one. `09-diff-review.spec.ts` asks the engine rather than assuming.
+- **A box on the diagram acts through `GraphActionsContext`, never through the store directly.** Its
+  buttons — open the diff, hand the file to an editor, mark it read — are rendered three hundred times
+  over, so the surface asks the store and the host *once* and passes the answers down; a `useAppStore`
+  call inside `FileNode` is twelve hundred subscriptions for a row that is invisible until hovered.
+  Every action stops its click and dismisses the pinned card first, or the click Iteration 9 spent on
+  keeping that card would drop it over the panel that just opened.
+- **A cluster is a unit of reading, not only of layout.** "Open every file" loads the whole container
+  into the panel as a queue ordered by the analysis's own reading order, and previous/next then walk
+  that queue. The queue ends when the reviewer leaves it or follows an edge out of the cluster —
+  `openDiffFor` keeps `diffContainerId` only for a node inside it.
 - **Logging:** structured entries to rolling `log.txt` in the per-user app data dir. Redact
   secrets at the sink, not at call sites.
 - **Tests:** xUnit (.NET), Vitest + RTL (UI), Playwright (E2E). Git-layer/toolbox tests run
@@ -388,7 +411,12 @@ Web Worker in a real WebView, drawn, searched, collapsed and dragged. **Iteratio
 [08-explanations.spec.ts](tests/e2e/specs/08-explanations.spec.ts)**, which is not a nicety either:
 jsdom draws no React Flow edges at all and never finishes positioning a Radix popover, so hovering a
 line, a card staying beside its node rather than over it, and the clipboard working from a custom
-scheme are all things only a real window can show.
+scheme are all things only a real window can show. **Iteration 10 adds
+[09-diff-review.spec.ts](tests/e2e/specs/09-diff-review.spec.ts)** for the same reason, more sharply:
+Monaco measures a DOM that has no layout, so every unit test mocks it and asserts what it was *asked*
+for. Whether a real editor starts — in a WebView, from a custom scheme, with a classic worker, under
+a policy granting no `unsafe-eval` — has exactly one place it can be answered, and that spec also
+arms a `securitypolicyviolation` collector across six editors to prove the policy was never widened.
 
 > The stub answers `stream: true` with server-sent events, because `LlmSession` streams every
 > request. A stub that only sent one JSON body read as a provider returning an empty message, and
@@ -425,6 +453,13 @@ breakdown. Nothing else: the palette is CSS variables, the layout worker is twen
 collision handling rather than pulling in a hover-card or floating-ui package; the hover timing is a
 forty-line hook; the edge hit areas are React Flow's own `interactionWidth`; and copying a path is
 `navigator.clipboard` with an `execCommand` fallback.
+
+**Iteration 10** added `monaco-editor`, already named in §0.3, and nothing else. Not
+`@monaco-editor/react` — it loads Monaco from a CDN unless reconfigured, which §0.2.13 and the CSP
+both forbid, and what survives that configuration is about as much code as `MonacoDiff.tsx`. No
+resizable-panel package either: the splitter is one pointer capture, one clamp and one callback. The
+diff itself is Monaco's, the language is resolved by Monaco's own extension table, and the graph
+navigation is built from `AnalysisView.edges` the renderer already holds.
 
 No resilience package (retry is ~60 lines in `RetryPolicy`). No package for the folder picker
 or secret store (PhotinoX's `ShowOpenFolder`; `[LibraryImport]` credential bindings — why

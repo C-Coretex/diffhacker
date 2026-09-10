@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.8/analysis-result.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.9/analysis-result.schema.json",
   "title": "AnalysisResult",
   "description": "The complete map of one changeset: how the change clusters, how it flows, what to read first, what each part does and what is risky. Every field is required, so a field with nothing to say is an empty string, an empty array or 0. Timestamps, model name and statistics are the application's to record and are stored around this document, not inside it.",
   "type": "object",

@@ -9,6 +9,7 @@ using DiffHacker.Core.Settings;
 using DiffHacker.Core.Tools;
 using DiffHacker.Git;
 using DiffHacker.Host.Assets;
+using DiffHacker.Host.Editor;
 using DiffHacker.Host.Knowledge;
 using DiffHacker.Host.Logging;
 using DiffHacker.Host.Rpc;
@@ -138,6 +139,7 @@ internal static class Program
         services.AddSingleton<IProviderProfileStore, SqliteProviderProfileStore>();
         services.AddSingleton<IProjectProfileStore, SqliteProjectProfileStore>();
         services.AddSingleton<IAnalysisStore, SqliteAnalysisStore>();
+        services.AddSingleton<IAppSettingStore, SqliteAppSettingStore>();
         services.AddSingleton(sp => SecretStoreFactory.Create(
             paths.SecretsFile,
             paths.MasterKeyFile,
@@ -166,6 +168,14 @@ internal static class Program
         services.AddSingleton<RepositoryDocumentationWriter>();
         services.AddSingleton<IAnalysisRunner, AnalysisRunner>();
 
+        // Iteration 10's external editors. The locator caches what it found for the life of the
+        // process, so it is a singleton on purpose rather than by habit; the extractor is the one
+        // thing in the application besides the documentation export that writes a file, and it writes
+        // only under AppPaths.DiffCacheDirectory.
+        services.AddSingleton<ExternalEditorLocator>();
+        services.AddSingleton<HeadBlobExtractor>();
+        services.AddSingleton<ExternalEditorLauncher>();
+
         // The notifier is the bridge's outbound-notification plumbing. ToolProgressNotifier
         // carries the toolbox's report_progress out as analysis.progress, and RunEventNotifier
         // carries the tool traffic underneath it out as analysis.toolCall. Iteration 6 is where
@@ -182,6 +192,7 @@ internal static class Program
         services.AddSingleton<ChangesetRpcTarget>();
         services.AddSingleton<ProfileRpcTarget>();
         services.AddSingleton<AnalysisRpcTarget>();
+        services.AddSingleton<EditorRpcTarget>();
 
         services.AddSingleton(sp => new RpcBridge(
             sp.GetRequiredService<IAppShell>(),
@@ -194,6 +205,7 @@ internal static class Program
                 sp.GetRequiredService<ChangesetRpcTarget>(),
                 sp.GetRequiredService<ProfileRpcTarget>(),
                 sp.GetRequiredService<AnalysisRpcTarget>(),
+                sp.GetRequiredService<EditorRpcTarget>(),
             ],
             sp.GetRequiredService<ILogger<RpcBridge>>()));
 

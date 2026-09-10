@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2Icon, NetworkIcon, TriangleAlertIcon } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Loader2Icon, NetworkIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
 import type { AnalysisView } from '@/contracts';
 import { describeError } from '@/i18n/errors';
 import { formatCount } from '@/i18n/format';
@@ -11,6 +11,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AnalysisOverviewBand } from './AnalysisOverviewBand';
+import { useReviewShortcuts } from './diff/useReviewShortcuts';
+import { useSplitter } from './diff/useSplitter';
 import { AnalysisGraph } from './graph/AnalysisGraph';
 import { AnalysisRunPanel } from './ProfileRunPanel';
 
@@ -24,17 +26,24 @@ import { AnalysisRunPanel } from './ProfileRunPanel';
  * │ SUMMARY                          │ ⚠ RISKS                 │
  * │ ▸ Overview  (order, clusters, numbers, every risk, run)    │
  * ├───────────────────────────────────────────┬────────────────┤
- * │ [search] [fit] [collapse all]    [legend] │  diff panel    │
- * ├───────────────────────────────────────────┤  (Iter 10,     │
- * │                                           │  resizable,    │
- * │              G R A P H         ┌────────┐ │  not mounted   │
- * └───────────────────────────────┴────────┴──┴────────────────┘
+ * │ [search] [fit] [collapse all]    [legend] ║  diff panel    │
+ * ├───────────────────────────────────────────╢  Monaco, the   │
+ * │                                           ║  explanation,  │
+ * │              G R A P H         ┌────────┐ ║  where to go   │
+ * └───────────────────────────────┴────────┴──╨────────────────┘
  * ```
  *
  * Iteration 8 put the summary in a left rail. Iteration 9 moved it across the top, which is what
  * makes the two things after it possible: the diagram gets the whole width it wants at three
  * hundred boxes, and Iteration 10's diff panel — which can expand to full width — has a side of
  * the screen to expand into without arguing with a rail for it.
+ *
+ * The divider between the two is draggable, and its travel stops short of the left edge: requirement
+ * 10 asks that the reviewer's position stay visible **in the graph** at all times, "including while
+ * the diff panel is expanded to full width", so the widest the panel goes still leaves the diagram a
+ * rail — and the rail stays centred on whatever the panel is showing. Full screen is the separate,
+ * explicit mode beside that: asked for by name, entered and left by one button, and the diagram is
+ * hidden rather than thrown away.
  *
  * The screen owns its own scrolling: the band scrolls inside itself, the diagram never does — a
  * canvas inside a scrolling page is one the reviewer scrolls past instead of panning. `App.tsx`
@@ -182,10 +191,7 @@ export function AnalysisScreen() {
       {analysed && view && (
         <div className="flex min-h-0 flex-1 flex-col">
           <AnalysisOverviewBand view={view} />
-
-          <div className="min-h-0 flex-1">
-            <AnalysisGraph view={view} />
-          </div>
+          <ReviewWorkspace view={view} />
         </div>
       )}
 
@@ -199,6 +205,139 @@ export function AnalysisScreen() {
           </Card>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The diff panel, and Monaco with it, as a chunk of its own.
+ *
+ * Monaco is by a wide margin the largest thing in this bundle — several megabytes against a few
+ * hundred kilobytes for everything else — and a static import would put all of it in the first script
+ * the window parses, before the welcome screen has drawn. Loading it when a reviewer first opens a
+ * file costs a moment they asked for; loading it at startup costs one nobody did.
+ *
+ * The chunk is fetched from `diffhacker://app/assets/`, in-process like every other asset. No network
+ * is involved and no CDN is reachable — `connect-src 'self'` sees to that (§0.2.13).
+ */
+const DiffPanel = lazy(async () => ({ default: (await import('./diff/DiffPanel')).DiffPanel }));
+
+/**
+ * The diagram and the diff, side by side, with a divider between them.
+ *
+ * The panel is mounted only while a node is open. Creating an editor is not free either, so a
+ * reviewer who has not opened a file has paid for neither the code nor the editor.
+ */
+function ReviewWorkspace({ view }: { view: AnalysisView }) {
+  const t = useT();
+  const container = useRef<HTMLDivElement>(null);
+
+  const nodeId = useAppStore((state) => state.diffNodeId);
+  const width = useAppStore((state) => state.diffPanelWidth);
+  const setWidth = useAppStore((state) => state.setDiffPanelWidth);
+  const fullScreen = useAppStore((state) => state.diffFullScreen);
+
+  const splitter = useSplitter(container, width, setWidth);
+
+  useReviewShortcuts(view);
+
+  const open = nodeId !== undefined;
+  const expanded = open && fullScreen;
+
+  return (
+    <div ref={container} className="relative flex min-h-0 flex-1">
+      {/*
+        Hidden rather than unmounted in full screen. The diagram owns an ELK worker and a laid-out
+        canvas that cost real time to build; tearing them down because the panel was maximised would
+        make leaving full screen slower than entering it, for a diagram nobody stopped needing.
+      */}
+      <div className={expanded ? 'hidden' : 'min-h-0 min-w-0 flex-1'}>
+        <AnalysisGraph view={view} />
+      </div>
+
+      {open && (
+        <>
+          {/*
+            A separator rather than a button: it has no activated state and no action, it only moves.
+            Keyboard resizing is not here, and the panel is fully usable without it — §0.6 puts full
+            keyboard control in a later piece of work rather than half of it in this one.
+
+            Gone in full screen, because there is nothing on the other side of it to divide.
+          */}
+          {!expanded && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t('analysis.diff.resizeHandle')}
+              data-testid="diff-splitter"
+              data-dragging={splitter.dragging ? 'true' : 'false'}
+              onPointerDown={splitter.onPointerDown}
+              className={
+                splitter.dragging
+                  ? 'w-1 shrink-0 cursor-col-resize bg-primary'
+                  : 'w-1 shrink-0 cursor-col-resize bg-border hover:bg-primary/60'
+              }
+            />
+          )}
+
+          <div
+            className={
+              expanded
+                ? 'min-h-0 min-w-0 flex-1'
+                : 'min-h-0 shrink-0 border-l border-border'
+            }
+            style={expanded ? undefined : { width }}
+          >
+            <Suspense
+              fallback={
+                <p className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  {t('analysis.diff.loading')}
+                </p>
+              }
+            >
+              <DiffPanel view={view} />
+            </Suspense>
+          </div>
+        </>
+      )}
+
+      <EditorFailure />
+    </div>
+  );
+}
+
+/**
+ * The one place an external editor's failure is reported.
+ *
+ * The buttons that ask for one are on two surfaces — the boxes on the diagram and the panel's header
+ * — and a 260-pixel box has nowhere to put a sentence. So the message is store state and it is drawn
+ * once, over the workspace, wherever the request came from. Verification step 9 is exactly this: a
+ * renamed `code` gives a clear message and no crash.
+ */
+function EditorFailure() {
+  const t = useT();
+  const message = useAppStore((state) => state.editorError);
+  const dismiss = useAppStore((state) => state.setEditorError);
+
+  if (!message) return null;
+
+  return (
+    <div
+      role="alert"
+      data-testid="editor-error"
+      className="absolute bottom-4 left-1/2 z-20 flex max-w-xl -translate-x-1/2 items-start gap-3 rounded-md border border-destructive bg-card px-3 py-2 shadow-lg"
+    >
+      <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
+      <p className="text-xs text-destructive">{message}</p>
+
+      <button
+        type="button"
+        onClick={() => dismiss(undefined)}
+        aria-label={t('analysis.diff.dismissEditorError')}
+        className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+      >
+        <XIcon className="size-3.5" aria-hidden />
+      </button>
     </div>
   );
 }

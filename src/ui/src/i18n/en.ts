@@ -193,6 +193,35 @@ export const en = {
   },
 
   /**
+   * External editors. DiffHacker discovers VS Code and Visual Studio itself; the two fields here are
+   * for everyone else, which is the whole of what "the external editor command is user-configurable"
+   * has to mean once the common cases need no configuring.
+   */
+  editors: {
+    heading: 'External editor',
+    description:
+      'DiffHacker opens a file in your own editor when you want to leave the diff panel. VS Code and Visual Studio are found automatically; anything else needs a command here.',
+    detected: 'Found on this machine',
+    detectedNone: 'Neither VS Code nor Visual Studio was found on this machine.',
+    vsCode: 'VS Code',
+    visualStudio: 'Visual Studio',
+
+    diffLabel: 'Command to compare two files',
+    diffHint:
+      'The first word is the program; {left} and {right} are the two files. No shell runs it, so quotes and semicolons are ordinary characters.',
+    diffPlaceholder: 'meld {left} {right}',
+
+    openLabel: 'Command to open one file',
+    openHint:
+      'Used where there is nothing to compare — an added file has no committed side. {file} is the path and {line} the line to land on.',
+    openPlaceholder: 'subl {file}:{line}',
+
+    save: 'Save editor commands',
+    saving: 'Saving…',
+    saved: 'Saved.',
+  },
+
+  /**
    * What the model is doing during a run.
    *
    * Nothing renders these yet — Iteration 5 built the toolbox and the notification channel, but
@@ -539,6 +568,104 @@ export const en = {
       legendOtherProjects: '{count} other projects',
       legendPaletteFull:
         'Only the {count} largest projects get a colour of their own; every box also prints its project name.',
+
+      reviewed: 'Reviewed',
+      current: 'Open in the diff panel',
+      openDiff: 'Open the diff',
+      openDiffHint: 'Double-click a box, or use this button',
+
+      /** The controls that live on a box, and on a cluster's title bar. */
+      nodeActions: 'What to do with {file}',
+      openContainer: 'Open every file',
+    },
+
+    /**
+     * The diff panel: reading the code, and moving to the next thing to read.
+     *
+     * Everything here is about one node at a time. What the change means as a whole is the band's
+     * job, and the graph's; this is the half of the review that used to happen in another window.
+     */
+    diff: {
+      heading: 'Diff',
+      close: 'Close the diff',
+      loading: 'Reading the file…',
+      failed: 'The file could not be read.',
+      empty: 'Choose a file on the diagram to read it.',
+      emptyHint: 'Hover a box and press its diff button, or double-click the box.',
+
+      sideBySide: 'Side by side',
+      inline: 'Inline',
+      previousHunk: 'Previous change',
+      nextHunk: 'Next change',
+      resizeHandle: 'Drag to resize the diff panel',
+      expand: 'Widen the panel',
+      collapse: 'Give the diagram its width back',
+      fullScreen: 'Full screen',
+      exitFullScreen: 'Leave full screen',
+
+      /** Monaco folds unchanged runs by default; this is the way to see what it folded. */
+      showWholeFile: 'Whole file',
+      showChangesOnly: 'Changes only',
+
+      /** Requirement 4, with a fold over it. */
+      explanationHeading: 'What changed and why',
+
+      /** Requirement: a cluster opens as a queue of its files. */
+      leaveContainer: 'Stop reading this cluster as a list',
+      dismissEditorError: 'Dismiss',
+
+      renamedFrom: 'was {path}',
+      region: 'lines {start}–{end}',
+      wholeFile: 'the whole file',
+
+      markReviewed: 'Mark reviewed',
+      markUnreviewed: 'Mark unreviewed',
+      reviewedProgress: '{reviewed} of {total} reviewed',
+      reviewedProgressLabel: 'Reviewed',
+      reviewFailed: 'That mark could not be saved. See log.txt for details.',
+
+      binaryHeading: 'Binary file',
+      binaryBody: 'Git will not produce a text diff for this, so there is nothing to read here.',
+      tooLargeHeading: 'Too large to show',
+      tooLargeBody:
+        'This file is {size}, past the {limit} DiffHacker will move across to the viewer. Open it in an external editor instead.',
+      absentHeading: 'Nothing to compare',
+      absentBody: 'Neither the committed side nor the working tree has this file.',
+      sizeHead: 'Committed: {size}',
+      sizeWorking: 'Working tree: {size}',
+
+      degraded:
+        'This file is {size}. Syntax highlighting and the minimap are off so the interface stays responsive; the diff itself is complete.',
+      fallbackEncoding:
+        'This file is not valid UTF-8 and was read as {encoding}, so some characters are a best effort.',
+
+      openIn: 'Open in {editor}',
+      openInVsCode: 'VS Code',
+      openInVisualStudio: 'Visual Studio',
+      openInCustom: 'your editor',
+
+      /** The same three names, for the buttons on a box — which have a fifth of the width. */
+      shortVsCode: 'VS Code',
+      shortVisualStudio: 'VS',
+      shortCustom: 'Editor',
+
+      /** Requirement 5. A choice, never a single arrow: the graph is not a list. */
+      navigationHeading: 'Where to go next',
+      predecessors: 'Read before this',
+      successors: 'Read after this',
+      noNeighbours: 'Nothing else in the graph points at this file or away from it.',
+      readingOrderHeading: 'Recommended order',
+      readingOrderPosition: '{position} of {total}',
+      readingOrderPrevious: 'Previous',
+      readingOrderNext: 'Next',
+      readingOrderPreviousHint: 'Previous in the recommended reading order',
+      readingOrderNextHint: 'Next in the recommended reading order',
+      crossesClusters: 'in {container}',
+
+      /** Requirement 10: cheap shortcuts, listed where they can be found. */
+      shortcutsHeading: 'Keyboard',
+      shortcuts:
+        'J and K walk the reading order · R marks reviewed · C folds the cluster · Escape leaves full screen, then closes this panel',
     },
 
     state: {
@@ -643,6 +770,20 @@ export const en = {
     analysis_validation_failed:
       'The model could not produce a result that covered the whole change, even after being asked to fix it. See the detail below, or try a more capable model.',
     analysis_run_failed: 'The change could not be analysed. See log.txt for details.',
+    analysis_not_found:
+      'There is no stored analysis for this repository, so there is nothing to mark. Analyse the change first.',
+    analysis_node_not_found:
+      '{nodeId} is not part of this analysis. It may have been produced by an earlier run — reopen the analysis and try again.',
+
+    editor_not_found:
+      'That editor was not found on this machine. Install it, put its command line on your PATH, or configure your own command in settings.',
+    editor_not_configured:
+      'No editor command is configured. Set one in settings, using the placeholders the field describes.',
+    editor_launch_failed: 'The editor would not start. See log.txt for details.',
+    editor_invalid_diff_command:
+      'A comparison command has to say where the two files go. Include {placeholder} in it.',
+    editor_invalid_open_command:
+      'An open command has to say where the file goes. Include {placeholder} in it.',
 
     llm_result_rejected:
       'The model’s answer never passed DiffHacker’s checks, even after being asked to repair it. Nothing was saved.',
