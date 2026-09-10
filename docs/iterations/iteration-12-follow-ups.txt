@@ -21,5 +21,3 @@ Nice to haves:
    a colleague.
 12. during an analysis show tool reasoning & messages in UI (since we have them in backend anyway)
    + tool calls should have timestamp and new tool calls should appear at the top (history should be appended from the top)
-13. open cluster explanation only on cluster header (not on the body) + dragging doesn't work if mouse lands on edge.
-   + explanation card should not be rendered in front of the panel with diff at the right

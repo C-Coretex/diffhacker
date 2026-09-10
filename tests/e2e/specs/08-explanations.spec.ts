@@ -138,11 +138,22 @@ test('hovering a node, an edge and a cluster explains each one, risks apart', as
 
     // ------------------------------------------------------------ requirement 3: the cluster card
 
-    await analysis.graphContainer('first-half').hover({ position: { x: 8, y: 8 } });
+    await analysis.graphContainerHeader('first-half').hover();
     await expect(analysis.hoverCard).toContainText('The first half');
     await expect(analysis.hoverRisks).toContainText('Everything in The first half has to ship together.');
 
     await app.shot('a cluster explained on hover');
+
+    // …and from the title bar only. The rest of a cluster's region is canvas the reviewer pans
+    // across and reads their files in, and explaining the cluster every time the pointer crossed the
+    // gap between two boxes put a card over the boxes. Aimed into the container's own padding —
+    // ELK leaves 24 pixels down each side — so this is empty region and not a file.
+    const region = (await analysis.graphContainer('first-half').boundingBox())!;
+    await analysis
+      .graphContainer('first-half')
+      .hover({ position: { x: 8, y: region.height - 8 } });
+
+    await expect(analysis.hoverCard).toHaveCount(0);
 
     // ------------------------------------------------------------ requirement 2: the edge card
 
@@ -214,6 +225,88 @@ test('a card can be kept by clicking, read and dismissed, and a path copied from
     await analysis.clickForCard(analysis.graphNode('src/cache.ts'));
     await app.page.keyboard.press('Escape');
     await expect(analysis.hoverCard).toHaveCount(0);
+  } finally {
+    await provider.stop();
+  }
+});
+
+/** Where React Flow has moved the canvas to, read off the transform it actually applied. */
+async function viewportTranslation(page: import('@playwright/test').Page) {
+  return page.locator('.react-flow__viewport').evaluate((element) => {
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+    return { x: matrix.e, y: matrix.f };
+  });
+}
+
+test('the diagram pans from a press that lands on one of its lines', async ({
+  diffhacker,
+  repos,
+}) => {
+  const provider = await StubProvider.start();
+
+  try {
+    const { app, analysis } = await analysed(diffhacker, repos, provider);
+    await analysis.fitViewButton.click();
+
+    // React Flow marks every edge `nopan`, and d3-zoom refuses any press inside something carrying
+    // that class — so on a dense diagram, where the lines and their twenty-pixel hit areas are most
+    // of the canvas, dragging simply failed wherever the reviewer happened to grab it. Only a real
+    // window can show this: jsdom draws no edges, so there is nothing there to grab.
+    const before = await viewportTranslation(app.page);
+
+    const beside = await pointBesideFirstEdge(app.page);
+    await app.page.mouse.move(beside.x, beside.y);
+    await app.page.mouse.down();
+    await app.page.mouse.move(beside.x + 120, beside.y + 80, { steps: 12 });
+    await app.page.mouse.up();
+
+    const after = await viewportTranslation(app.page);
+
+    expect(after.x - before.x).toBeCloseTo(120, 0);
+    expect(after.y - before.y).toBeCloseTo(80, 0);
+
+    // And the drag is not also a click: letting go must not pin the card of whichever line the
+    // reviewer happened to start from.
+    await expect(app.page.locator('[data-testid="graph-hover-card"][data-pinned="true"]')).toHaveCount(
+      0,
+    );
+
+    await app.shot('the diagram panned from a line');
+  } finally {
+    await provider.stop();
+  }
+});
+
+test('an explanation never lands on top of the diff panel', async ({ diffhacker, repos }) => {
+  const provider = await StubProvider.start();
+
+  try {
+    const { app, analysis } = await analysed(diffhacker, repos, provider);
+
+    await analysis.openDiff('src/cache.ts');
+    await expect(analysis.diffPanel).toBeVisible();
+
+    const panel = (await analysis.diffPanel.boundingBox())!;
+
+    // The card is portalled to the document body, so nothing in the layout holds it back — a node
+    // near the right of the canvas used to put its explanation squarely over the file being read.
+    // The diagram's own rectangle is the card's collision boundary now, which is a fact only a
+    // window that lays things out can check.
+    await analysis.fitViewButton.click();
+
+    // Aimed at the box's own header rather than its centre: fitting a graph this small into the
+    // narrowed canvas beside an open diff panel puts the second cluster's nodes low enough on screen
+    // to sit under the minimap in the corner, and a point the minimap is drawing over is a point
+    // Playwright cannot click through.
+    const node = analysis.graphNode('src/tenant.ts');
+    await node.hover({ position: { x: 12, y: 8 } });
+    await expect(analysis.hoverCard).toBeVisible();
+    const card = analysis.hoverCard;
+    const cardBox = (await card.boundingBox())!;
+
+    expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(panel.x + 1);
+
+    await app.shot('an explanation beside the diff, never over it');
   } finally {
     await provider.stop();
   }

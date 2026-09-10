@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { PinIcon, PinOffIcon } from 'lucide-react';
 import { useT } from '@/i18n/useT';
@@ -27,12 +27,21 @@ import type { HoverController } from './useHoverTarget';
  * The anchor is a zero-interaction `position: fixed` box holding the element's client rect. Simply
  * measuring the real element and drawing beside it is what keeps this correct at every zoom level
  * without knowing anything about the viewport transform.
+ *
+ * `boundary` is the diagram's own rectangle, and it is what keeps the card off the diff panel. The
+ * card is portalled to the document body, so nothing in the layout can hold it back: without a
+ * boundary a node near the right of the canvas puts its explanation squarely over the file the
+ * reviewer opened, which is the one thing on screen it must never cover. Given the canvas, Radix
+ * treats the panel's edge the way it treats the window's — it flips the card to the other side of
+ * its node and shrinks it to fit rather than crossing over.
  */
 export function GraphHoverCard({
   controller,
+  boundary,
   children,
 }: {
   controller: HoverController;
+  boundary?: RefObject<HTMLElement | null>;
   children: ReactNode;
 }) {
   const t = useT();
@@ -71,6 +80,7 @@ export function GraphHoverCard({
           sideOffset={12}
           collisionPadding={16}
           avoidCollisions
+          collisionBoundary={boundary?.current ?? undefined}
           hideWhenDetached
           // Nothing here takes focus on its own. The card follows a pointer, and stealing focus
           // from the search box every time one appears would make the diagram unusable from the
@@ -91,10 +101,17 @@ export function GraphHoverCard({
           onPointerEnter={hold}
           onPointerLeave={hide}
           className={cn(
-            'z-50 flex w-120 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg',
+            'z-50 flex w-120 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg',
             pinned && 'ring-2 ring-primary',
           )}
-          style={{ maxHeight: 'min(70vh, 34rem)' }}
+          // Flipping to the other side is not enough on its own: with the diff panel open wide, 480
+          // pixels may not fit on either side of the node, and a card that cannot fit is placed
+          // straddling the boundary rather than inside it. Radix measures the room it has and reports
+          // it here, so the card narrows instead of spilling over the panel.
+          style={{
+            maxHeight: 'min(70vh, 34rem)',
+            maxWidth: 'var(--radix-popper-available-width, calc(100vw - 2rem))',
+          }}
           data-testid="graph-hover-card"
           data-pinned={pinned ? 'true' : undefined}
         >

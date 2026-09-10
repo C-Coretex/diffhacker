@@ -40,6 +40,24 @@ export interface GraphActions {
     facts: ChangedFileFactsInfo | undefined,
     editor: OpenInEditorRequestEditor,
   ) => void;
+
+  /**
+   * A cluster's card, asked for by its title bar and by nothing else.
+   *
+   * An expanded container is mostly empty canvas — the region a reviewer pans across, drags over and
+   * reads their files in — and treating the whole of it as a hover target meant the cluster's
+   * explanation appeared every time the pointer crossed the gap between two boxes. So the card belongs
+   * to the title bar, which is the one part of a container that is *about* the container. The element
+   * is passed rather than measured here because the card is anchored to that bar's own rectangle: a
+   * card beside a nine-hundred-pixel region is a card in another postcode.
+   */
+  readonly showContainerCard: (container: AnalysisContainerInfo, element: Element) => void;
+
+  /** The pointer left the title bar. */
+  readonly hideContainerCard: () => void;
+
+  /** The title bar was clicked: show the cluster's card and keep it. @see showContainerCard */
+  readonly pinContainerCard: (container: AnalysisContainerInfo, element: Element) => void;
 }
 
 const GraphActionsContext = createContext<GraphActions | null>(null);

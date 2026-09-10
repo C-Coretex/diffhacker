@@ -286,8 +286,8 @@ describe('AnalysisGraph', () => {
     expect(within(risks).getByText('Older clients will not send the new field.')).toBeInTheDocument();
   });
 
-  it('explains a cluster on hover, with its own risks beside it', async () => {
-    // Requirement 3.
+  it('explains a cluster when its title bar is hovered, with its own risks beside it', async () => {
+    // Requirement 3 — from the title bar, and from there only. @see ContainerNode
     const view = twoContainerView();
     render(
       <AnalysisGraph
@@ -305,7 +305,7 @@ describe('AnalysisGraph', () => {
     );
 
     await boxes();
-    await userEvent.hover(screen.getByTestId('graph-container-core'));
+    await userEvent.hover(screen.getByTestId('graph-container-header-core'));
 
     const card = await screen.findByTestId('graph-hover-card');
 
@@ -316,6 +316,21 @@ describe('AnalysisGraph', () => {
         'The whole cluster lands in one release.',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('says nothing when the pointer is only crossing a cluster', async () => {
+    // The region a container occupies is working canvas: the reviewer pans across it, drags over it
+    // and reads the boxes inside it. Explaining the cluster every time they crossed the gap between
+    // two files put a card over the files.
+    renderGraph();
+    await boxes();
+
+    await userEvent.hover(screen.getByTestId('graph-container-core'));
+    expect(screen.queryByTestId('graph-hover-card')).not.toBeInTheDocument();
+
+    // And the title bar still answers, so the explanation is moved rather than lost.
+    await userEvent.hover(screen.getByTestId('graph-container-header-core'));
+    expect(await screen.findByTestId('graph-hover-card')).toBeInTheDocument();
   });
 
   it('keeps a card open when the node is clicked, and puts it away on the background', async () => {

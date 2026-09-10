@@ -35,6 +35,7 @@ import { GraphActionsProvider, type GraphActions } from './graphActions';
 import { GraphHoverCard } from './GraphHoverCard';
 import { GraphToolbar } from './GraphToolbar';
 import { ContainerHoverCard, EdgeHoverCard, NodeHoverCard } from './hoverCards';
+import { useEdgePan } from './useEdgePan';
 import { useHoverTarget, type HoverTarget } from './useHoverTarget';
 
 /**
@@ -91,9 +92,17 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
   const openDiff = useAppStore((state) => state.openDiffFor);
   const openContainerDiff = useAppStore((state) => state.openContainerDiff);
   const diffPanelWidth = useAppStore((state) => state.diffPanelWidth);
+  const diffFullScreen = useAppStore((state) => state.diffFullScreen);
 
   /** The width the last centring was done at, so a drag pans without animating. */
   const lastWidth = useRef(diffPanelWidth);
+
+  /**
+   * The canvas itself, which is two things at once: what `useEdgePan` listens on, and the box a hover
+   * card is not allowed out of. The second is why the card no longer lands on top of the diff panel —
+   * Radix flips it to the other side of its node rather than crossing this rectangle.
+   */
+  const canvas = useRef<HTMLDivElement>(null);
 
   const { setCenter, fitView } = useReactFlow();
 
@@ -102,6 +111,9 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
   const [laidOutOnce, setLaidOutOnce] = useState(false);
 
   const hover = useHoverTarget();
+
+  // A press that lands on one of the diagram's lines still pans it. @see useEdgePan
+  useEdgePan(canvas, hover.hide);
 
   // Asked once for the whole diagram rather than once per box. @see graphActions.ts
   const editors = useEditors();
@@ -148,6 +160,12 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
         hover.unpin();
         openInEditor({ node, facts, repositoryPath: view.repositoryPath }, editor);
       },
+      // A cluster's card is the title bar's, not the region's. @see ContainerNode
+      showContainerCard: (container, element) =>
+        hover.show({ kind: 'container', id: container.id, rect: element.getBoundingClientRect() }),
+      hideContainerCard: () => hover.hide(),
+      pinContainerCard: (container, element) =>
+        hover.pinTo({ kind: 'container', id: container.id, rect: element.getBoundingClientRect() }),
     }),
     [editors, hover, openDiff, openWholeContainer, marks, openInEditor, view.repositoryPath],
   );
@@ -252,6 +270,16 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elkGraph, collapsed]);
 
+  // The card is portalled to the document body, so hiding the diagram does not hide it. A pinned card
+  // left floating over a full-screen diff is the same complaint the collision boundary answers for
+  // the side-by-side case, and the boundary cannot answer this one: a hidden canvas has no rectangle.
+  useEffect(() => {
+    if (diffFullScreen) hover.unpin();
+    // `hover` is a fresh object on every pointer move; depending on it would unpin continuously for
+    // as long as the panel stayed maximised.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diffFullScreen]);
+
   // Brightening the hovered line, the same way `applyHighlight` re-labels nodes: no coordinate is
   // touched, and edges whose state did not change keep their object identity.
   useEffect(() => {
@@ -315,7 +343,7 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
           groupingBusy={groupingBusy}
         />
 
-        <div className="relative min-h-0 flex-1">
+        <div ref={canvas} className="relative min-h-0 flex-1">
           <EdgeMarkers />
 
           {!laidOutOnce && (
@@ -344,17 +372,26 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
             aria-label={t('analysis.graph.canvasLabel')}
             // Iteration 9's whole interaction. Hovering costs nothing but a lookup in the view the
             // screen already holds — no call of any kind leaves the renderer because a pointer moved.
-            onNodeMouseEnter={(event, node) =>
-              enter(node.type === 'file' ? 'node' : 'container', node.id, event)
-            }
-            onNodeMouseLeave={() => hover.hide()}
+            //
+            // An expanded container is the one node type that answers to none of these: its card
+            // belongs to its title bar, which asks for it through `GraphActions`. The region itself is
+            // canvas the reviewer works over, and it explained itself every time they crossed it.
+            onNodeMouseEnter={(event, node) => {
+              if (node.type === 'container') return;
+              enter(node.type === 'file' ? 'node' : 'container', node.id, event);
+            }}
+            onNodeMouseLeave={(_, node) => {
+              if (node.type === 'container') return;
+              hover.hide();
+            }}
             onEdgeMouseEnter={(event, edge) => enter('edge', edge.id, event)}
             onEdgeMouseLeave={() => hover.hide()}
             // And clicking keeps the card. Hovering is for glancing; anyone who wants to read the
             // explanation, scroll it or select out of it should not have to hold a hand still.
-            onNodeClick={(event, node) =>
-              keep(node.type === 'file' ? 'node' : 'container', node.id, event)
-            }
+            onNodeClick={(event, node) => {
+              if (node.type === 'container') return;
+              keep(node.type === 'file' ? 'node' : 'container', node.id, event);
+            }}
             onEdgeClick={(event, edge) => keep('edge', edge.id, event)}
             // Iteration 10's second way into the diff. The first is the row of buttons on the box
             // itself; this is for anyone who would rather aim at the whole box than at a button on it.
@@ -397,7 +434,7 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
             />
           </ReactFlow>
 
-          <GraphHoverCard controller={hover}>
+          <GraphHoverCard controller={hover} boundary={canvas}>
             <HoverContent view={view} target={hover.target} edges={graph.edges} />
           </GraphHoverCard>
         </div>

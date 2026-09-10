@@ -22,6 +22,12 @@ import { useGraphActions } from './graphActions';
  * making them pick its twelve boxes off the canvas one at a time is the alphabetical file list with
  * extra steps. Opening it loads the whole cluster into the panel as a queue, in the analysis's own
  * reading order.
+ *
+ * It also carries the cluster's **explanation card**, and it is the only part of the container that
+ * does. The region below it is working canvas — the reviewer pans across it, drags over it and reads
+ * the boxes inside it — and a card that appeared whenever the pointer crossed the gap between two
+ * files was a card in the way of the files. The title bar is the one part of a container that is
+ * about the container, so it is the part that explains it.
  */
 export function ContainerNode({ data }: NodeProps<Node<ContainerNodeData>>) {
   const { container, nodeCount, isMatch } = data;
@@ -39,6 +45,14 @@ export function ContainerNode({ data }: NodeProps<Node<ContainerNodeData>>) {
       <div
         className="flex items-center gap-2 px-3"
         style={{ height: CONTAINER_HEADER }}
+        data-testid={`graph-container-header-${container.id}`}
+        // The surface deliberately ignores container nodes (@see AnalysisGraph), so these three are
+        // the whole of a cluster's hover behaviour. A click here pins the card the same way a click
+        // on a box does; the two buttons below stop their own clicks, so neither collapsing a cluster
+        // nor opening it pins anything.
+        onMouseEnter={(event) => actions?.showContainerCard(container, event.currentTarget)}
+        onMouseLeave={() => actions?.hideContainerCard()}
+        onClick={(event) => actions?.pinContainerCard(container, event.currentTarget)}
       >
         <button
           type="button"

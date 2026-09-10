@@ -439,6 +439,16 @@ export class AnalysisScreen {
     return this.page.getByTestId(`graph-container-${containerId}`);
   }
 
+  /**
+   * A cluster's title bar — the only part of an expanded container that explains it.
+   *
+   * The region below is working canvas, and asking it what the cluster is about put a card over the
+   * files the reviewer was reading.
+   */
+  graphContainerHeader(containerId: string): Locator {
+    return this.page.getByTestId(`graph-container-header-${containerId}`);
+  }
+
   get graphSearch(): Locator {
     return this.page.getByLabel(en.analysis.graph.searchLabel);
   }
