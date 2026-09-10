@@ -26,10 +26,10 @@ const DRAG_THRESHOLD_PX = 3;
  * when the button went down, so a long drag cannot accumulate rounding drift. Everything else about
  * panning is still React Flow's; this only covers the presses the library refuses.
  *
- * A press that turns into a drag also swallows the `click` that follows it, or letting go would pin
+ * A press that turns into a drag also swallows the `click` that follows it, or letting go would open
  * the card of whichever line the reviewer happened to start from.
  */
-export function useEdgePan(surface: RefObject<HTMLElement | null>, onPanStart: () => void): void {
+export function useEdgePan(surface: RefObject<HTMLElement | null>): void {
   const { getViewport, setViewport } = useReactFlow();
 
   useEffect(() => {
@@ -62,9 +62,6 @@ export function useEdgePan(surface: RefObject<HTMLElement | null>, onPanStart: (
         if (!dragging) {
           dragging = true;
           element.style.userSelect = 'none';
-          // The card is anchored to a rectangle that is about to move out from under it — the same
-          // reason `onMoveStart` dismisses it for a pan the library did handle.
-          onPanStart();
         }
 
         void setViewport({ x: start.x + dx, y: start.y + dy, zoom: start.zoom });
@@ -99,7 +96,7 @@ export function useEdgePan(surface: RefObject<HTMLElement | null>, onPanStart: (
       element.removeEventListener('pointerdown', onPointerDown);
       endDrag?.();
     };
-  }, [surface, getViewport, setViewport, onPanStart]);
+  }, [surface, getViewport, setViewport]);
 }
 
 function swallowClick(event: MouseEvent): void {

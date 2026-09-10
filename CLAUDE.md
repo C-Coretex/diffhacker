@@ -17,9 +17,9 @@ Point it at a local repository; it diagrams the current uncommitted diff (workin
 specific places inside files) ordered so the most important sits at top and the reviewer
 walks downstream through consequences.
 
-Hover a node → what changed and why. Hover an edge → how the relationship changed. Hover a
-container → what the cluster is. Risks live in a separate column from explanations. Click a
-node → opens the diff.
+Click a node → what changed and why. Click an edge → how the relationship changed. Click a
+container's title bar → what the cluster is. Risks live in a separate column from explanations.
+Double-click a node → opens the diff.
 
 The graph is built **entirely by the LLM**. The app's job is to give the LLM tools to
 explore the repo (search, grep, read, diff, metadata) and to render, persist and navigate

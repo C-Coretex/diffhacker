@@ -30,9 +30,9 @@ import { useGraphActions } from './graphActions';
  * The box being *current* is the exception — the file the reviewer is reading keeps its controls
  * where they last saw them.
  *
- * **Every button stops the click.** The surface turns a click on a box into a pinned hover card, so a
+ * **Every button stops the click.** The surface turns a click on a box into its explanation card, so a
  * button that let its click through would open a diff and drop a card over it in the same gesture.
- * Each action also dismisses whatever card is already pinned, for the same reason.
+ * Each action also closes whatever card is already open, for the same reason.
  */
 export function NodeActions({
   node,

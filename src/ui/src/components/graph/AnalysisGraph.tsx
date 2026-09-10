@@ -113,7 +113,11 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
   const hover = useHoverTarget();
 
   // A press that lands on one of the diagram's lines still pans it. @see useEdgePan
-  useEdgePan(canvas, hover.hide);
+  useEdgePan(canvas);
+
+  // Brightens the edge under the pointer — a glance-level cue, independent of the explanation card,
+  // which no longer opens on hover at all. @see applyEdgeHover
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
 
   // Asked once for the whole diagram rather than once per box. @see graphActions.ts
   const editors = useEditors();
@@ -137,35 +141,32 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
   /**
    * What the boxes and the title bars are allowed to do.
    *
-   * Every one of them dismisses the pinned card first. Iteration 9 made a click on a box keep that
-   * box's card open; pressing a button *on* the box says the reading is over and something should
-   * happen, and leaving the card up would drop it over the panel that just opened.
+   * Every one of them closes the open card first: a click on a box opens its card, and pressing a
+   * button *on* the box says the reading is over and something should happen, so the card must not
+   * be left floating over the panel that just opened.
    */
   const actions = useMemo<GraphActions>(
     () => ({
       editors,
       openDiff: (node) => {
-        hover.unpin();
+        hover.close();
         openDiff(node.id, node.containerId);
       },
       openContainer: (container) => {
-        hover.unpin();
+        hover.close();
         openWholeContainer(container);
       },
       toggleReviewed: (node, reviewed) => {
-        hover.unpin();
+        hover.close();
         marks.mark([node.id], reviewed);
       },
       openInEditor: (node, facts, editor) => {
-        hover.unpin();
+        hover.close();
         openInEditor({ node, facts, repositoryPath: view.repositoryPath }, editor);
       },
       // A cluster's card is the title bar's, not the region's. @see ContainerNode
-      showContainerCard: (container, element) =>
-        hover.show({ kind: 'container', id: container.id, rect: element.getBoundingClientRect() }),
-      hideContainerCard: () => hover.hide(),
-      pinContainerCard: (container, element) =>
-        hover.pinTo({ kind: 'container', id: container.id, rect: element.getBoundingClientRect() }),
+      toggleContainerCard: (container, element) =>
+        hover.toggle({ kind: 'container', id: container.id, rect: element.getBoundingClientRect() }),
     }),
     [editors, hover, openDiff, openWholeContainer, marks, openInEditor, view.repositoryPath],
   );
@@ -241,51 +242,32 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
   );
 
   /**
-   * The pointer arrived on something. React Flow hands over the element it decorated, and its
-   * client rectangle is what the card is drawn beside — measured rather than derived from the
-   * viewport transform, so it is right at every zoom level without this code knowing the zoom.
+   * Something was clicked. React Flow hands over the element it decorated, and its client rectangle
+   * is what the card is drawn beside — measured rather than derived from the viewport transform, so
+   * it is right at every zoom level without this code knowing the zoom.
    */
-  const enter = useCallback(
+  const openCard = useCallback(
     (kind: HoverTarget['kind'], id: string, event: { currentTarget: Element }) => {
-      hover.show({ kind, id, rect: event.currentTarget.getBoundingClientRect() });
+      hover.toggle({ kind, id, rect: event.currentTarget.getBoundingClientRect() });
     },
     [hover],
   );
 
-  /** The same thing, kept. Clicking is how a reviewer says "I want to read this, not glance at it". */
-  const keep = useCallback(
-    (kind: HoverTarget['kind'], id: string, event: { currentTarget: Element }) => {
-      hover.pinTo({ kind, id, rect: event.currentTarget.getBoundingClientRect() });
-    },
-    [hover],
-  );
-
-  // A card anchored to a box that has since moved, folded away or been laid out again is a card
-  // pointing at nothing. A pinned one survives — `hide` declines while pinned — because a reviewer
-  // reading a pinned card while they collapse a neighbouring cluster has not asked to lose it.
+  // The card is portalled to the document body, so hiding the diagram does not hide it. A card left
+  // floating over a full-screen diff is the same complaint the collision boundary answers for the
+  // side-by-side case, and the boundary cannot answer this one: a hidden canvas has no rectangle.
   useEffect(() => {
-    hover.hide();
-    // Only when the arrangement itself changed. `hover` is stable enough to depend on, but adding
-    // it would fire this on every pointer move.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [elkGraph, collapsed]);
-
-  // The card is portalled to the document body, so hiding the diagram does not hide it. A pinned card
-  // left floating over a full-screen diff is the same complaint the collision boundary answers for
-  // the side-by-side case, and the boundary cannot answer this one: a hidden canvas has no rectangle.
-  useEffect(() => {
-    if (diffFullScreen) hover.unpin();
-    // `hover` is a fresh object on every pointer move; depending on it would unpin continuously for
-    // as long as the panel stayed maximised.
+    if (diffFullScreen) hover.close();
+    // `hover` is a fresh object on every render; depending on it would close the card continuously
+    // for as long as the panel stayed maximised.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diffFullScreen]);
 
   // Brightening the hovered line, the same way `applyHighlight` re-labels nodes: no coordinate is
   // touched, and edges whose state did not change keep their object identity.
   useEffect(() => {
-    const hoveredId = hover.target?.kind === 'edge' ? hover.target.id : null;
-    setGraph((current) => ({ ...current, edges: applyEdgeHover(current.edges, hoveredId) }));
-  }, [hover.target]);
+    setGraph((current) => ({ ...current, edges: applyEdgeHover(current.edges, hoveredEdgeId) }));
+  }, [hoveredEdgeId]);
 
   // Centring happens after the node exists in the laid-out graph, which — when the container had
   // to be expanded first — is a relayout later than the click.
@@ -370,37 +352,27 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
             proOptions={{ hideAttribution: false }}
             onlyRenderVisibleElements={onlyRenderVisible}
             aria-label={t('analysis.graph.canvasLabel')}
-            // Iteration 9's whole interaction. Hovering costs nothing but a lookup in the view the
-            // screen already holds — no call of any kind leaves the renderer because a pointer moved.
+            // The explanation card opens only on a click. Hovering an edge still brightens it — a
+            // glance-level cue that costs nothing but a lookup — independently of the card.
             //
-            // An expanded container is the one node type that answers to none of these: its card
-            // belongs to its title bar, which asks for it through `GraphActions`. The region itself is
-            // canvas the reviewer works over, and it explained itself every time they crossed it.
-            onNodeMouseEnter={(event, node) => {
-              if (node.type === 'container') return;
-              enter(node.type === 'file' ? 'node' : 'container', node.id, event);
-            }}
-            onNodeMouseLeave={(_, node) => {
-              if (node.type === 'container') return;
-              hover.hide();
-            }}
-            onEdgeMouseEnter={(event, edge) => enter('edge', edge.id, event)}
-            onEdgeMouseLeave={() => hover.hide()}
-            // And clicking keeps the card. Hovering is for glancing; anyone who wants to read the
-            // explanation, scroll it or select out of it should not have to hold a hand still.
+            // An expanded container is the one node type that answers to neither: its card belongs to
+            // its title bar, which asks for it through `GraphActions`. The region itself is canvas the
+            // reviewer works over.
+            onEdgeMouseEnter={(_, edge) => setHoveredEdgeId(edge.id)}
+            onEdgeMouseLeave={() => setHoveredEdgeId(null)}
             onNodeClick={(event, node) => {
               if (node.type === 'container') return;
-              keep(node.type === 'file' ? 'node' : 'container', node.id, event);
+              openCard(node.type === 'file' ? 'node' : 'container', node.id, event);
             }}
-            onEdgeClick={(event, edge) => keep('edge', edge.id, event)}
+            onEdgeClick={(event, edge) => openCard('edge', edge.id, event)}
             // Iteration 10's second way into the diff. The first is the row of buttons on the box
             // itself; this is for anyone who would rather aim at the whole box than at a button on it.
-            // The single click stays what Iteration 9 spent it on.
+            // The single click stays what it was spent on: opening the explanation card.
             //
             // On a cluster it means the cluster: every file in it, as a queue. A double-click on a
             // region and a press of its "open every file" button are the same intention.
             onNodeDoubleClick={(_, node) => {
-              hover.unpin();
+              hover.close();
 
               if (node.type === 'file') {
                 const target = view.nodes.find((candidate) => candidate.id === node.id);
@@ -419,9 +391,7 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
             // means exactly one thing.
             zoomOnDoubleClick={false}
             // Clicking the background is how you put the card away again.
-            onPaneClick={() => hover.unpin()}
-            // Panning or zooming moves the diagram out from under an anchored card.
-            onMoveStart={() => hover.hide()}
+            onPaneClick={() => hover.close()}
           >
             <Background gap={24} className="!bg-background" />
             <Controls showInteractive={false} />

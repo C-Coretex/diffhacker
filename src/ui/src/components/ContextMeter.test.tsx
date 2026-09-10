@@ -9,6 +9,7 @@ function event(overrides: Partial<ToolCallEvent> = {}): ToolCallEvent {
     sequence: 1,
     kind: 'usage',
     turn: 4,
+    atUtc: '2026-05-01T00:00:00Z',
     isError: false,
     inputTokens: 300_000,
     outputTokens: 4_000,

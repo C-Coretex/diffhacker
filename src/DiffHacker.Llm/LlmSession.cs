@@ -197,6 +197,29 @@ internal sealed partial class LlmSession : ILlmSession
 
             var realCalls = calls.Where(call => call != submission).ToArray();
 
+            // The model's own words this turn, shown live alongside the tool log. The finishing
+            // turn's response text is suppressed when a structured answer is expected: that text
+            // is the answer document itself — already the result screen's job to show, and
+            // dumping a large JSON payload into a live log would be exactly the bulk-injection
+            // §0.2.9 rules out for everything else.
+            var reasoningText = ReasoningTextOf(response.Messages);
+            var isFinishingTurn = submission is not null || realCalls.Length == 0;
+            var responseText = isFinishingTurn && conversation.ResponseFormat is not null
+                ? null
+                : NullIfEmpty(response.Text);
+
+            if (responseText is not null || reasoningText is not null)
+            {
+                progress?.Report(new LlmRunEvent
+                {
+                    Kind = LlmRunEventKind.AssistantMessage,
+                    Turn = turn,
+                    ResponseText = responseText,
+                    ReasoningText = reasoningText,
+                    CumulativeUsage = _cumulative,
+                });
+            }
+
             // A submitted answer ends the run even if the model also asked for tools in the
             // same turn: it has said it is finished, and dispatching the rest would produce
             // results nothing will ever read.
@@ -680,6 +703,19 @@ internal sealed partial class LlmSession : ILlmSession
             }
         }
     }
+
+    /// <summary>The reasoning content the response carried this turn, joined, or null when there was none.</summary>
+    private static string? ReasoningTextOf(IList<ChatMessage> produced)
+    {
+        var text = string.Concat(produced
+            .SelectMany(message => message.Contents)
+            .OfType<TextReasoningContent>()
+            .Select(reasoning => reasoning.Text));
+
+        return NullIfEmpty(text);
+    }
+
+    private static string? NullIfEmpty(string? text) => string.IsNullOrEmpty(text) ? null : text;
 
     /// <summary>The breakdown as it stands, for an event about to be raised.</summary>
     private LlmContextBreakdown ContextSnapshot() => new()

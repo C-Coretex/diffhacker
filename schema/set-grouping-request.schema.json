@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.10/set-grouping-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.11/set-grouping-request.schema.json",
   "title": "SetGroupingRequest",
   "description": "Asks for the stored analysis of one repository to be projected in the other grouping. It spends nothing: both groupings were produced by the run that is already paid for, and this call reads one of them out. The chosen grouping is remembered against that analysis, and becomes the one a new analysis opens in.",
   "type": "object",

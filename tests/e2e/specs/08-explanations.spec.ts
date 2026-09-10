@@ -6,15 +6,16 @@ import { StubProvider, stubTwoClusterResult } from '../src/stubProvider.ts';
 import { en, fill } from '../src/strings.ts';
 
 /**
- * Explanations — Iteration 9, and the iteration that closes the MVP.
+ * Explanations — Iteration 9, and the iteration that closes the MVP. Every card here opens on a
+ * click, not on hover — see `useHoverTarget.ts` for why hovering was retired.
  *
- * The unit tests check the wording, the timings and the risk arithmetic. Three things only this
- * suite can prove, because all three need a browser that actually lays things out:
+ * The unit tests check the wording and the risk arithmetic. Three things only this suite can prove,
+ * because all three need a browser that actually lays things out:
  *
- * 1. **A card appears where the pointer is and stays on screen.** jsdom measures every element as
+ * 1. **A card appears where the click landed and stays on screen.** jsdom measures every element as
  *    zero, so floating-ui never positions anything there; the whole of requirement 4 is untestable
  *    below this level.
- * 2. **An edge can be hovered at all.** React Flow draws no edges in jsdom — a node has to be
+ * 2. **An edge can be clicked at all.** React Flow draws no edges in jsdom — a node has to be
  *    measured before it is edge-worthy — so requirement 2's card has never been on a real line
  *    until here.
  * 3. **The clipboard works from a custom scheme.** `diffhacker://app` is not `https:`, and whether
@@ -103,7 +104,7 @@ async function pointBesideFirstEdge(page: import('@playwright/test').Page) {
   return point!;
 }
 
-test('hovering a node, an edge and a cluster explains each one, risks apart', async ({
+test('clicking a node, an edge and a cluster explains each one, risks apart', async ({
   diffhacker,
   repos,
 }) => {
@@ -115,7 +116,7 @@ test('hovering a node, an edge and a cluster explains each one, risks apart', as
     // ------------------------------------------------------------ requirement 1: the node card
 
     const entry = analysis.graphNode('docs/changelog.md');
-    const card = await analysis.hoverForCard(entry);
+    const card = await analysis.clickForCard(entry);
 
     await expect(card).toContainText('A line was added to docs/changelog.md.');
     await expect(card).toContainText('The fixture needed something to review.');
@@ -134,40 +135,44 @@ test('hovering a node, an edge and a cluster explains each one, risks apart', as
     expect(cardBox.x).toBeGreaterThanOrEqual(nodeBox.x + nodeBox.width);
     expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(windowWidth);
 
-    await app.shot('a node explained on hover');
+    await app.shot('a node explained on click');
 
     // ------------------------------------------------------------ requirement 3: the cluster card
 
-    await analysis.graphContainerHeader('first-half').hover();
+    await analysis.graphContainerHeader('first-half').click();
     await expect(analysis.hoverCard).toContainText('The first half');
     await expect(analysis.hoverRisks).toContainText('Everything in The first half has to ship together.');
 
-    await app.shot('a cluster explained on hover');
+    await app.shot('a cluster explained on click');
 
     // …and from the title bar only. The rest of a cluster's region is canvas the reviewer pans
-    // across and reads their files in, and explaining the cluster every time the pointer crossed the
-    // gap between two boxes put a card over the boxes. Aimed into the container's own padding —
-    // ELK leaves 24 pixels down each side — so this is empty region and not a file.
+    // across and reads their files in, so a click there must leave the open card untouched. Aimed
+    // into the container's own padding — ELK leaves 24 pixels down each side — so this is empty
+    // region and not a file.
     const region = (await analysis.graphContainer('first-half').boundingBox())!;
     await analysis
       .graphContainer('first-half')
-      .hover({ position: { x: 8, y: region.height - 8 } });
+      .click({ position: { x: 8, y: region.height - 8 } });
 
-    await expect(analysis.hoverCard).toHaveCount(0);
+    await expect(analysis.hoverCard).toContainText('The first half');
 
     // ------------------------------------------------------------ requirement 2: the edge card
 
-    // The one thing jsdom cannot render at all. Deliberately hovered *beside* the line rather than
+    // The one thing jsdom cannot render at all. Deliberately clicked *beside* the line rather than
     // on it: six pixels off a one-and-a-half pixel stroke is a miss, and only the transparent
     // twenty-pixel hit area makes it a hit. If `interactionWidth` is ever dropped, this fails.
     const beside = await pointBesideFirstEdge(app.page);
-    await app.page.mouse.move(beside.x, beside.y);
+    await app.page.mouse.click(beside.x, beside.y);
 
     await expect(analysis.hoverCard).toContainText(en.analysis.edgeDirect);
     await expect(analysis.hoverCard).toContainText('The second file reads from the first.');
     await expect(analysis.hoverRisks).toContainText('The second file still assumes the old shape.');
 
-    await app.shot('a relationship explained on hover');
+    await app.shot('a relationship explained on click');
+
+    // Hovering, meanwhile, does nothing at all — not the node, not the edge, not the title bar.
+    await entry.hover();
+    await expect(analysis.hoverCard).toContainText(en.analysis.edgeDirect);
   } finally {
     await provider.stop();
   }
@@ -184,16 +189,16 @@ test('a card can be kept by clicking, read and dismissed, and a path copied from
 
     // ------------------------------------------------------------ requirement 4: keeping a card
 
-    // Clicking is the gesture. Hovering is for glancing; anyone who wants to read the explanation,
-    // scroll it or select a path out of it should not have to hold a hand still to do it.
+    // Clicking is the only gesture there is. Hovering does nothing, which is what makes reading the
+    // explanation, scrolling it or selecting a path out of it possible without holding a hand still.
     await analysis.clickForCard(analysis.graphNode('src/cache.ts'));
 
-    // The pointer moving on no longer takes the card with it, which is the whole point.
+    // The pointer moving on does not touch the card at all.
     await analysis.graphNode('docs/notes.md').hover();
     await expect(analysis.hoverCard).toContainText('src/cache.ts');
 
-    // Clicking another box moves the card there rather than refusing — the pin locks out the
-    // pointer, not the reviewer. This is the case the popover's own dismissal used to eat.
+    // Clicking another box moves the card there rather than refusing. This is the case the
+    // popover's own dismissal used to eat.
     await analysis.clickForCard(analysis.graphNode('src/tenant.ts'));
     await expect(analysis.hoverCard).toContainText('src/tenant.ts');
 
@@ -201,7 +206,7 @@ test('a card can be kept by clicking, read and dismissed, and a path copied from
     await expect(analysis.hoverCard).toContainText('src/cache.ts');
 
     // The button on the card does the same thing for anyone who found it that way.
-    await expect(analysis.unpinCardButton).toBeVisible();
+    await expect(analysis.closeCardButton).toBeVisible();
 
     // ------------------------------------------------------------ requirement 7: copy-path
 
@@ -265,11 +270,9 @@ test('the diagram pans from a press that lands on one of its lines', async ({
     expect(after.x - before.x).toBeCloseTo(120, 0);
     expect(after.y - before.y).toBeCloseTo(80, 0);
 
-    // And the drag is not also a click: letting go must not pin the card of whichever line the
+    // And the drag is not also a click: letting go must not open the card of whichever line the
     // reviewer happened to start from.
-    await expect(app.page.locator('[data-testid="graph-hover-card"][data-pinned="true"]')).toHaveCount(
-      0,
-    );
+    await expect(analysis.hoverCard).toHaveCount(0);
 
     await app.shot('the diagram panned from a line');
   } finally {
@@ -299,7 +302,7 @@ test('an explanation never lands on top of the diff panel', async ({ diffhacker,
     // to sit under the minimap in the corner, and a point the minimap is drawing over is a point
     // Playwright cannot click through.
     const node = analysis.graphNode('src/tenant.ts');
-    await node.hover({ position: { x: 12, y: 8 } });
+    await node.click({ position: { x: 12, y: 8 } });
     await expect(analysis.hoverCard).toBeVisible();
     const card = analysis.hoverCard;
     const cardBox = (await card.boundingBox())!;

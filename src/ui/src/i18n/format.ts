@@ -24,3 +24,21 @@ export function formatCount(value: number): string {
 
   return negative ? `-${grouped}` : grouped;
 }
+
+/**
+ * A UTC instant as the reviewer's own wall-clock time, `HH:mm:ss`.
+ *
+ * Deliberately not `toLocaleTimeString()`, for the same reason as {@link formatCount}: its output
+ * depends on ICU data the runtime happens to carry, which is exactly the inconsistency an
+ * invariant-globalisation host was chosen to avoid. `Date`'s local-time getters need none of it.
+ */
+export function formatTime(atUtc: string): string {
+  const date = new Date(atUtc);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const pad = (value: number) => value.toString().padStart(2, '0');
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}

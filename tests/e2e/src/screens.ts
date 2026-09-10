@@ -326,7 +326,7 @@ export class ProfileScreen {
 
   /** The tool log's row for one tool. Several calls to the same tool give several rows. */
   toolRow(tool: string): Locator {
-    return this.page.getByRole('row').filter({ hasText: tool });
+    return this.page.getByRole('listitem').filter({ hasText: tool });
   }
 
   /** Scoped: both cards on this screen have a Save button. */
@@ -417,7 +417,7 @@ export class AnalysisScreen {
 
   /** The tool log's row for one tool. Several calls to the same tool give several rows. */
   toolRow(tool: string): Locator {
-    return this.page.getByRole('row').filter({ hasText: tool });
+    return this.page.getByRole('listitem').filter({ hasText: tool });
   }
 
   // ---------------------------------------------------------------- Iteration 8: the diagram
@@ -519,7 +519,7 @@ export class AnalysisScreen {
     return this.page.getByTestId('cluster-list');
   }
 
-  /** The one hover card. There is never more than one on screen. */
+  /** The one explanation card. There is never more than one on screen. */
   get hoverCard(): Locator {
     return this.page.getByTestId('graph-hover-card');
   }
@@ -529,34 +529,18 @@ export class AnalysisScreen {
     return this.hoverCard.getByTestId('risk-column');
   }
 
-  get pinCardButton(): Locator {
-    return this.hoverCard.getByRole('button', { name: en.analysis.hover.pin });
-  }
-
-  get unpinCardButton(): Locator {
-    return this.hoverCard.getByRole('button', { name: en.analysis.hover.unpin });
+  get closeCardButton(): Locator {
+    return this.hoverCard.getByRole('button', { name: en.analysis.hover.close });
   }
 
   get copyPathButton(): Locator {
     return this.hoverCard.getByRole('button', { name: en.analysis.hover.copyPath });
   }
 
-  /**
-   * Hovers an element and waits for its card.
-   *
-   * The card is delayed on purpose — 250 ms of the pointer resting — so this waits for the card
-   * rather than for a duration, which is what `tests/e2e/README.md` means by no fixed sleeps.
-   */
-  async hoverForCard(element: Locator): Promise<Locator> {
-    await element.hover();
-    await expect(this.hoverCard).toBeVisible();
-    return this.hoverCard;
-  }
-
-  /** Clicks something on the diagram and waits for the card that click keeps open. */
+  /** Clicks something on the diagram and waits for the card it opens. */
   async clickForCard(element: Locator): Promise<Locator> {
     await element.click();
-    await expect(this.hoverCard).toHaveAttribute('data-pinned', 'true');
+    await expect(this.hoverCard).toBeVisible();
     return this.hoverCard;
   }
 

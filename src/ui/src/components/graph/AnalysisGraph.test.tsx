@@ -241,9 +241,9 @@ describe('AnalysisGraph', () => {
     }
   });
 
-  // ---------------------------------------------------------------- Iteration 9: hover cards
+  // ---------------------------------------------------------------- explanation cards
 
-  it('explains a node on hover, with its risks in a column of their own', async () => {
+  it('explains a node on click, with its risks in a column of their own', async () => {
     // Requirement 1 and verification step 5. The four prose fields are on one side, the risks are
     // on the other, and the separation is structural rather than a matter of how the model wrote
     // the sentences.
@@ -269,7 +269,7 @@ describe('AnalysisGraph', () => {
     );
 
     await boxes();
-    await userEvent.hover(screen.getByTestId('graph-node-src/Contract.cs'));
+    await userEvent.click(screen.getByTestId('graph-node-src/Contract.cs'));
 
     const card = await screen.findByTestId('graph-hover-card');
 
@@ -286,7 +286,7 @@ describe('AnalysisGraph', () => {
     expect(within(risks).getByText('Older clients will not send the new field.')).toBeInTheDocument();
   });
 
-  it('explains a cluster when its title bar is hovered, with its own risks beside it', async () => {
+  it('explains a cluster when its title bar is clicked, with its own risks beside it', async () => {
     // Requirement 3 — from the title bar, and from there only. @see ContainerNode
     const view = twoContainerView();
     render(
@@ -305,7 +305,7 @@ describe('AnalysisGraph', () => {
     );
 
     await boxes();
-    await userEvent.hover(screen.getByTestId('graph-container-header-core'));
+    await userEvent.click(screen.getByTestId('graph-container-header-core'));
 
     const card = await screen.findByTestId('graph-hover-card');
 
@@ -318,25 +318,21 @@ describe('AnalysisGraph', () => {
     ).toBeInTheDocument();
   });
 
-  it('says nothing when the pointer is only crossing a cluster', async () => {
+  it('says nothing when the region of a cluster is clicked, only its title bar', async () => {
     // The region a container occupies is working canvas: the reviewer pans across it, drags over it
-    // and reads the boxes inside it. Explaining the cluster every time they crossed the gap between
-    // two files put a card over the files.
+    // and reads the boxes inside it — it must not also answer to a click the way the title bar does.
     renderGraph();
     await boxes();
 
-    await userEvent.hover(screen.getByTestId('graph-container-core'));
+    await userEvent.click(screen.getByTestId('graph-container-core'));
     expect(screen.queryByTestId('graph-hover-card')).not.toBeInTheDocument();
 
-    // And the title bar still answers, so the explanation is moved rather than lost.
-    await userEvent.hover(screen.getByTestId('graph-container-header-core'));
+    // And the title bar still answers, so the explanation is reachable, just not from the region.
+    await userEvent.click(screen.getByTestId('graph-container-header-core'));
     expect(await screen.findByTestId('graph-hover-card')).toBeInTheDocument();
   });
 
-  it('keeps a card open when the node is clicked, and puts it away on the background', async () => {
-    // The gesture that matters: hovering is for glancing, clicking is for reading. Without it the
-    // card is only ever available while a hand is held still, which is no use for scrolling it or
-    // selecting a path out of it.
+  it('keeps a card open until it is dismissed, and moves it when something else is clicked', async () => {
     const user = insideTheCard();
 
     renderGraph();
@@ -345,12 +341,11 @@ describe('AnalysisGraph', () => {
     await user.click(screen.getByTestId('graph-node-src/Contract.cs'));
 
     const card = await screen.findByTestId('graph-hover-card');
-    expect(card).toHaveAttribute('data-pinned', 'true');
     expect(within(card).getByText('src/Contract.cs')).toBeInTheDocument();
 
-    // The pointer moving away no longer takes it with it.
-    await user.unhover(screen.getByTestId('graph-node-src/Contract.cs'));
-    expect(screen.getByTestId('graph-hover-card')).toBeInTheDocument();
+    // The pointer moving elsewhere does not touch it — there is nothing left that answers to hover.
+    await user.hover(screen.getByTestId('graph-node-src/Caller.cs'));
+    expect(within(screen.getByTestId('graph-hover-card')).getByText('src/Contract.cs')).toBeInTheDocument();
 
     // Clicking another box moves the card there rather than being refused.
     await user.click(screen.getByTestId('graph-node-src/Caller.cs'));
@@ -372,9 +367,9 @@ describe('AnalysisGraph', () => {
     await waitFor(() => expect(screen.queryByTestId('graph-hover-card')).not.toBeInTheDocument());
   });
 
-  it('expands a cluster without pinning its card over the top', async () => {
-    // The chevron is inside the container node, so its click reaches the surface unless it is
-    // stopped — and a card pinned open by the act of folding a cluster is a card nobody asked for.
+  it('expands a cluster without opening its card over the top', async () => {
+    // The chevron is inside the container node, so its click reaches the header unless it is
+    // stopped — and a card opened by the act of folding a cluster is a card nobody asked for.
     const user = insideTheCard();
 
     renderGraph();
@@ -388,28 +383,35 @@ describe('AnalysisGraph', () => {
     expect(screen.queryByTestId('graph-hover-card')).not.toBeInTheDocument();
   });
 
-  it('pins a card so it survives the pointer leaving, and unpins it again', async () => {
-    // Requirement 4. Click is reserved for Iteration 10's diff viewer, so the gesture is a button
-    // on the card itself — a click on the card, never on the node.
+  it('leaves an open card alone when a different cluster is collapsed', async () => {
+    // A card anchored to a box is not the box that just folded away — collapsing `docs` while
+    // `core`'s card is open must not be read as a reason to close it.
+    const user = insideTheCard();
+
     renderGraph();
     await boxes();
 
+    await user.click(screen.getByTestId('graph-node-src/Contract.cs'));
+    expect(await screen.findByTestId('graph-hover-card')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Collapse Cluster docs' }));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId('graph-node-src/Notes.md')).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('graph-hover-card')).toBeInTheDocument();
+  });
+
+  it('closes the card from the button on the card itself', async () => {
     const user = insideTheCard();
 
-    await user.hover(screen.getByTestId('graph-node-src/Contract.cs'));
+    renderGraph();
+    await boxes();
+
+    await user.click(screen.getByTestId('graph-node-src/Contract.cs'));
     const card = await screen.findByTestId('graph-hover-card');
 
-    await user.click(within(card).getByLabelText('Pin this card'));
-    expect(screen.getByTestId('graph-hover-card')).toHaveAttribute('data-pinned', 'true');
-
-    // The pointer moving to another box no longer changes what is on the card.
-    await user.unhover(screen.getByTestId('graph-node-src/Contract.cs'));
-    await user.hover(screen.getByTestId('graph-node-src/Caller.cs'));
-
-    expect(screen.getByTestId('graph-hover-card')).toHaveAttribute('data-pinned', 'true');
-    expect(within(screen.getByTestId('graph-hover-card')).getByText('src/Contract.cs')).toBeInTheDocument();
-
-    await user.click(screen.getByLabelText('Unpin this card'));
+    await user.click(within(card).getByLabelText('Close'));
     await waitFor(() => expect(screen.queryByTestId('graph-hover-card')).not.toBeInTheDocument());
   });
 
@@ -423,7 +425,7 @@ describe('AnalysisGraph', () => {
     renderGraph();
     await boxes();
 
-    await user.hover(screen.getByTestId('graph-node-src/Contract.cs'));
+    await user.click(screen.getByTestId('graph-node-src/Contract.cs'));
     const card = await screen.findByTestId('graph-hover-card');
 
     await user.click(within(card).getByLabelText('Copy path'));
@@ -556,7 +558,7 @@ describe('AnalysisGraph', () => {
     expect(useAppStore.getState().diffNodeId).toBe('src/Caller.cs');
   });
 
-  it('opens the diff from the button on the box, and puts the pinned card away', async () => {
+  it('opens the diff from the button on the box, and closes the open card', async () => {
     // The card is where the *explanation* lives; the box is where the actions live. A reviewer who
     // already knows which file they want should not have to summon a card to reach a button — and
     // pressing one means the reading is over, so the card goes with it rather than landing on top of

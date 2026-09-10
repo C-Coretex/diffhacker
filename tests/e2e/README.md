@@ -80,7 +80,7 @@ specs/
   05-repository-profile.spec.ts          profiling a repository, editing it, writing its docs
   06-analysis-pipeline.spec.ts           analysing, repairing, failing, cancelling, five hundred files
   07-graph-rendering.spec.ts             the diagram: searched, collapsed, dragged, explained
-  08-explanations.spec.ts                hover cards, keeping one open, the risk register
+  08-explanations.spec.ts                explanation cards opened by click, the risk register
   09-diff-review.spec.ts                 Monaco, every awkward file kind, navigation, reviewed marks,
                                          the controls on a box, a cluster opened whole, full screen
   10-grouping-modes.spec.ts              two groupings of one analysis, switching for free, marks

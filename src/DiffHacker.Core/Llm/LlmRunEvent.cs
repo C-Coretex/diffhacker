@@ -9,6 +9,7 @@ public enum LlmRunEventKind
     ToolCallFinished,
     UsageUpdated,
     RetryScheduled,
+    AssistantMessage,
 }
 
 /// <summary>
@@ -102,4 +103,19 @@ public sealed record LlmRunEvent
     /// the renderer resolves it (§0.6).
     /// </summary>
     public string? ReasonCode { get; init; }
+
+    /// <summary>
+    /// Set on <see cref="LlmRunEventKind.AssistantMessage"/>: the model's own reply text produced
+    /// this turn, in full. Null on the turn that submits a structured answer — see the call site
+    /// in <c>LlmSession.RunAsync</c> for why that one is withheld rather than truncated.
+    /// </summary>
+    public string? ResponseText { get; init; }
+
+    /// <summary>
+    /// Set on <see cref="LlmRunEventKind.AssistantMessage"/>: the reasoning content the response
+    /// carried this turn, in full. Null when the provider surfaced none this turn — not the same
+    /// as the provider never surfacing reasoning at all, which <see cref="LlmContextBreakdown"/>
+    /// distinguishes for the character count.
+    /// </summary>
+    public string? ReasoningText { get; init; }
 }

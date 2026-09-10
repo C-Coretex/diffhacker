@@ -95,8 +95,8 @@ test('a reviewer reads every kind of file, follows the graph, and their progress
       });
     });
 
-    // Double-click, not click: Iteration 9 spent the single click on keeping a hover card open, and
-    // this iteration takes a different gesture rather than taking that one back.
+    // Double-click, not click: the single click is spent opening the explanation card, and this
+    // iteration takes a different gesture rather than taking that one back.
     await analysis.openDiff('src/cache.ts');
 
     // Monaco started. Under a CSP with no 'unsafe-eval', from diffhacker://app, with a classic
@@ -228,8 +228,8 @@ test('a reviewer reads every kind of file, follows the graph, and their progress
     await analysis.pressOnBox('src/cache.ts', analysis.nodeReviewedButton('src/cache.ts'));
     await expect(analysis.graphNode('src/cache.ts')).not.toHaveAttribute('data-reviewed');
 
-    // Clicking a box keeps its hover card open (Iteration 9). Pressing a button *on* the box says the
-    // reading is over — so the card goes, rather than landing on top of the panel that just opened.
+    // Clicking a box opens its explanation card. Pressing a button *on* the box says the reading is
+    // over — so the card goes, rather than landing on top of the panel that just opened.
     await analysis.fitViewButton.click();
     await analysis.clickForCard(analysis.graphNode('src/gone.ts'));
     await analysis.nodeOpenDiffButton('src/gone.ts').click();

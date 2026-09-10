@@ -16,10 +16,9 @@ import type {
  * of buttons that is invisible until the pointer is on it. The surface asks once and passes the
  * answers down; the boxes hold one `useContext` each.
  *
- * `dismissCard` is the other half of the gesture Iteration 9 settled. Clicking a box keeps its hover
- * card open; clicking a *button on* that box means the reviewer is done reading and wants the thing
- * to happen — so every action here puts the card away first, and the card never ends up floating over
- * a panel that just opened underneath it.
+ * Every action here puts the open card away first: clicking a box opens its card, and clicking a
+ * *button on* that box means the reviewer is done reading and wants the thing to happen, so the
+ * card must not end up floating over a panel that just opened underneath it.
  */
 export interface GraphActions {
   /** Which external editors this machine has. Undefined until the host has answered. */
@@ -42,22 +41,15 @@ export interface GraphActions {
   ) => void;
 
   /**
-   * A cluster's card, asked for by its title bar and by nothing else.
+   * The title bar was clicked: open the cluster's card, or close it if it was already open.
    *
    * An expanded container is mostly empty canvas — the region a reviewer pans across, drags over and
-   * reads their files in — and treating the whole of it as a hover target meant the cluster's
-   * explanation appeared every time the pointer crossed the gap between two boxes. So the card belongs
-   * to the title bar, which is the one part of a container that is *about* the container. The element
-   * is passed rather than measured here because the card is anchored to that bar's own rectangle: a
-   * card beside a nine-hundred-pixel region is a card in another postcode.
+   * reads their files in — so the card belongs to the title bar, which is the one part of a container
+   * that is *about* the container, and to nothing else. The element is passed rather than measured
+   * here because the card is anchored to that bar's own rectangle: a card beside a nine-hundred-pixel
+   * region is a card in another postcode.
    */
-  readonly showContainerCard: (container: AnalysisContainerInfo, element: Element) => void;
-
-  /** The pointer left the title bar. */
-  readonly hideContainerCard: () => void;
-
-  /** The title bar was clicked: show the cluster's card and keep it. @see showContainerCard */
-  readonly pinContainerCard: (container: AnalysisContainerInfo, element: Element) => void;
+  readonly toggleContainerCard: (container: AnalysisContainerInfo, element: Element) => void;
 }
 
 const GraphActionsContext = createContext<GraphActions | null>(null);

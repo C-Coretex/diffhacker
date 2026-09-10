@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.10/set-nodes-reviewed-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.11/set-nodes-reviewed-request.schema.json",
   "title": "SetNodesReviewedRequest",
   "description": "Parameters of analysis.setReviewed. Marks or unmarks nodes of the repository's most recent analysis. Takes a list rather than one id so that marking a whole container is one round trip rather than thirty.",
   "type": "object",

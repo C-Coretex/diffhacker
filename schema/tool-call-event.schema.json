@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.10/tool-call-event.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.11/tool-call-event.schema.json",
   "title": "ToolCallEvent",
-  "description": "Payload of the analysis.toolCall notification: one observable moment in a live run, pushed from host to renderer as it happens. Where analysis.progress carries the model's own sentence about what it is doing, this carries the mechanical traffic underneath it — which tool, with what arguments, for how long, and what came back. The two are separate methods so that a reviewer's view of the work is not interleaved with a debug log. One flat record with a discriminator rather than a family of shapes, because the contract generator cannot render a definition that references another definition.",
+  "description": "Payload of the analysis.toolCall notification: one observable moment in a live run, pushed from host to renderer as it happens. Where analysis.progress carries the model's own sentence about what it is doing, this carries the mechanical traffic underneath it — which tool, with what arguments, for how long, and what came back, plus the model's own reasoning and reply text as it produces them. The two notification methods stay separate — this is the ordered feed of everything the model did and said, analysis.progress remains the one-line status a reviewer glances at. One flat record with a discriminator rather than a family of shapes, because the contract generator cannot render a definition that references another definition.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["sequence", "kind", "turn", "isError", "inputTokens", "outputTokens"],
+  "required": ["sequence", "kind", "turn", "isError", "inputTokens", "outputTokens", "atUtc"],
   "properties": {
     "sequence": {
       "type": "integer",
@@ -14,8 +14,8 @@
     },
     "kind": {
       "type": "string",
-      "description": "What happened. A tool_started and its tool_finished share a turn and a tool name, in that order.",
-      "enum": ["turn_started", "tool_started", "tool_finished", "retry", "usage"]
+      "description": "What happened. A tool_started and its tool_finished share a turn and a tool name, in that order. assistant_message carries the model's own reasoning and/or reply text for the turn, in responseText/reasoningText.",
+      "enum": ["turn_started", "tool_started", "tool_finished", "retry", "usage", "assistant_message"]
     },
     "turn": {
       "type": "integer",
@@ -109,6 +109,19 @@
     "reasonCode": {
       "type": "string",
       "description": "Why a retry was scheduled or a turn failed, as a stable code the renderer translates. Never prose."
+    },
+    "atUtc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC instant the event was raised. Present on every kind, unlike analysis.progress's atUtc which is produced by the model's own report_progress call — this one is stamped by the host as the event is observed."
+    },
+    "responseText": {
+      "type": "string",
+      "description": "Set on assistant_message: the model's own reply text produced this turn, in full — not a preview. Absent on the turn that submits a structured final answer, where this would be the answer document itself; see ToolCallEvent's description."
+    },
+    "reasoningText": {
+      "type": "string",
+      "description": "Set on assistant_message: the reasoning content the response carried this turn, in full. Absent when the provider surfaced no reasoning this turn."
     }
   }
 }

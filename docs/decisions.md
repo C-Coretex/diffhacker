@@ -643,6 +643,14 @@ in one place" means the register is complete, not that the column is emptied.
 
 ### Hover timing, and clicking to keep a card
 
+**Superseded.** Hovering no longer opens a card at all — every card, node, edge and cluster alike,
+opens only on a click, and `useHoverTarget.ts` was simplified to match: no open delay, no close
+delay, no separate "pinned" state, because every open card is now the equivalent of what this
+section calls "kept". The timing numbers below are history, kept for why click-to-keep was added
+in the first place — that part did not change, only the hover-to-glance half it was added beside.
+Hovering an edge still brightens it, independently of the card; see "Edges are wider than they
+look" below.
+
 250 ms before the first card, no delay at all between adjacent ones, 500 ms of grace on leaving.
 The middle number is the one that decides how the diagram feels: re-serving the wait for every
 neighbour makes reading across a cluster feel like arguing with the screen.

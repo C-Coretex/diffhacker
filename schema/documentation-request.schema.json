@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.10/documentation-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.11/documentation-request.schema.json",
   "title": "DocumentationRequest",
   "description": "Parameters for profile.previewDocumentation: which repository's profile to render into documentation, and where the files would go if the user later chose to export them. Rendering is deterministic and costs nothing, so a preview can be asked for as often as the user likes.",
   "type": "object",

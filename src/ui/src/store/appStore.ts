@@ -652,10 +652,15 @@ export const useAppStore = create<AppState>((set) => ({
  * Whether an event earns a row in the tool log.
  *
  * Turn and usage events move the running totals without adding one: the log is about what the
- * model did, and "turn 14 started" is not something it did.
+ * model did and said, and "turn 14 started" is not something it did.
  */
 function isToolLogRow(event: ToolCallEvent): boolean {
-  return event.kind === 'tool_started' || event.kind === 'tool_finished' || event.kind === 'retry';
+  return (
+    event.kind === 'tool_started' ||
+    event.kind === 'tool_finished' ||
+    event.kind === 'retry' ||
+    event.kind === 'assistant_message'
+  );
 }
 
 /**

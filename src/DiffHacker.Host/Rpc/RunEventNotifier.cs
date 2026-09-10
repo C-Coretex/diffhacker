@@ -41,6 +41,9 @@ public sealed partial class RunEventNotifier(IRpcNotifier notifier, ILogger<RunE
 
         var payload = new ToolCallEvent(
             argumentsPreview: value.ArgumentsPreview,
+            // Stamped here rather than carried on LlmRunEvent: this is when the event is observed
+            // on the way to the renderer, the same boundary that already assigns sequence.
+            atUtc: DateTime.UtcNow,
             // The provider's own count of the last request, and the window to measure it against.
             // Both stay null when they are unknown: a zero here would read as an empty context, and
             // a guessed window would make a meter that is confidently wrong.
@@ -69,6 +72,8 @@ public sealed partial class RunEventNotifier(IRpcNotifier notifier, ILogger<RunE
             kind: kind,
             outputTokens: (int)Math.Min(value.CumulativeUsage.OutputTokens, int.MaxValue),
             reasonCode: value.ReasonCode,
+            reasoningText: value.ReasoningText,
+            responseText: value.ResponseText,
             resultBytes: value.ResultBytes,
             resultPreview: value.ResultPreview,
             retryAttempt: value.RetryAttempt,
@@ -108,6 +113,7 @@ public sealed partial class RunEventNotifier(IRpcNotifier notifier, ILogger<RunE
         LlmRunEventKind.ToolCallFinished => ToolCallEventKind.Tool_finished,
         LlmRunEventKind.RetryScheduled => ToolCallEventKind.Retry,
         LlmRunEventKind.UsageUpdated => ToolCallEventKind.Usage,
+        LlmRunEventKind.AssistantMessage => ToolCallEventKind.Assistant_message,
         _ => null,
     };
 

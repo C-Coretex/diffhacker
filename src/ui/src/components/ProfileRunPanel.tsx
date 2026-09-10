@@ -1,6 +1,6 @@
 import { Loader2Icon } from 'lucide-react';
 import type { AnalysisProgress, AnalysisProgressPhase, ToolCallEvent } from '@/contracts';
-import { formatCount } from '@/i18n/format';
+import { formatCount, formatTime } from '@/i18n/format';
 import { useT } from '@/i18n/useT';
 import { useAppStore } from '@/store/appStore';
 import { ContextMeter } from './ContextMeter';
@@ -122,8 +122,9 @@ export function AnalysisRunPanel({ onCancel }: { onCancel(): void }) {
 }
 
 /**
- * The tool log itself. Also used after a run, from the stored trace, which is why it takes its
- * events as a prop rather than reading the store.
+ * The tool log itself: tool calls, retries, and the model's own reasoning and reply text, as one
+ * feed ordered newest first. Also used after a run, from the stored trace, which is why it takes
+ * its events as a prop rather than reading the store.
  */
 export function ToolLog({ events }: { events: readonly ToolCallEvent[] }) {
   const t = useT();
@@ -132,69 +133,99 @@ export function ToolLog({ events }: { events: readonly ToolCallEvent[] }) {
     return <p className="text-muted-foreground text-sm">{t('toolLog.empty')}</p>;
   }
 
-  // Started and finished arrive as separate events; the table shows one row per call, so a
-  // finished event replaces the started one it matches on tool name within the same turn.
-  const rows = collapse(events);
+  // Started and finished arrive as separate events; collapse shows one row per call, a finished
+  // event replacing the started one it matches. The result is oldest first, so it is reversed
+  // here — new entries belong at the top of a live log, not at the bottom of a scroll.
+  const rows = [...collapse(events)].reverse();
 
   return (
-    <div className="max-h-80 overflow-auto rounded-md border">
-      <table className="w-full text-left text-xs">
-        <thead className="bg-muted/50 sticky top-0">
-          <tr>
-            <th scope="col" className="px-3 py-2 font-medium">
-              {t('toolLog.columnTool')}
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              {t('toolLog.columnArguments')}
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              {t('toolLog.columnResult')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-right font-medium">
-              {t('toolLog.columnDuration')}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.key} className="border-t align-top">
-              <td className="px-3 py-2 font-mono whitespace-nowrap">
-                {row.event.kind === 'retry'
-                  ? t('toolLog.retry', {
-                      attempt: row.event.retryAttempt ?? 1,
-                      delay: ((row.event.retryDelayMs ?? 0) / 1000).toFixed(1),
-                    })
-                  : (row.event.toolName ?? '')}
-                {row.event.isError && (
-                  <Badge variant="destructive" className="ml-2">
-                    {t('toolLog.failed')}
-                  </Badge>
+    <ul className="max-h-80 overflow-auto rounded-md border text-xs">
+      {rows.map((row) => (
+        <li key={row.key} className="border-b px-3 py-2 last:border-b-0">
+          {row.event.kind === 'assistant_message' ? (
+            <AssistantMessageRow event={row.event} />
+          ) : (
+            <ToolCallRow event={row.event} />
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** One tool call, retry, or turn-start row: the mechanical record of what the run did. */
+function ToolCallRow({ event }: { event: ToolCallEvent }) {
+  const t = useT();
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-mono font-medium">
+          {event.kind === 'retry'
+            ? t('toolLog.retry', {
+                attempt: event.retryAttempt ?? 1,
+                delay: ((event.retryDelayMs ?? 0) / 1000).toFixed(1),
+              })
+            : (event.toolName ?? '')}
+          {event.isError && (
+            <Badge variant="destructive" className="ml-2">
+              {t('toolLog.failed')}
+            </Badge>
+          )}
+        </span>
+        <span className="text-muted-foreground flex items-center gap-2 whitespace-nowrap">
+          {event.durationMs !== undefined && <span>{Math.round(event.durationMs)} ms</span>}
+          <time dateTime={event.atUtc}>{formatTime(event.atUtc)}</time>
+        </span>
+      </div>
+
+      {event.kind !== 'retry' && (
+        <>
+          <p className="text-muted-foreground font-mono break-all">{event.argumentsPreview}</p>
+          <p className="text-muted-foreground font-mono break-all">
+            {event.kind === 'tool_started' ? (
+              t('toolLog.running')
+            ) : (
+              <>
+                {event.resultPreview}
+                {event.resultBytes !== undefined && (
+                  <span className="block opacity-70">
+                    {t('toolLog.bytes', { bytes: formatCount(event.resultBytes) })}
+                  </span>
                 )}
-              </td>
-              <td className="text-muted-foreground max-w-64 px-3 py-2 font-mono break-all">
-                {row.event.argumentsPreview}
-              </td>
-              <td className="text-muted-foreground max-w-96 px-3 py-2 font-mono break-all">
-                {row.event.kind === 'tool_started' ? (
-                  t('toolLog.running')
-                ) : (
-                  <>
-                    {row.event.resultPreview}
-                    {row.event.resultBytes !== undefined && (
-                      <span className="block opacity-70">
-                        {t('toolLog.bytes', { bytes: formatCount(row.event.resultBytes) })}
-                      </span>
-                    )}
-                  </>
-                )}
-              </td>
-              <td className="text-muted-foreground px-3 py-2 text-right whitespace-nowrap">
-                {row.event.durationMs === undefined ? '' : `${Math.round(row.event.durationMs)} ms`}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              </>
+            )}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The model's own reasoning and reply text for one turn. Reasoning is collapsed by default — it
+ * is the model thinking out loud and can run long — while the reply text, the part meant to be
+ * read, is shown open.
+ */
+function AssistantMessageRow({ event }: { event: ToolCallEvent }) {
+  const t = useT();
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-end">
+        <time className="text-muted-foreground whitespace-nowrap" dateTime={event.atUtc}>
+          {formatTime(event.atUtc)}
+        </time>
+      </div>
+
+      {event.reasoningText && (
+        <details className="text-muted-foreground">
+          <summary className="cursor-pointer select-none">{t('toolLog.reasoning')}</summary>
+          <p className="mt-1 whitespace-pre-wrap">{event.reasoningText}</p>
+        </details>
+      )}
+
+      {event.responseText && <p className="whitespace-pre-wrap">{event.responseText}</p>}
     </div>
   );
 }

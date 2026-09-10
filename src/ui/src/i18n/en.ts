@@ -332,15 +332,12 @@ export const en = {
     tokens: '{input} in / {output} out',
     cost: '${cost}',
     costUnknown: 'cost unknown',
-    columnTool: 'Tool',
-    columnArguments: 'Arguments',
-    columnResult: 'Result',
-    columnDuration: 'Time',
     running: 'running…',
     failed: 'failed',
     bytes: '{bytes} bytes',
     retry: 'Retrying (attempt {attempt}) in {delay}s',
     empty: 'No tool calls yet.',
+    reasoning: 'Reasoning',
 
     context: 'Context',
     contextLabel: 'How full the model’s context is',
@@ -491,16 +488,13 @@ export const en = {
     },
 
     /**
-     * The hover cards.
+     * The explanation cards.
      *
      * Everything on one is already in the persisted analysis: no call of any kind happens because
-     * a pointer moved (§0.2.8, and the iteration's own first fixed decision).
+     * something was clicked (§0.2.8, and the iteration's own first fixed decision).
      */
     hover: {
-      pin: 'Pin this card',
-      unpin: 'Unpin this card',
-      pinned: 'Kept open — Escape or a click on the background closes it',
-      clickToKeep: 'Click to keep this open',
+      close: 'Close',
       copyPath: 'Copy path',
       copied: 'Path copied',
       copyFailed: 'The path could not be copied',

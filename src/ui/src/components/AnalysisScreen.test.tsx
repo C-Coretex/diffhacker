@@ -285,6 +285,7 @@ describe('AnalysisScreen', () => {
       sequence: 1,
       kind: 'tool_started',
       turn: 1,
+      atUtc: '2026-05-01T00:00:00Z',
       toolName: 'get_file_diff',
       argumentsPreview: '{"path":"src/Contract.cs"}',
       isError: false,
@@ -391,10 +392,11 @@ describe('AnalysisScreen', () => {
     expect(explanation.textContent).not.toContain('rolled back');
   });
 
-  it('sends nothing to the host while the reviewer hovers the diagram', async () => {
+  it('sends nothing to the host while the reviewer opens and reads a card', async () => {
     // Verification step 7, in the form this level can check: the iteration's first fixed decision
-    // is that no LLM call may happen on hover, ever, and the renderer's only route to one is the
-    // bridge. Nothing new crosses it.
+    // is that no LLM call may happen because a card opened, and the renderer's only route to one is
+    // the bridge. Nothing new crosses it. Hovering no longer opens anything at all, so this clicks —
+    // the only gesture there is — and confirms hovering elsewhere is truly inert alongside it.
     const transport = new FakeTransport();
     renderScreen(transport);
 
@@ -404,7 +406,7 @@ describe('AnalysisScreen', () => {
     const box = await screen.findByTestId('graph-node-src/Contract.cs');
     const sentByNow = transport.sent.length;
 
-    await userEvent.hover(box);
+    await userEvent.click(box);
     await screen.findByTestId('graph-hover-card');
 
     await userEvent.hover(screen.getByTestId('graph-container-core'));

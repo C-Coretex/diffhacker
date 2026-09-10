@@ -25,9 +25,8 @@ import { useGraphActions } from './graphActions';
  *
  * It also carries the cluster's **explanation card**, and it is the only part of the container that
  * does. The region below it is working canvas — the reviewer pans across it, drags over it and reads
- * the boxes inside it — and a card that appeared whenever the pointer crossed the gap between two
- * files was a card in the way of the files. The title bar is the one part of a container that is
- * about the container, so it is the part that explains it.
+ * the boxes inside it — so the title bar is the one part of a container that is about the container,
+ * and the part that explains it, opened with a click the same as a node or an edge.
  */
 export function ContainerNode({ data }: NodeProps<Node<ContainerNodeData>>) {
   const { container, nodeCount, isMatch } = data;
@@ -46,18 +45,15 @@ export function ContainerNode({ data }: NodeProps<Node<ContainerNodeData>>) {
         className="flex items-center gap-2 px-3"
         style={{ height: CONTAINER_HEADER }}
         data-testid={`graph-container-header-${container.id}`}
-        // The surface deliberately ignores container nodes (@see AnalysisGraph), so these three are
-        // the whole of a cluster's hover behaviour. A click here pins the card the same way a click
-        // on a box does; the two buttons below stop their own clicks, so neither collapsing a cluster
-        // nor opening it pins anything.
-        onMouseEnter={(event) => actions?.showContainerCard(container, event.currentTarget)}
-        onMouseLeave={() => actions?.hideContainerCard()}
-        onClick={(event) => actions?.pinContainerCard(container, event.currentTarget)}
+        // The surface deliberately ignores container nodes (@see AnalysisGraph), so this click is the
+        // whole of a cluster's card behaviour. The two buttons below stop their own clicks, so neither
+        // collapsing a cluster nor opening it also opens the card.
+        onClick={(event) => actions?.toggleContainerCard(container, event.currentTarget)}
       >
         <button
           type="button"
-          // Stopped here, or clicking the chevron would also reach the surface's `onNodeClick` and
-          // pin the cluster's card open over the cluster that just folded.
+          // Stopped here, or clicking the chevron would also bubble to the header's own click and
+          // open the cluster's card over the cluster that just folded.
           onClick={(event) => {
             event.stopPropagation();
             toggle(container.id);
@@ -79,9 +75,9 @@ export function ContainerNode({ data }: NodeProps<Node<ContainerNodeData>>) {
         {actions && nodeCount > 0 && (
           <button
             type="button"
-            // Stopped for the same reason the chevron stops it: the surface turns a click on a
-            // container into a pinned card, and a card over the cluster whose files just opened is a
-            // card in the way.
+            // Stopped for the same reason the chevron stops it: a click on the header opens the
+            // cluster's card, and a card over the cluster whose files just opened is a card in the
+            // way.
             onClick={(event) => {
               event.stopPropagation();
               actions.openContainer(container);
