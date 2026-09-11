@@ -19,6 +19,19 @@ export const COLLAPSED_HEIGHT = 96;
 /** Room for the container's own title bar, above where its first node can be placed. */
 export const CONTAINER_HEADER = 48;
 
+/**
+ * An abstraction drawn with its implementations: the width of one box, a strip naming what it is,
+ * and one row per node. Each row is shorter than a box — it drops the directory line, which the
+ * rows share closely enough for the path in each row's tooltip to carry it — but it is a fixed
+ * height for the same reason a box is.
+ */
+export const MERGED_HEADER = 22;
+export const MERGED_ROW_HEIGHT = 76;
+
+export function mergedHeight(memberCount: number): number {
+  return MERGED_HEADER + memberCount * MERGED_ROW_HEIGHT;
+}
+
 export const ELK_ROOT_OPTIONS: Record<string, string> = {
   // Containers are independent sub-graphs — no edge in the ELK input ever crosses one — so the
   // root's only job is packing them. `rectpacking` fills the viewport in two dimensions; the

@@ -5,9 +5,11 @@ import {
   ELK_CONTAINER_OPTIONS,
   ELK_ROOT_OPTIONS,
   ENTRY_NODE_OPTIONS,
+  mergedHeight,
   NODE_HEIGHT,
   NODE_WIDTH,
 } from './elkOptions';
+import { NO_MERGE, unitOf, type MergePlan } from './implementationGroups';
 
 /**
  * The subset of ELK's graph shape this code produces. Declared here rather than imported from
@@ -66,9 +68,16 @@ export function isSyntheticEdge(id: string): boolean {
  * 3. **Children are emitted in rank order**, which the container's model-order options make ELK
  *    honour within a layer.
  *
- * A collapsed container becomes one leaf node with no children and no internal edges.
+ * A collapsed container becomes one leaf node with no children and no internal edges. A merged box
+ * — an abstraction and its implementations, when the reviewer has merging on — becomes one leaf
+ * standing where its earliest member would have stood, and every edge into or out of a member is an
+ * edge into or out of the box.
  */
-export function buildElkGraph(view: AnalysisView, collapsed: ReadonlySet<string>): ElkNode {
+export function buildElkGraph(
+  view: AnalysisView,
+  collapsed: ReadonlySet<string>,
+  merge: MergePlan = NO_MERGE,
+): ElkNode {
   const containerOf = new Map(view.nodes.map((node) => [node.id, node.containerId]));
   const nodesById = new Map(view.nodes.map((node) => [node.id, node]));
 
@@ -81,18 +90,22 @@ export function buildElkGraph(view: AnalysisView, collapsed: ReadonlySet<string>
       } satisfies ElkNode;
     }
 
-    const members = membersInRankOrder(container.nodeIds, nodesById);
+    const units = layoutUnits(
+      membersInRankOrder(container.nodeIds, nodesById),
+      container.entryNodeId,
+      merge,
+    );
 
     return {
       id: container.id,
       layoutOptions: { ...ELK_CONTAINER_OPTIONS },
-      children: members.map((node) => ({
-        id: node.id,
+      children: units.map((unit) => ({
+        id: unit.id,
         width: NODE_WIDTH,
-        height: NODE_HEIGHT,
-        ...(node.id === container.entryNodeId ? { layoutOptions: { ...ENTRY_NODE_OPTIONS } } : {}),
+        height: unit.height,
+        ...(unit.isEntry ? { layoutOptions: { ...ENTRY_NODE_OPTIONS } } : {}),
       })),
-      edges: containerEdges(container.id, members, view.edges, containerOf),
+      edges: containerEdges(container.id, units, view.edges, containerOf, merge),
     } satisfies ElkNode;
   });
 
@@ -121,16 +134,63 @@ function membersInRankOrder(
     .sort((a, b) => a.rank - b.rank || a.id.localeCompare(b.id));
 }
 
+/** One box ELK places: a node, or a merged box standing for several. */
+interface LayoutUnit {
+  readonly id: string;
+  readonly height: number;
+  readonly isEntry: boolean;
+  /** The nodes it stands for, in reading order. */
+  readonly memberIds: readonly string[];
+}
+
+/**
+ * A container's boxes in rank order. A merged box takes the place of its earliest member and stands
+ * for the rest, so it is placed where the reading reaches the first of them — and it is the entry
+ * box when any of its members is the entry node, because that is where the reviewer is told to start.
+ */
+function layoutUnits(
+  members: readonly AnalysisNodeInfo[],
+  entryNodeId: string,
+  merge: MergePlan,
+): LayoutUnit[] {
+  const units: LayoutUnit[] = [];
+  const placed = new Set<string>();
+
+  for (const node of members) {
+    const boxId = merge.boxOf.get(node.id);
+    const box = boxId === undefined ? undefined : merge.boxes.get(boxId);
+
+    if (!box) {
+      units.push({ id: node.id, height: NODE_HEIGHT, isEntry: node.id === entryNodeId, memberIds: [node.id] });
+      continue;
+    }
+
+    if (placed.has(box.id)) continue;
+    placed.add(box.id);
+
+    units.push({
+      id: box.id,
+      height: mergedHeight(box.memberIds.length),
+      isEntry: box.memberIds.includes(entryNodeId),
+      memberIds: box.memberIds,
+    });
+  }
+
+  return units;
+}
+
 /** The edges inside one container: the model's own, plus the synthetic ones rank needs. */
 function containerEdges(
   containerId: string,
-  members: readonly AnalysisNodeInfo[],
+  units: readonly LayoutUnit[],
   edges: readonly AnalysisEdgeInfo[],
   containerOf: ReadonlyMap<string, string>,
+  merge: MergePlan,
 ): ElkEdge[] {
-  const inside = new Set(members.map((node) => node.id));
+  const inside = new Set(units.flatMap((unit) => unit.memberIds));
   const withIncoming = new Set<string>();
   const result: ElkEdge[] = [];
+  const seen = new Set<string>();
 
   for (const edge of edges) {
     // Both ends inside this container. `crossesContainers` is not consulted: membership is the
@@ -138,36 +198,59 @@ function containerEdges(
     if (!inside.has(edge.sourceNodeId) || !inside.has(edge.targetNodeId)) continue;
     if (containerOf.get(edge.sourceNodeId) !== containerId) continue;
 
+    const source = unitOf(merge, edge.sourceNodeId);
+    const target = unitOf(merge, edge.targetNodeId);
+
     // A self-edge is a warning the validator already raises, and handing one to a layered
-    // algorithm produces a routing artefact rather than information.
-    if (edge.sourceNodeId === edge.targetNodeId) continue;
+    // algorithm produces a routing artefact rather than information. An edge between two members
+    // of one merged box lands here too: the box already says they belong together.
+    if (source === target) continue;
 
-    result.push({
-      id: `${edge.sourceNodeId}->${edge.targetNodeId}`,
-      sources: [edge.sourceNodeId],
-      targets: [edge.targetNodeId],
-    });
+    // Two of the model's edges landing on the same pair of boxes are one line to lay out. The
+    // surface still hands both to the card; this is only about where the boxes go.
+    const id = `${source}->${target}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
 
-    withIncoming.add(edge.targetNodeId);
+    result.push({ id, sources: [source], targets: [target] });
+    withIncoming.add(target);
   }
 
-  // Rank for the nodes edges cannot place. A node ranked after the first with nothing pointing at
+  // Rank for the boxes edges cannot place. A box ranked after the first with nothing pointing at
   // it has no reason, as far as ELK is concerned, to be below anything — so it is chained to the
-  // node the model ranked before it.
-  for (let i = 1; i < members.length; i++) {
-    const node = members[i];
-    const previous = members[i - 1];
-    if (node === undefined || previous === undefined) continue;
-    if (withIncoming.has(node.id)) continue;
+  // box the model ranked before it.
+  for (let i = 1; i < units.length; i++) {
+    const unit = units[i];
+    const previous = units[i - 1];
+    if (unit === undefined || previous === undefined) continue;
+    if (withIncoming.has(unit.id)) continue;
 
     result.push({
-      id: `${SYNTHETIC_EDGE_PREFIX}${previous.id}->${node.id}`,
+      id: `${SYNTHETIC_EDGE_PREFIX}${previous.id}->${unit.id}`,
       sources: [previous.id],
-      targets: [node.id],
+      targets: [unit.id],
     });
   }
 
   return result;
+}
+
+/**
+ * The model's edges a laid-out line inside a container stands for: every edge whose two ends are
+ * drawn in those two boxes. One, unless merging folded several onto one pair.
+ */
+export function edgesBetween(
+  view: AnalysisView,
+  source: string,
+  target: string,
+  merge: MergePlan = NO_MERGE,
+): AnalysisEdgeInfo[] {
+  return view.edges.filter(
+    (edge) =>
+      unitOf(merge, edge.sourceNodeId) === source &&
+      unitOf(merge, edge.targetNodeId) === target &&
+      edge.sourceNodeId !== edge.targetNodeId,
+  );
 }
 
 /**
@@ -177,15 +260,19 @@ function containerEdges(
  * Edges that collapse onto the same pair are merged into one, carrying how many they stand for.
  * A bundle is neither direct nor conceptual — claiming either would be inventing a fact — so it is
  * drawn as its own thing and labelled with its count.
+ *
+ * An end inside a merged box is drawn to the box. A collapsed container still wins over that: the
+ * box is inside the container, and a collapsed container has nothing inside it to draw to.
  */
 export function bundledEdges(
   view: AnalysisView,
   collapsed: ReadonlySet<string>,
+  merge: MergePlan = NO_MERGE,
 ): BundledEdge[] {
   const containerOf = new Map(view.nodes.map((node) => [node.id, node.containerId]));
   const endpointOf = (nodeId: string): string => {
     const container = containerOf.get(nodeId);
-    return container !== undefined && collapsed.has(container) ? container : nodeId;
+    return container !== undefined && collapsed.has(container) ? container : unitOf(merge, nodeId);
   };
 
   const bundles = new Map<string, BundledEdge>();

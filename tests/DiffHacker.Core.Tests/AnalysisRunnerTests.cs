@@ -186,6 +186,47 @@ public sealed class AnalysisRunnerTests
     }
 
     [Fact]
+    public async Task A_run_that_does_not_want_implementation_groups_never_asks_and_stores_none()
+    {
+        var harness = new Harness { Options = new AnalysisRunOptions { ImplementationGroups = false } };
+        harness.Sessions.Answers = [Serialize(AnalysisFixtures.Valid() with { ImplementationGroups = null })];
+
+        var result = await harness.RunAsync(TestContext.Current.CancellationToken);
+
+        result.Succeeded.ShouldBeTrue();
+
+        var conversation = harness.Sessions.Session.Conversation.ShouldNotBeNull();
+
+        conversation.SystemPrompt.ShouldNotContain("implementationGroups");
+        conversation.ResponseFormat.ShouldNotBeNull().SchemaJson.ShouldNotContain("implementationGroups");
+
+        // Null rather than empty is how the stored analysis says "nobody asked".
+        harness.Store.Saved.ShouldHaveSingleItem().Document.ImplementationGroups.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_run_that_wanted_implementation_groups_rejects_an_answer_without_them()
+    {
+        var harness = new Harness();
+
+        harness.Sessions.Answers =
+        [
+            Serialize(AnalysisFixtures.Valid() with { ImplementationGroups = null }),
+            Serialize(AnalysisFixtures.WithImplementationGroup()),
+        ];
+
+        var result = await harness.RunAsync(TestContext.Current.CancellationToken);
+
+        result.Succeeded.ShouldBeTrue();
+
+        harness.Sessions.Session.Rejections.ShouldHaveSingleItem()
+            .ShouldContain(message => message.Contains("implementationGroups is missing"));
+
+        harness.Store.Saved.ShouldHaveSingleItem().Document.ImplementationGroups
+            .ShouldNotBeNull().ShouldHaveSingleItem().AbstractionNodeId.ShouldBe(AnalysisFixtures.ContractPath);
+    }
+
+    [Fact]
     public async Task A_run_that_wanted_both_groupings_rejects_an_answer_with_one()
     {
         var harness = new Harness();

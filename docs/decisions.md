@@ -1145,3 +1145,65 @@ rather than drawn: the navigator's edge preview and the search results.
 The Formatting section is ~1,150 characters, about 290 tokens a turn. It pays for itself only if
 the model actually cites paths the way the changed-file list spells them, which is why it gives an
 example and says what the citation does.
+
+## Implementation groups
+
+### The model declares them, because nothing else here can
+
+An interface and the classes implementing it are one idea spread over several files, and a reviewer
+reads them that way whether or not the diagram does. Drawing them as one box needs to know which
+files those are — and §0.2.3 means the application cannot tell: it parses no language, so an
+`interface`, an abstract base class, a Rust trait, a Swift protocol and a C header all look like
+text. §0.2.1 settles who decides instead. The model already reads the code; `implementationGroups`
+is where it says "this declares a contract, those fulfil it", in whatever language the repository
+is written in.
+
+It is a separate list rather than a kind of edge. The prompt tells the model never to classify an
+edge as *calls* or *implements* (§0.2.7), and that stays true: the edges between an interface and
+its implementations are still written as reading flow, in prose. The group is a second, narrower
+statement beside them, and the prompt says both — including that most changes have none and the
+definition is not to be stretched to fill the list.
+
+### Null and empty are different answers
+
+`AnalysisResult.ImplementationGroups` is the one list on the document that is nullable. Empty means
+the model was asked and this change has no abstraction beside its implementations; null means
+nobody asked — a run with the switch off, or any document written before 1.13, which reads as it
+stands with no `LegacyAnalysisDocument` step. The toolbar's toggle is disabled in both cases, and
+says which, because they need different things from the reviewer: one is fixed by analysing again,
+the other is simply the change.
+
+### Optional in the request, like the second grouping
+
+The switch beside Analyse is the change-clusters opt-out's twin, for the same reason: turning it off
+removes the prompt section, the schema property *and* its `$def` from the request, rather than asking
+and discarding. `AnalysisResponseSchema.For(clusters, groups)` derives all four variants from the one
+schema in `/schema`. It is remembered application-wide under `analysis.implementationGroups.produce`
+and defaults to on; the cost is a short list of node ids.
+
+### A group lives in one container, and a split is a warning
+
+A merged box is drawn inside a container, so the wire projects each group onto the grouping on
+screen: it sits in the abstraction's container and keeps the implementations that share it. The
+model is told to keep a group together in every grouping, but an implementation left elsewhere is
+`implementation_group_split` — a warning, never a repair round. It costs a smaller picture (that
+file is drawn as its own box there), a repair round costs money, and a change-clusters grouping may
+have a real reason to put the two apart.
+
+The errors are only the things that would make the box undrawable: an id that is not a node, a
+group with no implementations, and a node claimed twice — by two groups, twice by one, or as its own
+implementation. A node drawn in two boxes, or in none, would break §0.2.5 on screen.
+
+### Merging is the renderer's, and it is presentation
+
+Whether the groups are drawn merged is a toggle in the toolbar that re-lays the diagram out and
+never reaches the host, the same kind of decision as collapsing a container. It is remembered in
+`localStorage` for the reasons `useTheme.ts` gives for the colour scheme, not in `app_settings`:
+it is how someone reads, costs nothing and describes no analysis.
+
+A merged box is one ELK leaf placed where its earliest member would have been, pinned first when any
+member is the entry node. Every row is still its node — its own test id, state border, importance,
+reviewed tick, controls, card and diff — and the surface resolves a click on the box to the row it
+landed on. Edges attach to the box: one inside it is dropped (the box already says the two belong
+together), and several landing on the same neighbour become one line labelled with a count whose
+card lists each. A collapsed container still wins over a merged box inside it.

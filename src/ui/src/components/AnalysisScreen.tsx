@@ -88,6 +88,8 @@ export function AnalysisScreen() {
   // remembered application-wide, so the box comes back ticked the way it was left.
   const [changeClusters, setChangeClusters] = useState<boolean>();
   const produceChangeClusters = changeClusters ?? view?.produceChangeClusters ?? true;
+  const [implementationGroups, setImplementationGroups] = useState<boolean>();
+  const produceImplementationGroups = implementationGroups ?? view?.produceImplementationGroups ?? true;
 
   // Reading the stored analysis never starts a conversation, which is the whole reason it is
   // stored: the money was spent once.
@@ -128,7 +130,11 @@ export function AnalysisScreen() {
       setAnalysis(
         await runAnalysis(
           client,
-          { repositoryPath: path, changeClusters: produceChangeClusters },
+          {
+            repositoryPath: path,
+            changeClusters: produceChangeClusters,
+            implementationGroups: produceImplementationGroups,
+          },
           controller.signal,
         ),
       );
@@ -140,7 +146,7 @@ export function AnalysisScreen() {
       abort.current = null;
       endRun();
     }
-  }, [client, path, startRun, setAnalysis, endRun, produceChangeClusters, t]);
+  }, [client, path, startRun, setAnalysis, endRun, produceChangeClusters, produceImplementationGroups, t]);
 
   /**
    * Switches which grouping the diagram shows. It reads the stored answer a second way and spends
@@ -185,8 +191,8 @@ export function AnalysisScreen() {
 
         {/*
           Beside the button that spends the money, not in a settings page: this is the only control
-          on the screen that changes what a run costs, and the moment to decide is the moment you
-          are about to pay. Its state is remembered application-wide by the host, so it is a default
+          on the screen that change what a run costs, and the moment to decide is the moment you are
+          about to pay. Their state is remembered application-wide by the host, so each is a default
           you set once and an override you can make per run.
         */}
         <div className="ml-auto flex items-center gap-2">
@@ -203,6 +209,23 @@ export function AnalysisScreen() {
             title={t('analysis.changeClustersBody')}
           >
             {t('analysis.changeClusters')}
+          </Label>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="analysis-implementation-groups"
+            checked={produceImplementationGroups}
+            disabled={run === 'running'}
+            onChange={(event) => setImplementationGroups(event.target.checked)}
+            data-testid="toggle-implementation-groups"
+          />
+          <Label
+            htmlFor="analysis-implementation-groups"
+            className="text-xs font-normal text-muted-foreground"
+            title={t('analysis.implementationGroupsBody')}
+          >
+            {t('analysis.implementationGroups')}
           </Label>
         </div>
 

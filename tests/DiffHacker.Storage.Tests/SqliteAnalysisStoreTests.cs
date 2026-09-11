@@ -65,6 +65,41 @@ public sealed class SqliteAnalysisStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Implementation_groups_keep_the_difference_between_none_and_not_asked()
+    {
+        var asked = Sample() with
+        {
+            Id = "asked",
+            Document = Sample().Document with
+            {
+                ImplementationGroups =
+                [
+                    new AnalysisImplementationGroup
+                    {
+                        AbstractionNodeId = "src/Contract.cs",
+                        ImplementationNodeIds = ["src/Caller.cs"],
+                    },
+                ],
+            },
+        };
+
+        await _store.SaveAsync(asked, TestContext.Current.CancellationToken);
+
+        var group = (await _store.FindAsync("asked", TestContext.Current.CancellationToken))
+            .ShouldNotBeNull().Document.ImplementationGroups.ShouldNotBeNull().ShouldHaveSingleItem();
+
+        group.AbstractionNodeId.ShouldBe("src/Contract.cs");
+        group.ImplementationNodeIds.ShouldBe(["src/Caller.cs"]);
+
+        var unasked = Sample() with { Id = "unasked", Document = Sample().Document with { ImplementationGroups = null } };
+
+        await _store.SaveAsync(unasked, TestContext.Current.CancellationToken);
+
+        (await _store.FindAsync("unasked", TestContext.Current.CancellationToken))
+            .ShouldNotBeNull().Document.ImplementationGroups.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task The_changeset_the_run_was_made_from_is_stored_with_it()
     {
         // An analysis is a photograph of one changeset, and these are part of the photograph. Read

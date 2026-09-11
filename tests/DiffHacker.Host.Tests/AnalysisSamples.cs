@@ -14,10 +14,17 @@ namespace DiffHacker.Host.Tests;
 /// dependency flow and <i>across</i> two in change clusters. That is what the two views cost and buy
 /// respectively, and it means a test can tell the two projections apart by more than a label.
 /// </para>
+/// <para>
+/// Its one implementation group falls the same way: both members share a cluster in dependency flow,
+/// so the group is there to merge, and are split in change clusters, so it is not.
+/// </para>
 /// </summary>
 internal static class AnalysisSamples
 {
-    public static Analysis Completed(string repositoryPath, bool changeClusters = true)
+    public static Analysis Completed(
+        string repositoryPath,
+        bool changeClusters = true,
+        bool implementationGroups = true)
     {
         var document = new AnalysisResult
         {
@@ -96,6 +103,16 @@ internal static class AnalysisSamples
                     Explanation = "Read the decision before its consequence.",
                 },
             ],
+            ImplementationGroups = implementationGroups
+                ?
+                [
+                    new AnalysisImplementationGroup
+                    {
+                        AbstractionNodeId = "src/Contract.cs",
+                        ImplementationNodeIds = ["src/Caller.cs"],
+                    },
+                ]
+                : null,
         };
 
         var changed = new[]

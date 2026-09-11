@@ -129,16 +129,16 @@ public sealed partial class AnalysisRunner(
 
         var conversation = new LlmConversation
         {
-            SystemPrompt = AnalysisPrompt.SystemPrompt(options.ChangeClusters),
+            SystemPrompt = AnalysisPrompt.SystemPrompt(options.ChangeClusters, options.ImplementationGroups),
             UserMessage = AnalysisPrompt.OpeningMessage(RepositoryName(repositoryPath), changeset, storedProfile),
             Tools = toolbox.Tools,
             ResponseFormat = new LlmResponseFormat
             {
                 SchemaName = AnalysisPrompt.SchemaName,
 
-                // The prompt and the schema agree about which groupings exist, or the model is asked
-                // for a field it was told nothing about and told about a field it cannot answer in.
-                SchemaJson = AnalysisResponseSchema.For(options.ChangeClusters),
+                // The prompt and the schema agree about which parts exist, or the model is asked for
+                // a field it was told nothing about and told about a field it cannot answer in.
+                SchemaJson = AnalysisResponseSchema.For(options.ChangeClusters, options.ImplementationGroups),
             },
             MaxSchemaRepairs = RepairRoundsFor(changeset.Files.Count, SchemaRepairFloor, SchemaRepairCeiling),
             MaxResultRepairs = RepairRoundsFor(changeset.Files.Count, ResultRepairFloor, ResultRepairCeiling),
@@ -152,7 +152,11 @@ public sealed partial class AnalysisRunner(
                     return ["The answer could not be read back as an analysis document."];
                 }
 
-                validation = AnalysisValidator.Validate(candidate, changeset.Files, options.ChangeClusters);
+                validation = AnalysisValidator.Validate(
+                    candidate,
+                    changeset.Files,
+                    options.ChangeClusters,
+                    options.ImplementationGroups);
                 return validation.ErrorMessages;
             },
         };
@@ -244,6 +248,7 @@ public sealed partial class AnalysisRunner(
             candidate.Nodes.Count,
             candidate.DependencyContainers.Count,
             candidate.ClusterContainers.Count,
+            candidate.ImplementationGroups?.Count ?? 0,
             run.ResultRepairs,
             session.ToolCalls.Count);
 
@@ -302,7 +307,8 @@ public sealed partial class AnalysisRunner(
         Level = LogLevel.Information,
         Message = "Stored an analysis of {Repository}: {Files} changed file(s) as {Nodes} node(s) in "
             + "{Containers} dependency-flow container(s) and {ClusterContainers} change-cluster(s), "
-            + "{Repairs} repair round(s), {ToolCalls} tool calls.")]
+            + "{ImplementationGroups} implementation group(s), {Repairs} repair round(s), "
+            + "{ToolCalls} tool calls.")]
     private static partial void AnalysisStored(
         ILogger logger,
         string repository,
@@ -310,6 +316,7 @@ public sealed partial class AnalysisRunner(
         int nodes,
         int containers,
         int clusterContainers,
+        int implementationGroups,
         int repairs,
         int toolCalls);
 

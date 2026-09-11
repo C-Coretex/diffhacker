@@ -503,6 +503,21 @@ export class AnalysisScreen {
     return this.page.getByTestId('toggle-change-clusters');
   }
 
+  /** Whether the next run should ask for implementation groups. Beside the Analyse button too. */
+  get implementationGroupsToggle(): Locator {
+    return this.page.getByTestId('toggle-implementation-groups');
+  }
+
+  /** The toolbar's view-only toggle: draw each abstraction with its implementations as one box. */
+  get mergeImplementationsToggle(): Locator {
+    return this.page.getByTestId('merge-implementations');
+  }
+
+  /** The merged box drawn for an abstraction, named by the abstraction's node id. */
+  mergedBox(abstractionNodeId: string): Locator {
+    return this.page.getByTestId(`graph-merged-${abstractionNodeId}`);
+  }
+
   // ------------------------------------------------------- Iteration 9: explanations
 
   /** The band's toggle, which unfolds the rest of the overview. */

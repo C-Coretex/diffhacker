@@ -50,6 +50,9 @@ public sealed partial class AnalysisRpcTarget(
     /// <summary>Whether runs should ask for the second grouping. The remembered answer, overridable per run.</summary>
     private const string ProduceClustersKey = "analysis.grouping.clusters";
 
+    /// <summary>Whether runs should ask for implementation groups. Remembered and overridable the same way.</summary>
+    private const string ProduceImplementationGroupsKey = "analysis.implementationGroups.produce";
+
     [JsonRpcMethod("analysis.get")]
     public async Task<AnalysisView> GetAsync(AnalysisRequest request, CancellationToken cancellationToken)
     {
@@ -59,18 +62,18 @@ public sealed partial class AnalysisRpcTarget(
             .GetLatestAsync(request.RepositoryPath, cancellationToken)
             .ConfigureAwait(false);
 
-        var produceClusters = await ProduceClustersAsync(null, cancellationToken).ConfigureAwait(false);
+        var nextRun = await NextRunAsync(null, cancellationToken).ConfigureAwait(false);
 
         // Reading never runs anything. That is the whole promise of persisting the result: the
         // conversation happened once and was paid for once.
         if (stored is null)
         {
-            return AnalysisWire.Empty(request.RepositoryPath, produceClusters);
+            return AnalysisWire.Empty(request.RepositoryPath, nextRun);
         }
 
         var grouping = await ResolveGroupingAsync(stored, cancellationToken).ConfigureAwait(false);
 
-        return AnalysisWire.ToWire(stored, grouping, produceClusters);
+        return AnalysisWire.ToWire(stored, grouping, nextRun);
     }
 
     [JsonRpcMethod("analysis.run")]
@@ -78,13 +81,16 @@ public sealed partial class AnalysisRpcTarget(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var produceClusters = await ProduceClustersAsync(request.ChangeClusters, cancellationToken)
-            .ConfigureAwait(false);
+        var options = await NextRunAsync(request, cancellationToken).ConfigureAwait(false);
 
         // Remembered before the run rather than after it, so a run that is cancelled or fails still
-        // leaves the control showing what the reviewer chose.
+        // leaves the controls showing what the reviewer chose.
         await settings
-            .SetAsync(ProduceClustersKey, produceClusters ? "true" : "false", cancellationToken)
+            .SetAsync(ProduceClustersKey, options.ChangeClusters ? "true" : "false", cancellationToken)
+            .ConfigureAwait(false);
+
+        await settings
+            .SetAsync(ProduceImplementationGroupsKey, options.ImplementationGroups ? "true" : "false", cancellationToken)
             .ConfigureAwait(false);
 
         AnalysisRunResult result;
@@ -94,7 +100,7 @@ public sealed partial class AnalysisRpcTarget(
             result = await runner
                 .RunAsync(
                     request.RepositoryPath,
-                    new AnalysisRunOptions { ChangeClusters = produceClusters },
+                    options,
                     runEvents,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -120,7 +126,7 @@ public sealed partial class AnalysisRpcTarget(
         // was last reading — clamped to what this answer actually holds.
         var grouping = await ResolveGroupingAsync(result.Analysis, cancellationToken).ConfigureAwait(false);
 
-        return AnalysisWire.ToWire(result.Analysis, grouping, produceClusters);
+        return AnalysisWire.ToWire(result.Analysis, grouping, options);
     }
 
     /// <summary>
@@ -170,9 +176,9 @@ public sealed partial class AnalysisRpcTarget(
             .SetAsync(DefaultGroupingKey, AnalysisGroupingNames.Of(grouping), cancellationToken)
             .ConfigureAwait(false);
 
-        var produceClusters = await ProduceClustersAsync(null, cancellationToken).ConfigureAwait(false);
+        var nextRun = await NextRunAsync(null, cancellationToken).ConfigureAwait(false);
 
-        return AnalysisWire.ToWire(stored with { Grouping = grouping }, grouping, produceClusters);
+        return AnalysisWire.ToWire(stored with { Grouping = grouping }, grouping, nextRun);
     }
 
     /// <summary>
@@ -197,18 +203,32 @@ public sealed partial class AnalysisRpcTarget(
     }
 
     /// <summary>
-    /// Whether a run should ask for the second grouping: what the caller said, else what is
+    /// What a run should ask for: for each optional part, what the caller said, else what is
     /// remembered, else yes. Absent means "remembered" rather than "no", so a renderer that does not
-    /// know about the field cannot silently make analyses cheaper and less useful.
+    /// know about a field cannot silently make analyses cheaper and less useful.
     /// </summary>
-    private async Task<bool> ProduceClustersAsync(bool? requested, CancellationToken cancellationToken)
+    /// <param name="request">The run request, or null when only the remembered choices are wanted.</param>
+    private async Task<AnalysisRunOptions> NextRunAsync(
+        AnalysisRequest? request,
+        CancellationToken cancellationToken) => new()
+    {
+        ChangeClusters = await ResolveAsync(request?.ChangeClusters, ProduceClustersKey, cancellationToken)
+            .ConfigureAwait(false),
+        ImplementationGroups = await ResolveAsync(
+                request?.ImplementationGroups,
+                ProduceImplementationGroupsKey,
+                cancellationToken)
+            .ConfigureAwait(false),
+    };
+
+    private async Task<bool> ResolveAsync(bool? requested, string key, CancellationToken cancellationToken)
     {
         if (requested is { } asked)
         {
             return asked;
         }
 
-        var setting = await settings.GetAsync(ProduceClustersKey, cancellationToken).ConfigureAwait(false);
+        var setting = await settings.GetAsync(key, cancellationToken).ConfigureAwait(false);
 
         return !string.Equals(setting, "false", StringComparison.Ordinal);
     }

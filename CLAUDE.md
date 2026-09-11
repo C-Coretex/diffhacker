@@ -374,6 +374,15 @@ Run from the repository root.
   the response format. An analysis then holds one grouping, reports that in
   `AnalysisView.availableGroupings`, and the other control is disabled with its reason.
   `LegacyAnalysisDocument` gives a pre-1.10 document the same shape.
+- **Implementation groups are the model's declaration; merging them is the renderer's.** The app
+  cannot tell an interface from any other file (§0.2.3), so `implementationGroups` — an abstraction
+  and the nodes implementing it — is part of the model's answer, optional in the request exactly like
+  the second grouping (`AnalysisPrompt.SystemPrompt(_, false)`, `AnalysisResponseSchema.For(_, false)`).
+  **Null means not asked, empty means none**, and the toolbar says which. `AnalysisWire` projects each
+  group onto the active grouping's container; `graph/implementationGroups.ts` turns it into one ELK
+  leaf when the reviewer's `localStorage` toggle is on. Every row of a merged box is still its node —
+  test id, card, diff, reviewed mark — and a split group is a warning, never a repair round. See
+  [docs/decisions.md](docs/decisions.md#implementation-groups).
 - **The renderer never composes a command line.** `editor.open` takes an editor, a file and a line;
   whether that becomes `--diff` or `--goto` is decided host-side from which sides of the file exist.
   `HeadBlobExtractor` is the eighth entry on `RepositoryWriteTests.Allowed` and writes only under
@@ -454,7 +463,11 @@ the one question the design turns on: requirement 2 says switching grouping must
 analysis, and the only honest check is counting what the provider was asked for — across a switch, a
 switch back, and a restart onto the same stored state. `RepoSet.layered()` gives it a change that
 genuinely spans database, auth and API, so "one cluster here, three there" is a fact about the
-fixture rather than about the stub.
+fixture rather than about the stub. **Implementation groups add
+[11-implementation-groups.spec.ts](tests/e2e/specs/11-implementation-groups.spec.ts)**: that a click on
+a merged box reaches the right row is a question about React Flow's real DOM, and that the toggle
+spends nothing is only provable by counting provider requests. `stubAnalysisResult` answers
+`implementationGroups: []` by default; a spec that turns the request off sets it to `undefined`.
 
 > The stub answers `stream: true` with server-sent events, because `LlmSession` streams every
 > request. A stub that only sent one JSON body read as a provider returning an empty message, and

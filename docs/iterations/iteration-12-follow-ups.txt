@@ -2,7 +2,6 @@ Nice to haves:
 2. an option in (set default in settings and can override per analysis) to disable specific analysis parts
    like risks, descriptions, grouping modes (get only one), verbosity. If something is disabled - just remove info about it in the prompt 
    and say clearly that this is not needed (so LLM would have less work)
-3. Add an option to merge interface + it's implementations in change diagram (like 2 nodes in one)
 5. Add user instructions. Add a button help with information, FAQ and step by step guide (not screenshots, real tour in UI)
 6. **Live run view**: phase from `report_progress`, elapsed time, tool calls executed, tokens
    consumed, running cost.

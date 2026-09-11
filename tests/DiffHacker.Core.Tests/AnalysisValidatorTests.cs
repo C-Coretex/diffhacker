@@ -218,6 +218,129 @@ public sealed class AnalysisValidatorTests
     }
 
     [Fact]
+    public void A_valid_implementation_group_passes_and_is_only_noted_where_it_is_split()
+    {
+        // Together in dependency flow, apart in change clusters: one warning, about the second
+        // grouping only, naming the implementation that is drawn on its own there.
+        var validation = AnalysisFixtures.Check(
+            AnalysisFixtures.WithImplementationGroup(),
+            expectImplementationGroups: true);
+
+        validation.IsValid.ShouldBeTrue();
+
+        var split = validation.Warnings.ShouldHaveSingleItem();
+
+        split.Code.ShouldBe(AnalysisDiagnosticCodes.ImplementationGroupSplit);
+        split.Subject.ShouldBe(AnalysisFixtures.CallerPath);
+        split.Grouping.ShouldBe(AnalysisGrouping.ChangeClusters);
+        split.Message.ShouldContain("change-clusters grouping");
+        split.Message.ShouldContain(AnalysisFixtures.ContractPath);
+    }
+
+    [Fact]
+    public void Missing_implementation_groups_fail_only_when_the_run_asked_for_them()
+    {
+        var unasked = AnalysisFixtures.Valid() with { ImplementationGroups = null };
+
+        AnalysisFixtures.Check(unasked, expectImplementationGroups: true)
+            .Errors.ShouldContain(d => d.Code == AnalysisDiagnosticCodes.ImplementationGroupsMissing);
+
+        AnalysisFixtures.Check(unasked, expectImplementationGroups: false)
+            .IsValid.ShouldBeTrue();
+
+        // An empty list is an answer: the model was asked and this change has none.
+        AnalysisFixtures.Check(AnalysisFixtures.Valid(), expectImplementationGroups: true)
+            .IsValid.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void An_implementation_group_with_no_implementations_names_its_abstraction()
+    {
+        var broken = AnalysisFixtures.Valid() with
+        {
+            ImplementationGroups =
+            [
+                new AnalysisImplementationGroup { AbstractionNodeId = AnalysisFixtures.ContractPath },
+            ],
+        };
+
+        var error = AnalysisFixtures.Check(broken).Errors.ShouldHaveSingleItem();
+
+        error.Code.ShouldBe(AnalysisDiagnosticCodes.ImplementationGroupEmpty);
+        error.Subject.ShouldBe(AnalysisFixtures.ContractPath);
+    }
+
+    [Fact]
+    public void An_implementation_group_naming_a_node_that_does_not_exist_names_it()
+    {
+        var broken = AnalysisFixtures.Valid() with
+        {
+            ImplementationGroups =
+            [
+                new AnalysisImplementationGroup
+                {
+                    AbstractionNodeId = AnalysisFixtures.ContractPath,
+                    ImplementationNodeIds = ["src/Ghost.cs"],
+                },
+            ],
+        };
+
+        var error = AnalysisFixtures.Check(broken).Errors.ShouldHaveSingleItem();
+
+        error.Code.ShouldBe(AnalysisDiagnosticCodes.UnknownNodeReference);
+        error.Message.ShouldContain("src/Ghost.cs");
+    }
+
+    [Fact]
+    public void A_node_claimed_by_two_implementation_groups_is_named_with_both()
+    {
+        var broken = AnalysisFixtures.Valid() with
+        {
+            ImplementationGroups =
+            [
+                new AnalysisImplementationGroup
+                {
+                    AbstractionNodeId = AnalysisFixtures.ContractPath,
+                    ImplementationNodeIds = [AnalysisFixtures.CallerPath],
+                },
+                new AnalysisImplementationGroup
+                {
+                    AbstractionNodeId = AnalysisFixtures.IconPath,
+                    ImplementationNodeIds = [AnalysisFixtures.CallerPath],
+                },
+            ],
+        };
+
+        var error = AnalysisFixtures.Check(broken).Errors.ShouldHaveSingleItem();
+
+        error.Code.ShouldBe(AnalysisDiagnosticCodes.ImplementationGroupOverlap);
+        error.Subject.ShouldBe(AnalysisFixtures.CallerPath);
+        error.Message.ShouldContain(AnalysisFixtures.ContractPath);
+        error.Message.ShouldContain(AnalysisFixtures.IconPath);
+    }
+
+    [Fact]
+    public void An_abstraction_listed_as_its_own_implementation_is_refused()
+    {
+        var broken = AnalysisFixtures.Valid() with
+        {
+            ImplementationGroups =
+            [
+                new AnalysisImplementationGroup
+                {
+                    AbstractionNodeId = AnalysisFixtures.ContractPath,
+                    ImplementationNodeIds = [AnalysisFixtures.CallerPath, AnalysisFixtures.ContractPath],
+                },
+            ],
+        };
+
+        var error = AnalysisFixtures.Check(broken).Errors.ShouldHaveSingleItem();
+
+        error.Code.ShouldBe(AnalysisDiagnosticCodes.ImplementationGroupOverlap);
+        error.Message.ShouldContain("never its own implementation");
+    }
+
+    [Fact]
     public void An_edge_to_a_node_that_does_not_exist_names_the_edge_and_the_missing_end()
     {
         var result = AnalysisFixtures.Valid();

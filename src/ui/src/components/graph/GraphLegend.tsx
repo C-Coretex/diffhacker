@@ -46,6 +46,7 @@ export function GraphLegend({ colours }: { colours: readonly ProjectColour[] }) 
             label={t('analysis.state.risky')}
           />
           <LegendLine sample={<span aria-hidden>▲</span>} label={t('analysis.state.entry_point')} />
+          <LegendLine sample={<MergedBox />} label={t('analysis.graph.merged.legend')} />
         </ul>
         <p className="mt-2 text-[11px] text-muted-foreground">{t('analysis.graph.legendStatesNote')}</p>
       </section>
@@ -162,6 +163,16 @@ function Line({ dashed, faint, bundle }: { dashed?: boolean; faint?: boolean; bu
 
 function Box({ className }: { className: string }) {
   return <span aria-hidden className={`block h-4 w-8 rounded-sm border-2 ${className}`} />;
+}
+
+/** A frame holding two rows, the way an abstraction and its implementation are drawn together. */
+function MergedBox() {
+  return (
+    <span aria-hidden className="flex w-8 flex-col gap-px rounded-sm border-2 p-px">
+      <span className="block h-1.5 rounded-[1px] border border-solid" />
+      <span className="block h-1.5 rounded-[1px] border border-solid" />
+    </span>
+  );
 }
 
 function Swatch({ slot }: { slot: number | null }) {

@@ -392,6 +392,9 @@ export const en = {
     changeClusters: 'Also group by theme',
     changeClustersBody:
       'Asks the same run for a second grouping, so you can switch between them afterwards without paying again. Turn it off and the run is a little cheaper and only the dependency-flow grouping exists.',
+    implementationGroups: 'Group interfaces with implementations',
+    implementationGroupsBody:
+      'Asks the same run which changed abstractions — interfaces, abstract bases, traits, headers — have changed implementations beside them, so the diagram can draw each as one box. Turn it off and the run is a little cheaper and nothing can be merged.',
     cleanHeading: 'Nothing to analyse',
     cleanBody: 'The working tree matches HEAD, so there is no change to describe.',
 
@@ -604,6 +607,23 @@ export const en = {
       /** The controls that live on a box, and on a cluster's title bar. */
       nodeActions: 'What to do with {file}',
       openContainer: 'Open every file',
+
+      /**
+       * An abstraction drawn together with its implementations. Which files those are is the
+       * model's answer; whether they are drawn as one box is the reviewer's, and costs nothing.
+       */
+      merged: {
+        toggle: 'Merge implementations',
+        toggleBody:
+          'Draws each interface, abstract base or trait together with the changed files that implement it, as one box with a row per file.',
+        notAsked:
+          'This analysis was produced without implementation groups. Analyse again with “Group interfaces with implementations” on to get them.',
+        none: 'Nothing in this change implements an abstraction that changed beside it, so there is nothing to merge.',
+        heading: 'Abstraction · {count} implementing',
+        abstraction: 'The abstraction',
+        implementation: 'Implements it',
+        legend: 'An abstraction and its implementations, merged into one box — each row is still its own file',
+      },
     },
 
     /**
@@ -713,6 +733,8 @@ export const en = {
         'Nothing in its cluster leads to this file, so a reader arrives at it without being told why.',
       verbose_field:
         'The model wrote far more here than fits where it is read, so it is shown shortened.',
+      implementation_group_split:
+        'This file implements an abstraction in another cluster, so it is drawn on its own rather than merged with it.',
     },
   },
 

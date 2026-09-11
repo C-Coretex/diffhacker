@@ -37,6 +37,60 @@ exports[`ELK layout > lays a collapsed container out as one box 1`] = `
 }
 `;
 
+exports[`ELK layout > lays an abstraction and its implementations out as one box 1`] = `
+{
+  "children": [
+    {
+      "children": [
+        {
+          "children": [],
+          "height": 250,
+          "id": "merged:src/IStore.cs",
+          "width": 260,
+          "x": 24,
+          "y": 48,
+        },
+        {
+          "children": [],
+          "height": 96,
+          "id": "src/Caller.cs",
+          "width": 260,
+          "x": 24,
+          "y": 346,
+        },
+      ],
+      "height": 466,
+      "id": "store",
+      "width": 308,
+      "x": 24,
+      "y": 24,
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "height": 96,
+          "id": "src/Notes.md",
+          "width": 260,
+          "x": 24,
+          "y": 48,
+        },
+      ],
+      "height": 168,
+      "id": "docs",
+      "width": 308,
+      "x": 380,
+      "y": 24,
+    },
+  ],
+  "height": 514,
+  "id": "root",
+  "width": 712,
+  "x": 0,
+  "y": 0,
+}
+`;
+
 exports[`ELK layout > lays the other grouping out as its own diagram 1`] = `
 {
   "children": [

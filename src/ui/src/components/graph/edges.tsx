@@ -48,23 +48,42 @@ function hoverStyle(hovered: boolean | undefined, base: number, opacity?: number
     : { stroke: 'var(--muted-foreground)', strokeWidth: base, strokeOpacity: opacity };
 }
 
-/** An edge ELK routed, inside one container. */
+/**
+ * An edge ELK routed, inside one container.
+ *
+ * Usually one of the model's edges. Several when a merged box gathered edges from more than one of
+ * its rows onto the same neighbour: then it is drawn solid, like a bundle is neither kind, and says
+ * how many it stands for — the card lists each one.
+ */
 export function ReadingEdge({ data, ...props }: EdgeProps) {
-  const [path] = getSmoothStepPath(props);
+  const [path, labelX, labelY] = getSmoothStepPath(props);
   const edge = data as ReadingEdgeData | undefined;
   const conceptual = edge?.kind === 'conceptual';
+  const count = edge?.count ?? 1;
 
   return (
-    <BaseEdge
-      id={props.id}
-      path={path}
-      markerEnd={ARROW}
-      interactionWidth={HIT_WIDTH}
-      style={{
-        ...hoverStyle(edge?.isHovered, 1.5),
-        strokeDasharray: conceptual ? '6 4' : undefined,
-      }}
-    />
+    <>
+      <BaseEdge
+        id={props.id}
+        path={path}
+        markerEnd={ARROW}
+        interactionWidth={HIT_WIDTH}
+        style={{
+          ...hoverStyle(edge?.isHovered, count > 1 ? 2 : 1.5),
+          strokeDasharray: conceptual ? '6 4' : undefined,
+        }}
+      />
+      {count > 1 && (
+        <EdgeLabelRenderer>
+          <div
+            className="pointer-events-none absolute rounded bg-background/90 px-1 text-[10px] tabular-nums text-muted-foreground"
+            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+          >
+            ×{count}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
   );
 }
 

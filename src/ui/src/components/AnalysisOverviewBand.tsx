@@ -608,4 +608,5 @@ const diagnosticLabels: Record<string, ResourceKey> = {
   incomplete_reading_order: 'analysis.diagnostic.incomplete_reading_order',
   unreachable_node: 'analysis.diagnostic.unreachable_node',
   verbose_field: 'analysis.diagnostic.verbose_field',
+  implementation_group_split: 'analysis.diagnostic.implementation_group_split',
 };

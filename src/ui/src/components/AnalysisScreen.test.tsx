@@ -24,6 +24,9 @@ function emptyView(): AnalysisView {
     grouping: 'dependency_flow',
     availableGroupings: ['dependency_flow', 'change_clusters'],
     produceChangeClusters: true,
+    implementationGroups: [],
+    implementationGroupsProduced: false,
+    produceImplementationGroups: true,
   };
 }
 
@@ -173,6 +176,30 @@ describe('AnalysisScreen', () => {
 
     expect(await screen.findByText('This change has not been analysed')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Analyse this change' })).toBeInTheDocument();
+  });
+
+  it('asks the next run for implementation groups the way the reviewer last left the box', async () => {
+    // The host remembers the choice and reports it on every view, so the box comes back as it was
+    // left; ticking it again is an override the run request carries.
+    const transport = new FakeTransport();
+    renderScreen(transport);
+
+    await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.get'));
+    transport.respond({ ...emptyView(), produceImplementationGroups: false });
+
+    const box = await screen.findByTestId('toggle-implementation-groups');
+    await waitFor(() => expect(box).not.toBeChecked());
+
+    await userEvent.click(box);
+    await userEvent.click(screen.getByRole('button', { name: 'Analyse this change' }));
+
+    await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.run'));
+
+    expect(transport.lastRequest().params[0]).toMatchObject({
+      repositoryPath: 'C:/repo',
+      changeClusters: true,
+      implementationGroups: true,
+    });
   });
 
   it('asks the host for the other grouping and replaces the view with what comes back', async () => {

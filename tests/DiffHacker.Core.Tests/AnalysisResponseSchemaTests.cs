@@ -82,13 +82,59 @@ public sealed class AnalysisResponseSchemaTests
     }
 
     [Fact]
-    public void Both_variants_are_still_valid_JSON()
+    public void Every_variant_is_still_valid_JSON()
     {
         foreach (var changeClusters in new[] { true, false })
         {
-            Should.NotThrow(() => JsonDocument.Parse(AnalysisResponseSchema.For(changeClusters)));
+            foreach (var implementationGroups in new[] { true, false })
+            {
+                Should.NotThrow(() => JsonDocument.Parse(
+                    AnalysisResponseSchema.For(changeClusters, implementationGroups)));
+            }
         }
     }
+
+    [Fact]
+    public void Dropping_implementation_groups_removes_exactly_that_property_and_its_definition()
+    {
+        var full = AnalysisResponseSchema.For(changeClusters: true, implementationGroups: true);
+        var reduced = AnalysisResponseSchema.For(changeClusters: true, implementationGroups: false);
+
+        Properties(full).Except(Properties(reduced), StringComparer.Ordinal)
+            .ShouldBe(["implementationGroups"]);
+
+        Required(reduced).ShouldNotContain("implementationGroups");
+        Required(reduced).ShouldContain("clusterContainers");
+
+        // The definition only that property refers to goes too — it would otherwise be paid for
+        // twice a turn to describe a field the model may not write.
+        Definitions(full).Except(Definitions(reduced), StringComparer.Ordinal)
+            .ShouldBe(["analysisImplementationGroup"]);
+
+        reduced.Length.ShouldBeLessThan(full.Length);
+    }
+
+    [Fact]
+    public void The_two_opt_outs_compose()
+    {
+        var neither = AnalysisResponseSchema.For(changeClusters: false, implementationGroups: false);
+
+        Properties(AnalysisResponseSchema.For(true, true)).Except(Properties(neither), StringComparer.Ordinal)
+            .ShouldBe(["clusterContainers", "clusterReadingOrder", "implementationGroups"], ignoreOrder: true);
+
+        foreach (var name in Required(neither))
+        {
+            Properties(neither).ShouldContain(name);
+        }
+    }
+
+    private static string[] Required(string schema) =>
+        [.. (JsonNode.Parse(schema)!.AsObject()["required"] as JsonArray ?? [])
+            .Select(static entry => entry!.GetValue<string>())];
+
+    private static string[] Definitions(string schema) =>
+        [.. (JsonNode.Parse(schema)!.AsObject()["$defs"] as JsonObject ?? [])
+            .Select(static entry => entry.Key)];
 
     private static string[] Properties(string schema) =>
         [.. (JsonNode.Parse(schema)!.AsObject()["properties"] as JsonObject ?? [])

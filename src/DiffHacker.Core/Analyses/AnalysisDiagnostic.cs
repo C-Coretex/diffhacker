@@ -112,6 +112,21 @@ public static class AnalysisDiagnosticCodes
     public const string DuplicateReadingOrderEntry = "duplicate_reading_order_entry";
     public const string DanglingEdge = "dangling_edge";
 
+    /// <summary>
+    /// The run asked for implementation groups and the answer has no such field. An empty list is a
+    /// perfectly good answer; no list at all is not, for the same reason as <see cref="GroupingMissing"/>.
+    /// </summary>
+    public const string ImplementationGroupsMissing = "implementation_groups_missing";
+
+    /// <summary>An implementation group with no implementations in it.</summary>
+    public const string ImplementationGroupEmpty = "implementation_group_empty";
+
+    /// <summary>
+    /// A node claimed twice by implementation groups — by two groups, twice by one, or as its own
+    /// implementation. Each node is drawn in one box, so it can belong to one group.
+    /// </summary>
+    public const string ImplementationGroupOverlap = "implementation_group_overlap";
+
     // Warnings — recorded on the stored result, never a reason to reject an answer.
     public const string Cycle = "cycle";
     public const string SelfEdge = "self_edge";
@@ -140,4 +155,11 @@ public static class AnalysisDiagnosticCodes
     /// </para>
     /// </summary>
     public const string VerboseField = "verbose_field";
+
+    /// <summary>
+    /// An implementation sitting in a different container from its abstraction, in one grouping. It
+    /// is then drawn as its own box there rather than merged, which is a smaller picture rather than
+    /// a wrong one — so it is recorded, never repaired.
+    /// </summary>
+    public const string ImplementationGroupSplit = "implementation_group_split";
 }

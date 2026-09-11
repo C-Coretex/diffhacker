@@ -154,6 +154,10 @@ public sealed class AnalysisMigrationTests : IDisposable
             // And nothing was invented to fill the grouping the run never produced.
             stored.Document.ClusterContainers.ShouldBeEmpty();
             stored.Document.ClusterReadingOrder.ShouldBeEmpty();
+
+            // Nor implementation groups, which came later still: null — nobody asked — rather than an
+            // empty list, which would claim the change had none.
+            stored.Document.ImplementationGroups.ShouldBeNull();
         }
 
         SqliteConnection.ClearAllPools();

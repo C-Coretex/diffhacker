@@ -186,6 +186,52 @@ public sealed partial class AnalysisPromptTests
     }
 
     [Fact]
+    public void The_prompt_says_what_an_implementation_group_is_in_no_particular_language()
+    {
+        // §0.2.3: the application reads no language, so the model is the only thing that can say
+        // "this declares it, that fulfils it" — and it has to be told what that means everywhere,
+        // not only in the one language a word like "interface" comes from.
+        var prompt = Prompt();
+
+        prompt.ShouldContain("implementationGroups");
+        prompt.ShouldContain("an interface, an abstract base class, a trait, a protocol");
+        prompt.ShouldContain("Both ends must be nodes in this change");
+
+        // Kept narrow, because a model rewarded for filling a list fills it.
+        prompt.ShouldContain("Not callers, not users, not subclasses of a concrete class");
+        prompt.ShouldContain("Do not stretch the definition");
+
+        // The two things the diagram needs to draw one box: the same container, and edges still
+        // written as usual rather than replaced by the group.
+        prompt.ShouldContain("same container, abstraction listed first");
+        prompt.ShouldContain("the group does not replace them");
+    }
+
+    [Fact]
+    public void The_prompt_states_the_implementation_group_rules_the_validator_checks()
+    {
+        var prompt = Prompt();
+
+        prompt.ShouldContain("every id is a node");
+        prompt.ShouldContain("at least one implementation");
+        prompt.ShouldContain("at most one group, once, and is never its own implementation");
+    }
+
+    [Fact]
+    public void A_run_that_does_not_want_implementation_groups_is_never_told_about_them()
+    {
+        var prompt = Prompt(implementationGroups: false);
+
+        prompt.ShouldNotContain("implementationGroups");
+        prompt.ShouldNotContain("Implementation groups");
+
+        AnalysisPrompt.SystemPrompt(implementationGroups: false).Length
+            .ShouldBeLessThan(AnalysisPrompt.SystemPrompt().Length);
+
+        prompt.ShouldEndWith("Answer with the structured document alone.");
+    }
+
+    [Fact]
     public void The_prompt_warns_that_older_tool_results_can_be_pruned()
     {
         var prompt = Prompt();
@@ -352,8 +398,8 @@ public sealed partial class AnalysisPromptTests
     /// The system prompt with runs of whitespace collapsed, so an assertion matches a phrase
     /// wherever the paragraph happens to wrap.
     /// </summary>
-    private static string Prompt(bool changeClusters = true) =>
-        WhitespaceRuns().Replace(AnalysisPrompt.SystemPrompt(changeClusters), " ");
+    private static string Prompt(bool changeClusters = true, bool implementationGroups = true) =>
+        WhitespaceRuns().Replace(AnalysisPrompt.SystemPrompt(changeClusters, implementationGroups), " ");
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRuns();

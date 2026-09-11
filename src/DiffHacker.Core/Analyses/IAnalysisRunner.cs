@@ -38,7 +38,14 @@ public sealed record AnalysisRunOptions
     /// </summary>
     public bool ChangeClusters { get; init; } = true;
 
-    /// <summary>Both groupings — what a run does unless the reviewer said otherwise.</summary>
+    /// <summary>
+    /// Whether to ask which abstractions were changed alongside their implementations. False takes
+    /// the declaration out of the prompt and the response schema for the same reason, and the stored
+    /// document then carries no such field at all.
+    /// </summary>
+    public bool ImplementationGroups { get; init; } = true;
+
+    /// <summary>Everything — what a run does unless the reviewer said otherwise.</summary>
     public static AnalysisRunOptions Default { get; } = new();
 }
 

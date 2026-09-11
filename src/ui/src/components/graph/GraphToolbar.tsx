@@ -7,11 +7,13 @@ import type { ProjectColour } from '@/graph/palette';
 import { useAppStore } from '@/store/appStore';
 import { GraphLegend } from './GraphLegend';
 import { GroupingPicker, groupingBodyKey } from './GroupingPicker';
+import { MergeToggle } from './MergeToggle';
 import { NodeSearch } from './NodeSearch';
 
 /**
  * The strip above the canvas: switch grouping, find a file, fit the whole change on screen, fold
- * every cluster away, and look up what a line or a colour means.
+ * every cluster away, draw each abstraction with its implementations as one box, and look up what a
+ * line or a colour means.
  *
  * Collapse-all is one button rather than two, and its label says which way it will go, because a
  * reviewer who has folded thirty clusters wants one click to get them back.
@@ -73,6 +75,8 @@ export function GraphToolbar({
         )}
         {allCollapsed ? t('analysis.graph.expandAll') : t('analysis.graph.collapseAll')}
       </Button>
+
+      <MergeToggle view={view} />
 
       <div className="ml-auto flex items-center gap-2">
         <span className="text-xs text-muted-foreground">

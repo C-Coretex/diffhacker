@@ -313,6 +313,37 @@ export function stubAnalysisResult(paths: readonly string[]) {
       explanation: 'Read the first file before the ones that follow it.',
       risks: [],
     })),
+    // Asked for by default, and a fixture edit has no abstraction in it: the answer most runs give.
+    // A spec that turns the request off sets this to undefined, as the change-clusters one does.
+    implementationGroups: [] as { abstractionNodeId: string; implementationNodeIds: string[] }[],
+  };
+}
+
+/**
+ * An abstraction changed beside two implementations, and a caller between them in the reading order
+ * — the fixture the "merge implementations" toggle exists to draw.
+ *
+ * Takes the four paths in that order: the abstraction, the caller, then the two implementations. Each
+ * implementation leads on to the caller it serves, so merging folds two of the model's edges onto one
+ * line and leaves the two from the abstraction inside the box.
+ */
+export function stubImplementationResult(paths: readonly string[]) {
+  if (paths.length !== 4) {
+    throw new Error(`stubImplementationResult needs exactly four paths, got ${paths.length}.`);
+  }
+
+  const [abstraction, caller, first, second] = paths as unknown as [string, string, string, string];
+  const base = stubAnalysisResult(paths);
+
+  return {
+    ...base,
+    edges: [
+      { sourceNodeId: abstraction, targetNodeId: first, kind: 'direct', explanation: `${first} implements ${abstraction}.`, risks: [] },
+      { sourceNodeId: abstraction, targetNodeId: second, kind: 'direct', explanation: `${second} implements ${abstraction}.`, risks: [] },
+      { sourceNodeId: first, targetNodeId: caller, kind: 'conceptual', explanation: `${caller} is served by ${first} in memory.`, risks: [] },
+      { sourceNodeId: second, targetNodeId: caller, kind: 'conceptual', explanation: `${caller} is served by ${second} on disk.`, risks: [] },
+    ],
+    implementationGroups: [{ abstractionNodeId: abstraction, implementationNodeIds: [first, second] }],
   };
 }
 

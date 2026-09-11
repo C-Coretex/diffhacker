@@ -45,26 +45,36 @@ public static class AnalysisPrompt
     public const string SchemaKey = "analysis-result";
 
     /// <summary>
-    /// What the model is told, for a run that wants both groupings or only the first.
+    /// What the model is told, for a run that wants both groupings or only the first, with or
+    /// without implementation groups.
     /// </summary>
     /// <param name="changeClusters">
     /// Whether the second grouping was asked for. When it was not, its fields are not in the schema
     /// either (<see cref="AnalysisResponseSchema"/>) and nothing here mentions them — a model told
     /// about work it must not do has been charged for reading the instruction.
     /// </param>
-    public static string SystemPrompt(bool changeClusters = true) => string.Join(
-        "\n\n",
-        Opening,
-        WhatAClusterIs,
-        changeClusters ? TwoGroupings : OneGroupingOnly,
-        StartingPoint,
-        MembershipOrder,
-        Edges,
-        changeClusters ? ReadingOrderBoth : ReadingOrderOne,
-        RulesShared,
-        changeClusters ? RulesBoth : RulesOne,
-        Writing,
-        Formatting);
+    /// <param name="implementationGroups">
+    /// Whether implementation groups were asked for, on the same terms: absent from the schema and
+    /// never mentioned here when they were not.
+    /// </param>
+    public static string SystemPrompt(bool changeClusters = true, bool implementationGroups = true) =>
+        string.Join(
+            "\n\n",
+            new[]
+            {
+                Opening,
+                WhatAClusterIs,
+                changeClusters ? TwoGroupings : OneGroupingOnly,
+                StartingPoint,
+                MembershipOrder,
+                Edges,
+                implementationGroups ? ImplementationGroups : null,
+                changeClusters ? ReadingOrderBoth : ReadingOrderOne,
+                RulesShared,
+                changeClusters ? RulesBoth : RulesOne,
+                Writing,
+                Formatting,
+            }.OfType<string>());
 
     private const string Opening =
         """
@@ -227,6 +237,38 @@ public static class AnalysisPrompt
 
         Cross-container edges are fine where reading really does jump between clusters — but never
         instead of putting related things in one container.
+        """;
+
+    /// <summary>
+    /// The declaration behind drawing an interface and its implementations as one box. The model
+    /// makes it because the application reads no language (§0.2.3) and so cannot tell an interface
+    /// from any other file. It is a separate list rather than a kind of edge, which is why it does not
+    /// contradict the Edges section's "do not classify it as implements".
+    /// </summary>
+    private const string ImplementationGroups =
+        """
+        ## Implementation groups — an abstraction beside its implementations
+
+        Where this change touches an abstraction AND files implementing it, list them in
+        implementationGroups. The reviewer can have each group drawn as one box: the abstraction on
+        top, its implementations beneath, so a contract and the code that fulfils it are read as the
+        one idea they are.
+
+        An abstraction is whatever declares a contract other files fulfil: an interface, an abstract
+        base class, a trait, a protocol, a C or C++ header and the source file defining it. Use the
+        repository's own language — the idea is the same everywhere.
+
+        - Both ends must be nodes in this change. An abstraction with no changed implementation, or an
+          implementation of an unchanged abstraction, is not a group.
+        - Not callers, not users, not subclasses of a concrete class, not a file that merely imports
+          another. Only "this declares it, that fulfils it".
+        - Keep a group's nodes in the same container, abstraction listed first, in each grouping you
+          fill in. A member left in another container is drawn as a box of its own there.
+        - Still write the edges between them as you otherwise would; the group does not replace them.
+        - Checked: every id is a node; a group has at least one implementation; a node is in at most
+          one group, once, and is never its own implementation.
+
+        An empty list is the right answer for most changes. Do not stretch the definition to fill it.
         """;
 
     private const string ReadingOrderBoth =

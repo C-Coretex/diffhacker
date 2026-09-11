@@ -479,6 +479,66 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Whether_a_run_asks_for_implementation_groups_is_remembered_on_its_own()
+    {
+        (await _target.GetAsync(Request(), TestContext.Current.CancellationToken))
+            .ProduceImplementationGroups.ShouldBeTrue("asked for unless the reviewer said otherwise.");
+
+        await _target.RunAsync(Request(implementationGroups: false), TestContext.Current.CancellationToken);
+
+        _runner.LastOptions.ShouldNotBeNull().ImplementationGroups.ShouldBeFalse();
+        _runner.LastOptions.ChangeClusters.ShouldBeTrue("the two choices are independent.");
+
+        var view = await _target.GetAsync(Request(), TestContext.Current.CancellationToken);
+
+        view.ProduceImplementationGroups.ShouldBeFalse();
+        view.ProduceChangeClusters.ShouldBeTrue();
+
+        // Absent means remembered, exactly as for the other choice.
+        await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        _runner.LastOptions.ShouldNotBeNull().ImplementationGroups.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Implementation_groups_are_projected_onto_the_grouping_on_screen()
+    {
+        // Dependency flow keeps the two members in one cluster, so the group is there to be drawn as
+        // one box; change clusters splits them, so in that picture there is nothing to merge.
+        var flow = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        flow.ImplementationGroupsProduced.ShouldBeTrue();
+
+        var group = flow.ImplementationGroups.ShouldHaveSingleItem();
+
+        group.AbstractionNodeId.ShouldBe("src/Contract.cs");
+        group.ImplementationNodeIds.ShouldBe(["src/Caller.cs"]);
+        group.ContainerId.ShouldBe("core");
+
+        var clusters = await _target.SetGroupingAsync(
+            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken);
+
+        clusters.ImplementationGroups.ShouldBeEmpty();
+        clusters.ImplementationGroupsProduced.ShouldBeTrue("asked for, and simply split in this grouping.");
+    }
+
+    [Fact]
+    public async Task An_analysis_that_was_not_asked_for_implementation_groups_says_so()
+    {
+        // Null in the document, not empty: "nobody asked" and "there were none" are different things
+        // to tell a reviewer, and only the document knows which it is.
+        var view = await _target.RunAsync(Request(implementationGroups: false), TestContext.Current.CancellationToken);
+
+        view.ImplementationGroupsProduced.ShouldBeFalse();
+        view.ImplementationGroups.ShouldBeEmpty();
+
+        // And the same survives being stored and read back.
+        (await _target.GetAsync(Request(), TestContext.Current.CancellationToken))
+            .ImplementationGroupsProduced.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task A_new_analysis_has_nothing_marked_reviewed()
     {
         var view = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
@@ -545,8 +605,8 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         new RunEventNotifier(new SilentNotifier(), NullLogger<RunEventNotifier>.Instance),
         NullLogger<AnalysisRpcTarget>.Instance);
 
-    private static AnalysisRequest Request(bool? changeClusters = null) =>
-        new(changeClusters: changeClusters, repositoryPath: "/repo");
+    private static AnalysisRequest Request(bool? changeClusters = null, bool? implementationGroups = null) =>
+        new(changeClusters: changeClusters, implementationGroups: implementationGroups, repositoryPath: "/repo");
 
     private static HashSet<string> Ids(AnalysisView view) =>
         [.. view.Nodes.Select(static node => node.Id)];
@@ -627,7 +687,10 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
 
             // A distinct id and timestamp per run, because a re-run is a new row: the real runner
             // makes a fresh Guid, and a stub that reused one id could not be asked to run twice.
-            var analysis = AnalysisSamples.Completed(repositoryPath, options.ChangeClusters) with
+            var analysis = AnalysisSamples.Completed(
+                repositoryPath,
+                options.ChangeClusters,
+                options.ImplementationGroups) with
             {
                 Id = $"analysis{Runs}",
                 CreatedAtUtc = DateTimeOffset.UnixEpoch.AddMinutes(Runs),

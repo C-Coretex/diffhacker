@@ -18,11 +18,14 @@ import { useReviewMarks } from '@/components/diff/useReviewMarks';
 import { buildElkGraph } from '@/graph/elkGraph';
 import {
   toFlowGraph,
+  type FileNodeData,
   type FlowGraph,
   type GraphHighlight,
+  type ImplementationGroupNodeData,
   type ReadingEdgeData,
 } from '@/graph/flowGraph';
-import { NODE_HEIGHT, NODE_WIDTH } from '@/graph/elkOptions';
+import { MERGED_HEADER, MERGED_ROW_HEIGHT, NODE_HEIGHT, NODE_WIDTH } from '@/graph/elkOptions';
+import { mergePlan } from '@/graph/implementationGroups';
 import { projectColourStyle } from '@/graph/palette';
 import { createWorkerLayout, inProcessLayout, type LayoutRunner } from '@/graph/runLayout';
 import { searchGraph } from '@/graph/search';
@@ -35,6 +38,7 @@ import { GraphActionsProvider, type GraphActions } from './graphActions';
 import { GraphHoverCard } from './GraphHoverCard';
 import { GraphToolbar } from './GraphToolbar';
 import { ContainerHoverCard, EdgeHoverCard, NodeHoverCard } from './hoverCards';
+import { ImplementationGroupNode } from './ImplementationGroupNode';
 import { useEdgePan } from './useEdgePan';
 import { useHoverTarget, type HoverTarget } from './useHoverTarget';
 
@@ -47,6 +51,7 @@ import { useHoverTarget, type HoverTarget } from './useHoverTarget';
  */
 const NODE_TYPES = {
   file: FileNode,
+  implementationGroup: ImplementationGroupNode,
   container: ContainerNode,
   collapsedContainer: CollapsedContainerNode,
 };
@@ -93,6 +98,7 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
   const openContainerDiff = useAppStore((state) => state.openContainerDiff);
   const diffPanelWidth = useAppStore((state) => state.diffPanelWidth);
   const diffFullScreen = useAppStore((state) => state.diffFullScreen);
+  const mergeImplementations = useAppStore((state) => state.graphMergeImplementations);
 
   /** The width the last centring was done at, so a drag pans without animating. */
   const lastWidth = useRef(diffPanelWidth);
@@ -196,7 +202,11 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
     };
   }, [view, search, focusedNodeId, currentNodeId, reviewedNodeIds]);
 
-  const elkGraph = useMemo(() => buildElkGraph(view, collapsed), [view, collapsed]);
+  // Which boxes stand for an abstraction and its implementations. A change of layout like collapsing
+  // a container is, and relaid out the same way; the analysis underneath is untouched.
+  const merge = useMemo(() => mergePlan(view, mergeImplementations), [view, mergeImplementations]);
+
+  const elkGraph = useMemo(() => buildElkGraph(view, collapsed, merge), [view, collapsed, merge]);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,7 +219,7 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
         // A layout that finished after the reviewer collapsed something else would paint the
         // older arrangement over the newer one.
         if (cancelled) return;
-        setGraph(toFlowGraph(view, laidOut, collapsed, highlight));
+        setGraph(toFlowGraph(view, laidOut, collapsed, highlight, merge));
         setLayoutError(null);
         setLaidOutOnce(true);
       })
@@ -225,7 +235,7 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
     // relaying out three hundred nodes on every keystroke in the search box is the one thing
     // guaranteed to make this feel slow. The effect below repaints for it instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [elkGraph, view, collapsed]);
+  }, [elkGraph, view, collapsed, merge]);
 
   // Highlighting without relayout: same positions, new node data.
   useEffect(() => {
@@ -279,8 +289,13 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
   useEffect(() => {
     if (!focusedNodeId) return;
 
-    const placed = graph.nodes.find((node) => node.id === focusedNodeId);
+    // A node drawn as a row of a merged box has no box of its own: centre on its row instead.
+    const boxId = merge.boxOf.get(focusedNodeId);
+    const placed = graph.nodes.find((node) => node.id === (boxId ?? focusedNodeId));
     if (!placed) return;
+
+    const row = boxId ? (merge.boxes.get(boxId)?.memberIds.indexOf(focusedNodeId) ?? 0) : -1;
+    const offsetY = row < 0 ? NODE_HEIGHT / 2 : MERGED_HEADER + row * MERGED_ROW_HEIGHT + MERGED_ROW_HEIGHT / 2;
 
     const parent = placed.parentId
       ? graph.nodes.find((node) => node.id === placed.parentId)
@@ -288,14 +303,14 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
 
     setCenter(
       (parent?.position.x ?? 0) + placed.position.x + NODE_WIDTH / 2,
-      (parent?.position.y ?? 0) + placed.position.y + NODE_HEIGHT / 2,
+      (parent?.position.y ?? 0) + placed.position.y + offsetY,
       // No animation while the divider is moving: sixty queued four-hundred-millisecond pans is a
       // canvas that keeps drifting after the pointer has stopped.
       { zoom: 1, duration: diffPanelWidth === lastWidth.current ? 400 : 0 },
     );
 
     lastWidth.current = diffPanelWidth;
-  }, [focusedNodeId, graph.nodes, setCenter, diffPanelWidth]);
+  }, [focusedNodeId, graph.nodes, setCenter, diffPanelWidth, merge]);
 
   if (layoutError !== null) {
     return (
@@ -362,6 +377,15 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
             onEdgeMouseLeave={() => setHoveredEdgeId(null)}
             onNodeClick={(event, node) => {
               if (node.type === 'container') return;
+
+              // A merged box is several nodes: the card is the row's, drawn beside the row. A click
+              // on the strip naming the box is on no row and opens nothing.
+              if (node.type === 'implementationGroup') {
+                const row = rowAt(event.target);
+                if (row) hover.toggle({ kind: 'node', id: row.id, rect: row.element.getBoundingClientRect() });
+                return;
+              }
+
               openCard(node.type === 'file' ? 'node' : 'container', node.id, event);
             }}
             onEdgeClick={(event, edge) => openCard('edge', edge.id, event)}
@@ -371,11 +395,12 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
             //
             // On a cluster it means the cluster: every file in it, as a queue. A double-click on a
             // region and a press of its "open every file" button are the same intention.
-            onNodeDoubleClick={(_, node) => {
+            onNodeDoubleClick={(event, node) => {
               hover.close();
 
-              if (node.type === 'file') {
-                const target = view.nodes.find((candidate) => candidate.id === node.id);
+              if (node.type === 'file' || node.type === 'implementationGroup') {
+                const id = node.type === 'file' ? node.id : rowAt(event.target)?.id;
+                const target = view.nodes.find((candidate) => candidate.id === id);
                 if (target) openDiff(target.id, target.containerId);
                 return;
               }
@@ -474,6 +499,15 @@ function applyEdgeHover(edges: readonly Edge[], hoveredId: string | null): Edge[
  */
 function applyHighlight(nodes: readonly Node[], highlight: GraphHighlight): Node[] {
   return nodes.map((node) => {
+    if (node.type === 'implementationGroup') {
+      const data = node.data as ImplementationGroupNodeData;
+      const rows = data.rows.map((row) => highlightRow(row, highlight));
+
+      return rows.every((row, index) => row === data.rows[index])
+        ? node
+        : { ...node, data: { ...data, rows } satisfies ImplementationGroupNodeData };
+    }
+
     const isMatch =
       node.type === 'file'
         ? highlight.matchedNodeIds.has(node.id)
@@ -495,10 +529,45 @@ function applyHighlight(nodes: readonly Node[], highlight: GraphHighlight): Node
   });
 }
 
+/** One row of a merged box, re-labelled the same way a box is; the same object when nothing moved. */
+function highlightRow(row: FileNodeData, highlight: GraphHighlight): FileNodeData {
+  const id = row.node.id;
+  const isMatch = highlight.matchedNodeIds.has(id);
+  const isFocused = highlight.focusedNodeId === id;
+  const isCurrent = highlight.currentNodeId === id;
+  const isReviewed = highlight.reviewedNodeIds.has(id);
+
+  if (
+    row.isMatch === isMatch &&
+    row.isFocused === isFocused &&
+    row.isCurrent === isCurrent &&
+    row.isReviewed === isReviewed
+  ) {
+    return row;
+  }
+
+  return { ...row, isMatch, isFocused, isCurrent, isReviewed };
+}
+
+/**
+ * The row of a merged box an event landed on. React Flow reports the box; which of its nodes the
+ * reviewer meant is only in the DOM, where each row carries its node's id.
+ */
+function rowAt(target: EventTarget | null): { id: string; element: Element } | null {
+  const element = target instanceof Element ? target.closest('[data-node-id]') : null;
+  const id = element?.getAttribute('data-node-id');
+
+  return element && id ? { id, element } : null;
+}
+
 /** The minimap carries the project colours, so the overview is the same map as the diagram. */
 function minimapColour(node: Node): string {
   if (node.type === 'file') {
     return projectColourStyle((node.data as { colourSlot: number | null }).colourSlot).rail;
+  }
+
+  if (node.type === 'implementationGroup') {
+    return projectColourStyle((node.data as ImplementationGroupNodeData).rows[0]?.colourSlot ?? null).rail;
   }
 
   return 'var(--muted)';

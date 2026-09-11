@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildElkGraph, type ElkNode } from './elkGraph';
+import { mergePlan } from './implementationGroups';
 import { inProcessLayout } from './runLayout';
-import { groupedViews, twoContainerView } from './testGraph';
+import { groupedViews, implementationView, twoContainerView } from './testGraph';
 
 /**
  * Requirement 12: the layout output for a fixed input graph, snapshotted, so a layout regression is
@@ -67,6 +68,15 @@ describe('ELK layout', () => {
     // One container against three, or there would be nothing to switch to.
     expect(flow.children?.length).toBe(1);
     expect(clusters.children?.length).toBe(3);
+  });
+
+  it('lays an abstraction and its implementations out as one box', async () => {
+    // The merged box is taller than a node and takes its first member's place; everything below it
+    // moves down by the difference. Snapshotted so a change to the row height is seen, not guessed.
+    const view = implementationView();
+    const laidOut = await inProcessLayout(buildElkGraph(view, new Set(), mergePlan(view, true)));
+
+    expect(positions(laidOut)).toMatchSnapshot();
   });
 
   it('lays a collapsed container out as one box', async () => {

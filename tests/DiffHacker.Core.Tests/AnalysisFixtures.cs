@@ -91,6 +91,9 @@ internal static class AnalysisFixtures
                 Risks = [],
             },
         ],
+
+        // Asked for, and this change has none — the answer most runs give.
+        ImplementationGroups = [],
     };
 
     /// <summary>The same result from a run that was not asked for the second grouping.</summary>
@@ -137,6 +140,26 @@ internal static class AnalysisFixtures
     public static IReadOnlyList<string> ErrorsOf(AnalysisResult result) =>
         Check(result).ErrorMessages;
 
-    public static AnalysisValidation Check(AnalysisResult result, bool expectChangeClusters = true) =>
-        AnalysisValidator.Validate(result, Changeset(), expectChangeClusters);
+    public static AnalysisValidation Check(
+        AnalysisResult result,
+        bool expectChangeClusters = true,
+        bool expectImplementationGroups = true) =>
+        AnalysisValidator.Validate(result, Changeset(), expectChangeClusters, expectImplementationGroups);
+
+    /// <summary>
+    /// <see cref="Valid"/> with the contract declared as an abstraction its caller implements. The two
+    /// share a cluster in dependency flow and are split in change clusters, so it passes with one
+    /// warning about the second grouping and none about the first.
+    /// </summary>
+    public static AnalysisResult WithImplementationGroup() => Valid() with
+    {
+        ImplementationGroups =
+        [
+            new AnalysisImplementationGroup
+            {
+                AbstractionNodeId = ContractPath,
+                ImplementationNodeIds = [CallerPath],
+            },
+        ],
+    };
 }

@@ -71,6 +71,24 @@ public sealed class AnalysisAgreementTests
     }
 
     [Fact]
+    public void The_two_implementation_group_shapes_agree_apart_from_the_container_the_host_resolves()
+    {
+        // Like a node's containerId: which container a group sits in depends on the grouping being
+        // projected, so the model states membership once on the containers and the host resolves it.
+        Shape<AnalysisImplementationGroupInfo>()
+            .Where(static entry => entry.Name != "containerId")
+            .ShouldBe(Shape<AnalysisImplementationGroup>());
+
+        Names<AnalysisImplementationGroup>().ShouldBe(
+            ["abstractionNodeId", "implementationNodeIds"],
+            ignoreOrder: true);
+
+        Names<AnalysisResult>().ShouldContain("implementationGroups");
+        Names<AnalysisView>().ShouldContain("implementationGroups");
+        Names<AnalysisView>().ShouldContain("implementationGroupsProduced");
+    }
+
+    [Fact]
     public void The_two_grouping_enums_agree()
     {
         string[] expected = ["dependency_flow", "change_clusters"];

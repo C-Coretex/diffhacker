@@ -37,8 +37,55 @@ export function testView(overrides: Partial<AnalysisView> = {}): AnalysisView {
     grouping: 'dependency_flow',
     availableGroupings: ['dependency_flow', 'change_clusters'],
     produceChangeClusters: true,
+    implementationGroups: [],
+    implementationGroupsProduced: true,
+    produceImplementationGroups: true,
     ...overrides,
   };
+}
+
+/**
+ * An interface changed with two implementations, and a caller that reads the interface.
+ *
+ * `IStore.cs` is the abstraction and the entry node; `MemoryStore.cs` and `DiskStore.cs` implement
+ * it; `Caller.cs` sits between them in the reading order, so the merged box has to take the place of
+ * its earliest member rather than of a contiguous run. Both implementations have an edge from the
+ * interface — internal to the box once merged — and each leads on to the caller they serve, so
+ * merging folds two of the model's edges onto one line.
+ */
+export function implementationView(overrides: Partial<AnalysisView> = {}): AnalysisView {
+  const ids = ['src/IStore.cs', 'src/Caller.cs', 'src/MemoryStore.cs', 'src/DiskStore.cs', 'src/Notes.md'];
+
+  return testView({
+    readingOrder: ids,
+    containers: [
+      container('store', 1, 'src/IStore.cs', ['src/IStore.cs', 'src/Caller.cs', 'src/MemoryStore.cs', 'src/DiskStore.cs']),
+      container('docs', 2, 'src/Notes.md', ['src/Notes.md']),
+    ],
+    nodes: [
+      node('src/IStore.cs', 'store', 1, ['changed', 'entry_point']),
+      node('src/Caller.cs', 'store', 2, ['changed']),
+      node('src/MemoryStore.cs', 'store', 3, ['changed']),
+      node('src/DiskStore.cs', 'store', 4, ['added']),
+      node('src/Notes.md', 'docs', 1, ['added', 'entry_point']),
+    ],
+    edges: [
+      edge('src/IStore.cs', 'src/MemoryStore.cs', 'direct'),
+      edge('src/IStore.cs', 'src/DiskStore.cs', 'direct'),
+      edge('src/MemoryStore.cs', 'src/Caller.cs', 'conceptual'),
+      edge('src/DiskStore.cs', 'src/Caller.cs', 'conceptual'),
+      edge('src/DiskStore.cs', 'src/Notes.md', 'conceptual', true),
+    ],
+    changedFiles: ids.map((id) => file(id, 'modified', 3, 1, 'C#', 'DiffHacker.Core')),
+    implementationGroups: [
+      {
+        abstractionNodeId: 'src/IStore.cs',
+        implementationNodeIds: ['src/MemoryStore.cs', 'src/DiskStore.cs'],
+        containerId: 'store',
+      },
+    ],
+    ...overrides,
+  });
 }
 
 /**

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.12/test-connection-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.13/test-connection-request.schema.json",
   "title": "TestConnectionRequest",
   "description": "Parameters for providers.testConnection. Tests whatever is currently in the provider form, saved or not: providerType is the only required field, so the key and endpoint can be checked before a model name is settled on. id names an existing profile, so a blank apiKey falls back to its stored key and a successful test can cache the model suggestions on it; absent, apiKey is required, exactly as an unsaved provider has no stored key to fall back to.",
   "type": "object",

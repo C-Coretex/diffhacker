@@ -13,6 +13,7 @@ import type {
   ToolCallEvent,
 } from '@/contracts';
 import { rememberPreference, storedPreference, type ThemePreference } from '@/theme/useTheme';
+import { rememberMergePreference, storedMergePreference } from '@/graph/mergePreference';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'detached' | 'error';
 export type EnvironmentStatus = 'checking' | 'ready' | 'error';
@@ -178,6 +179,14 @@ interface AppState {
   graphOnlyRenderVisible: boolean;
 
   /**
+   * Whether an abstraction and its implementations are drawn as one box. The reviewer's toggle, and
+   * remembered across restarts like the theme — see `graph/mergePreference.ts`. Not in either reset
+   * set: it is how someone reads, not what they are reading, so a new analysis or a switch of
+   * grouping keeps it.
+   */
+  graphMergeImplementations: boolean;
+
+  /**
    * Which node the diff panel is showing, and therefore where the reviewer is.
    *
    * Requirement 6's "current position" and requirement 1's "which file is open" are one piece of
@@ -304,6 +313,7 @@ interface AppState {
   setGraphOverviewOpen(open: boolean): void;
   setGraphBandOpen(open: boolean): void;
   setGraphOnlyRenderVisible(enabled: boolean): void;
+  setGraphMergeImplementations(merge: boolean): void;
 
   openDiffFor(nodeId: string, containerId: string): void;
   openContainerDiff(containerId: string, firstNodeId: string): void;
@@ -396,6 +406,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   ...graphDefaults,
   graphOnlyRenderVisible: false,
+  graphMergeImplementations: storedMergePreference(),
 
   // Not in graphDefaults, and deliberately: the marks are not this session's view of an analysis, they
   // are part of it. setAnalysis seeds them from what the host stored rather than clearing them.
@@ -585,6 +596,11 @@ export const useAppStore = create<AppState>((set) => ({
   setGraphOverviewOpen: (graphOverviewOpen) => set({ graphOverviewOpen }),
   setGraphBandOpen: (graphBandOpen) => set({ graphBandOpen }),
   setGraphOnlyRenderVisible: (graphOnlyRenderVisible) => set({ graphOnlyRenderVisible }),
+
+  setGraphMergeImplementations: (graphMergeImplementations) => {
+    rememberMergePreference(graphMergeImplementations);
+    set({ graphMergeImplementations });
+  },
 
   // Opening a diff is also a navigation, so it expands the container and centres the diagram the same
   // way every other "take me to this file" does. Requirement 6 is the other half of the same set: the

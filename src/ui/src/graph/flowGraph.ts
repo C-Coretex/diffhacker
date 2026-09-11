@@ -6,8 +6,15 @@ import type {
   AnalysisView,
   ChangedFileFactsInfo,
 } from '@/contracts';
-import { COLLAPSED_HEIGHT, COLLAPSED_WIDTH, NODE_HEIGHT, NODE_WIDTH } from './elkOptions';
-import { bundledEdges, isSyntheticEdge, type BundledEdge, type ElkNode } from './elkGraph';
+import { COLLAPSED_HEIGHT, COLLAPSED_WIDTH, mergedHeight, NODE_HEIGHT, NODE_WIDTH } from './elkOptions';
+import {
+  bundledEdges,
+  edgesBetween,
+  isSyntheticEdge,
+  type BundledEdge,
+  type ElkNode,
+} from './elkGraph';
+import { NO_MERGE, type MergePlan } from './implementationGroups';
 import { colourSlots, assignProjectColours, type ProjectColour } from './palette';
 
 /** What a file node's component is given. */
@@ -24,6 +31,17 @@ export interface FileNodeData extends Record<string, unknown> {
 
   /** Whether the reviewer has marked it read (requirement 7). */
   readonly isReviewed: boolean;
+}
+
+/**
+ * What a merged box is given: one row per node it stands for, the abstraction first.
+ *
+ * Each row is exactly what that node's own box would have been given, so every channel a box
+ * carries — state, importance, the search ring, the reviewer's position, the reviewed mark — keeps
+ * working per node rather than being averaged into something the box would have to invent.
+ */
+export interface ImplementationGroupNodeData extends Record<string, unknown> {
+  readonly rows: readonly FileNodeData[];
 }
 
 export interface ContainerNodeData extends Record<string, unknown> {
@@ -101,6 +119,7 @@ export function toFlowGraph(
   laidOut: ElkNode,
   collapsed: ReadonlySet<string>,
   highlight: GraphHighlight = NO_HIGHLIGHT,
+  merge: MergePlan = NO_MERGE,
 ): FlowGraph {
   const colours = assignProjectColours(view);
   const slots = colourSlots(colours);
@@ -154,7 +173,40 @@ export function toFlowGraph(
       } satisfies ContainerNodeData,
     });
 
+    const rowFor = (node: AnalysisNodeInfo): FileNodeData => ({
+      node,
+      facts: factsByPath.get(node.filePath),
+      colourSlot: slots.get(factsByPath.get(node.filePath)?.project ?? '') ?? null,
+      isEntry: node.id === container.entryNodeId,
+      isMatch: highlight.matchedNodeIds.has(node.id),
+      isFocused: highlight.focusedNodeId === node.id,
+      isCurrent: highlight.currentNodeId === node.id,
+      isReviewed: highlight.reviewedNodeIds.has(node.id),
+    });
+
     for (const laidOutNode of laidOutContainer.children ?? []) {
+      const box = merge.boxes.get(laidOutNode.id);
+
+      if (box) {
+        const rows = box.memberIds
+          .map((id) => nodesById.get(id))
+          .filter((node): node is AnalysisNodeInfo => node !== undefined)
+          .map(rowFor);
+
+        nodes.push({
+          id: box.id,
+          type: 'implementationGroup',
+          parentId: container.id,
+          extent: 'parent',
+          position: { x: laidOutNode.x ?? 0, y: laidOutNode.y ?? 0 },
+          width: NODE_WIDTH,
+          height: mergedHeight(rows.length),
+          draggable: false,
+          data: { rows } satisfies ImplementationGroupNodeData,
+        });
+        continue;
+      }
+
       const node = nodesById.get(laidOutNode.id);
       if (!node) continue;
 
@@ -169,16 +221,7 @@ export function toFlowGraph(
         // Requirement 9: the user cannot move nodes. Set here as well as on the ReactFlow element,
         // because a node that says it is draggable is one a future prop change would set loose.
         draggable: false,
-        data: {
-          node,
-          facts: factsByPath.get(node.filePath),
-          colourSlot: slots.get(factsByPath.get(node.filePath)?.project ?? '') ?? null,
-          isEntry: node.id === container.entryNodeId,
-          isMatch: highlight.matchedNodeIds.has(node.id),
-          isFocused: highlight.focusedNodeId === node.id,
-          isCurrent: highlight.currentNodeId === node.id,
-          isReviewed: highlight.reviewedNodeIds.has(node.id),
-        } satisfies FileNodeData,
+        data: rowFor(node) satisfies FileNodeData,
       });
     }
 
@@ -191,9 +234,10 @@ export function toFlowGraph(
       const target = laidOutEdge.targets[0];
       if (source === undefined || target === undefined) continue;
 
-      const model = view.edges.find(
-        (edge) => edge.sourceNodeId === source && edge.targetNodeId === target,
-      );
+      // Usually one. Several when a merged box gathered edges from more than one of its rows onto
+      // the same neighbour — and then, like a bundle, the line is neither direct nor conceptual.
+      const models = edgesBetween(view, source, target, merge);
+      const only = models.length === 1 ? models[0] : undefined;
 
       edges.push({
         id: laidOutEdge.id,
@@ -201,15 +245,15 @@ export function toFlowGraph(
         target,
         type: 'reading',
         data: {
-          kind: model?.kind ?? 'conceptual',
-          count: 1,
-          edges: model ? [model] : [],
+          kind: models.length > 1 ? 'bundle' : (only?.kind ?? 'conceptual'),
+          count: Math.max(models.length, 1),
+          edges: models,
         } satisfies ReadingEdgeData,
       });
     }
   }
 
-  for (const bundle of bundledEdges(view, collapsed)) {
+  for (const bundle of bundledEdges(view, collapsed, merge)) {
     edges.push(crossEdge(bundle));
   }
 

@@ -51,6 +51,18 @@ public sealed record AnalysisResult
     public IReadOnlyList<AnalysisEdge> Edges { get; init; } = [];
 
     /// <summary>
+    /// Abstractions changed alongside their implementations, which the renderer may draw as one box.
+    /// <para>
+    /// Null and empty are different answers, and that is why this is nullable where every other list
+    /// here defaults to empty. <b>Null</b> means nobody asked: a run told not to produce them, or a
+    /// document written before 1.13, which has no such field and is read as it stands. <b>Empty</b>
+    /// means the model was asked and this change has none. A toolbar control needs to tell a reviewer
+    /// which of those it is, and the document is the only thing that knows.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<AnalysisImplementationGroup>? ImplementationGroups { get; init; }
+
+    /// <summary>
     /// The groupings this result actually holds. Dependency flow always; change clusters only when
     /// the run produced them, which is what lets a control offering the other one be disabled rather
     /// than left to fail.
@@ -171,6 +183,19 @@ public sealed record AnalysisEdge
     public required string Explanation { get; init; }
 
     public IReadOnlyList<string> Risks { get; init; } = [];
+}
+
+/// <summary>
+/// One abstraction — an interface, an abstract base, a trait, a protocol, a header — and the nodes
+/// implementing it. Declared by the model, because the application reads no language and so cannot
+/// tell an interface from anything else (§0.2.3).
+/// </summary>
+public sealed record AnalysisImplementationGroup
+{
+    public required string AbstractionNodeId { get; init; }
+
+    /// <summary>The nodes implementing it, in reading order. At least one, never the abstraction.</summary>
+    public IReadOnlyList<string> ImplementationNodeIds { get; init; } = [];
 }
 
 /// <summary>What is true of a node. Not mutually exclusive.</summary>

@@ -39,10 +39,15 @@ public static class AnalysisValidator
     /// Whether the run asked for the second grouping. When it did not, the cluster fields were not
     /// in the schema the model answered and their absence is not a finding.
     /// </param>
+    /// <param name="expectImplementationGroups">
+    /// Whether the run asked for implementation groups. Their <i>absence</i> is only a finding when it
+    /// did; groups that are present are checked either way.
+    /// </param>
     public static AnalysisValidation Validate(
         AnalysisResult result,
         IReadOnlyList<ChangedFile> changedFiles,
-        bool expectChangeClusters)
+        bool expectChangeClusters,
+        bool expectImplementationGroups = false)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(changedFiles);
@@ -66,6 +71,17 @@ public static class AnalysisValidator
                 AnalysisGrouping.ChangeClusters));
         }
 
+        if (expectImplementationGroups && result.ImplementationGroups is null)
+        {
+            diagnostics.Add(AnalysisDiagnostic.Error(
+                AnalysisDiagnosticCodes.ImplementationGroupsMissing,
+                string.Empty,
+                "implementationGroups is missing. List each changed abstraction with its changed "
+                    + "implementations, or give an empty list when there are none."));
+        }
+
+        CheckImplementationGroups(result, nodesById, diagnostics);
+
         foreach (var grouping in result.Groupings)
         {
             var view = result.For(grouping);
@@ -75,9 +91,127 @@ public static class AnalysisValidator
             CheckReadingOrder(result, view, nodesById, diagnostics);
             CheckReachability(result, view, diagnostics);
             CheckContainerFieldLengths(view, diagnostics);
+            CheckImplementationGroupsTogether(result, view, diagnostics);
         }
 
         return new AnalysisValidation { Diagnostics = diagnostics };
+    }
+
+    /// <summary>
+    /// Each implementation group names real nodes, has something to group, and claims no node
+    /// another group — or it — already claimed.
+    /// <para>
+    /// The overlap rule is what lets a node be drawn in exactly one box. A node in two groups, or
+    /// named as its own implementation, is not something the diagram could draw without choosing,
+    /// and choosing is the one thing §0.2.1 says the application does not do.
+    /// </para>
+    /// </summary>
+    private static void CheckImplementationGroups(
+        AnalysisResult result,
+        Dictionary<string, AnalysisNode> nodesById,
+        List<AnalysisDiagnostic> diagnostics)
+    {
+        if (result.ImplementationGroups is not { } groups)
+        {
+            return;
+        }
+
+        var claimed = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var group in groups)
+        {
+            var name = group.AbstractionNodeId;
+
+            if (group.ImplementationNodeIds.Count == 0)
+            {
+                diagnostics.Add(AnalysisDiagnostic.Error(
+                    AnalysisDiagnosticCodes.ImplementationGroupEmpty,
+                    name,
+                    $"The implementation group for '{name}' lists no implementations. Name the changed "
+                        + "nodes implementing it, or remove the group."));
+            }
+
+            foreach (var nodeId in group.ImplementationNodeIds.Prepend(group.AbstractionNodeId))
+            {
+                if (!nodesById.ContainsKey(nodeId ?? string.Empty))
+                {
+                    diagnostics.Add(AnalysisDiagnostic.Error(
+                        AnalysisDiagnosticCodes.UnknownNodeReference,
+                        name,
+                        $"The implementation group for '{name}' names '{nodeId}', which is not a node "
+                            + "in this result."));
+
+                    continue;
+                }
+
+                if (!claimed.TryAdd(nodeId!, name))
+                {
+                    var owner = claimed[nodeId!];
+
+                    diagnostics.Add(AnalysisDiagnostic.Error(
+                        AnalysisDiagnosticCodes.ImplementationGroupOverlap,
+                        nodeId!,
+                        string.Equals(owner, name, StringComparison.Ordinal)
+                            ? $"The implementation group for '{name}' names '{nodeId}' more than once. "
+                                + "An abstraction is never its own implementation, and each node is "
+                                + "listed once."
+                            : $"'{nodeId}' is in the implementation groups of both '{owner}' and "
+                                + $"'{name}'. A node belongs to at most one group."));
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether each group's members share the abstraction's container in one grouping.
+    /// <para>
+    /// A warning, not an error. A member left outside is simply drawn as its own box in that
+    /// grouping, which is a smaller picture rather than a wrong one — and a change-clusters grouping
+    /// may have a genuine reason to split them. A repair round would cost more than that.
+    /// </para>
+    /// </summary>
+    private static void CheckImplementationGroupsTogether(
+        AnalysisResult result,
+        AnalysisGroupingView view,
+        List<AnalysisDiagnostic> diagnostics)
+    {
+        if (result.ImplementationGroups is not { Count: > 0 } groups)
+        {
+            return;
+        }
+
+        var containerOf = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var container in view.Containers)
+        {
+            foreach (var nodeId in container.NodeIds)
+            {
+                containerOf.TryAdd(nodeId, container.Id);
+            }
+        }
+
+        foreach (var group in groups)
+        {
+            if (!containerOf.TryGetValue(group.AbstractionNodeId, out var home))
+            {
+                // A node in no container is already an error of its own.
+                continue;
+            }
+
+            foreach (var nodeId in group.ImplementationNodeIds)
+            {
+                if (containerOf.TryGetValue(nodeId, out var elsewhere) &&
+                    !string.Equals(elsewhere, home, StringComparison.Ordinal))
+                {
+                    diagnostics.Add(AnalysisDiagnostic.Warning(
+                        AnalysisDiagnosticCodes.ImplementationGroupSplit,
+                        nodeId,
+                        $"{At(view.Grouping)}'{nodeId}' implements '{group.AbstractionNodeId}' but sits in "
+                            + $"container '{elsewhere}' rather than '{home}', so it is drawn apart from it.",
+                        view.Grouping));
+                }
+            }
+        }
     }
 
     /// <summary>

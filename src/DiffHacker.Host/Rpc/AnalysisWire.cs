@@ -10,6 +10,7 @@ using DomainEdge = DiffHacker.Core.Analyses.AnalysisEdge;
 using DomainEdgeKind = DiffHacker.Core.Analyses.AnalysisEdgeKind;
 using DomainNode = DiffHacker.Core.Analyses.AnalysisNode;
 using DomainNodeState = DiffHacker.Core.Analyses.AnalysisNodeState;
+using DomainResult = DiffHacker.Core.Analyses.AnalysisResult;
 
 namespace DiffHacker.Host.Rpc;
 
@@ -40,10 +41,10 @@ internal static class AnalysisWire
 {
     /// <summary>
     /// What the renderer is shown when a repository has never been analysed. It still carries
-    /// <paramref name="produceChangeClusters"/>, because the control that binds to it is about what
-    /// the next run will spend and is on screen before any analysis exists.
+    /// <paramref name="nextRun"/>, because the controls that bind to it are about what the next run
+    /// will spend and are on screen before any analysis exists.
     /// </summary>
-    public static AnalysisView Empty(string repositoryPath, bool produceChangeClusters) => new(
+    public static AnalysisView Empty(string repositoryPath, AnalysisRunOptions nextRun) => new(
         analysisId: null,
         availableGroupings: [AnalysisGroupingMode.Dependency_flow],
         changedFiles: [],
@@ -56,12 +57,15 @@ internal static class AnalysisWire
         grouping: AnalysisGroupingMode.Dependency_flow,
         hasAnalysis: false,
         headCommit: null,
+        implementationGroups: [],
+        implementationGroupsProduced: false,
         inputTokens: null,
         model: null,
         nodes: [],
         outputTokens: null,
         overallRisks: [],
-        produceChangeClusters: produceChangeClusters,
+        produceChangeClusters: nextRun.ChangeClusters,
+        produceImplementationGroups: nextRun.ImplementationGroups,
         providerDisplayName: null,
         readingOrder: [],
         repairRounds: null,
@@ -71,11 +75,15 @@ internal static class AnalysisWire
         statistics: null,
         summary: string.Empty);
 
+    /// <param name="analysis">The stored analysis.</param>
+    /// <param name="grouping">Which of its groupings to project.</param>
+    /// <param name="nextRun">What the next run will ask for — the remembered choices, not this analysis's.</param>
     public static AnalysisView ToWire(
         Analysis analysis,
         AnalysisGrouping grouping,
-        bool produceChangeClusters)
+        AnalysisRunOptions nextRun)
     {
+        ArgumentNullException.ThrowIfNull(nextRun);
         ArgumentNullException.ThrowIfNull(analysis);
 
         var document = analysis.Document;
@@ -160,6 +168,8 @@ internal static class AnalysisWire
             grouping: ToWire(grouping),
             hasAnalysis: true,
             headCommit: analysis.HeadCommit,
+            implementationGroups: [.. ImplementationGroupsIn(document, containerOf, ranks)],
+            implementationGroupsProduced: document.ImplementationGroups is not null,
             inputTokens: Saturate(analysis.Usage.InputTokens),
             model: analysis.Model,
             nodes:
@@ -192,7 +202,8 @@ internal static class AnalysisWire
             ],
             outputTokens: Saturate(analysis.Usage.OutputTokens),
             overallRisks: document.OverallRisks,
-            produceChangeClusters: produceChangeClusters,
+            produceChangeClusters: nextRun.ChangeClusters,
+            produceImplementationGroups: nextRun.ImplementationGroups,
             providerDisplayName: analysis.ProviderDisplayName,
             readingOrder: analysis.ReadingOrderFor(grouping),
             repairRounds: analysis.RepairRounds,
@@ -223,6 +234,47 @@ internal static class AnalysisWire
         if (entryNodeIds.Contains(node.Id))
         {
             yield return AnalysisNodeInfoState.Entry_point;
+        }
+    }
+
+    /// <summary>
+    /// The model's implementation groups as they fall in the active grouping.
+    /// <para>
+    /// A group is drawn inside one container, so it lives in its abstraction's container and keeps
+    /// only the implementations the same container holds, in the order that container reads them.
+    /// The rest are not dropped from anything — they are still nodes, drawn as boxes of their own —
+    /// and a group left with no implementation here has nothing to merge in this grouping. Which one
+    /// that is can differ between groupings, which is why it is decided here and not stored.
+    /// </para>
+    /// </summary>
+    private static IEnumerable<AnalysisImplementationGroupInfo> ImplementationGroupsIn(
+        DomainResult document,
+        Dictionary<string, string> containerOf,
+        Dictionary<string, int> ranks)
+    {
+        foreach (var group in document.ImplementationGroups ?? [])
+        {
+            if (!containerOf.TryGetValue(group.AbstractionNodeId, out var home))
+            {
+                continue;
+            }
+
+            string[] beside =
+            [
+                .. group.ImplementationNodeIds
+                    .Where(id => !string.Equals(id, group.AbstractionNodeId, StringComparison.Ordinal))
+                    .Where(id => containerOf.TryGetValue(id, out var at) && string.Equals(at, home, StringComparison.Ordinal))
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(id => ranks.TryGetValue(id, out var rank) ? rank : int.MaxValue),
+            ];
+
+            if (beside.Length > 0)
+            {
+                yield return new AnalysisImplementationGroupInfo(
+                    abstractionNodeId: group.AbstractionNodeId,
+                    containerId: home,
+                    implementationNodeIds: beside);
+            }
         }
     }
 

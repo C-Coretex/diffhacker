@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.12/editor-settings.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.13/editor-settings.schema.json",
   "title": "EditorSettings",
   "description": "Which external editors this machine can open a diff in, and the command the user configured for one the host does not discover. Returned whole by editor.describe and by editor.save, so the renderer replaces its state rather than merging. There is no preferred editor here on purpose: the diff panel offers a button per editor that is actually available, which is a shorter road to the same place than a default nobody set.",
   "type": "object",

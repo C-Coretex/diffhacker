@@ -222,6 +222,32 @@ export class RepoSet {
     return repo;
   }
 
+  /**
+   * An interface changed together with two implementations of it and one caller — one of the
+   * implementations brand new and untracked.
+   *
+   * What the "merge implementations" toggle is for. The application reads no language, so nothing
+   * here is detected; the stub declares the group the way a model would, and this fixture only has to
+   * make the four files real changes in a real repository.
+   */
+  implementations(): GitRepo {
+    const repo = this.track(GitRepo.create('implementations'));
+
+    repo
+      .write('src/IStore.ts', 'export interface IStore {\n  get(key: string): string;\n}\n')
+      .write('src/MemoryStore.ts', 'export class MemoryStore {\n  get(key: string) { return key; }\n}\n')
+      .write('src/Caller.ts', 'export function read(store: { get(key: string): string }) {\n  return store.get("a");\n}\n')
+      .commitAll('initial');
+
+    repo
+      .write('src/IStore.ts', 'export interface IStore {\n  get(key: string, tenant: string): string;\n}\n')
+      .write('src/MemoryStore.ts', 'export class MemoryStore {\n  get(key: string, tenant: string) { return tenant + key; }\n}\n')
+      .write('src/DiskStore.ts', 'export class DiskStore {\n  get(key: string, tenant: string) { return tenant + key; }\n}\n')
+      .write('src/Caller.ts', 'export function read(store: { get(key: string, tenant: string): string }) {\n  return store.get("a", "t");\n}\n');
+
+    return repo;
+  }
+
   /** No commits at all, so there is no HEAD to compare against. */
   withoutCommits(): GitRepo {
     const repo = this.track(GitRepo.create('nocommits'));

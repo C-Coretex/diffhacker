@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.12/analysis-result.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.13/analysis-result.schema.json",
   "title": "AnalysisResult",
   "description": "The complete map of one changeset: how the change groups, how it flows, what to read first, what each part does and what is risky. The same nodes are grouped twice, two ways, and the reviewer switches between them. Every field is required, so a field with nothing to say is an empty string, an empty array or 0. Timestamps, model name and statistics are the application's to record and are stored around this document, not inside it.",
   "type": "object",
@@ -13,7 +13,8 @@
     "clusterContainers",
     "clusterReadingOrder",
     "nodes",
-    "edges"
+    "edges",
+    "implementationGroups"
   ],
   "properties": {
     "summary": {
@@ -67,6 +68,13 @@
       "description": "How the nodes relate. An edge means 'to understand the target, read from the source' - reading flow, not call semantics.",
       "items": {
         "$ref": "#/$defs/analysisEdge"
+      }
+    },
+    "implementationGroups": {
+      "type": "array",
+      "description": "Abstractions changed alongside their implementations, which the reviewer may see drawn as one box. A node belongs to at most one group. Empty when there are none.",
+      "items": {
+        "$ref": "#/$defs/analysisImplementationGroup"
       }
     }
   },
@@ -259,6 +267,27 @@
         "risks": {
           "type": "array",
           "description": "What could go wrong in this relationship specifically - a contract now broken, an assumption the target still makes about the source. One per entry. Empty when there are none.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "analysisImplementationGroup": {
+      "title": "AnalysisImplementationGroup",
+      "description": "One abstraction and the nodes implementing it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["abstractionNodeId", "implementationNodeIds"],
+      "properties": {
+        "abstractionNodeId": {
+          "type": "string",
+          "description": "Id of the node declaring the abstraction. Must be a node in this result."
+        },
+        "implementationNodeIds": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Ids of the nodes implementing it, in reading order. At least one; none of them the abstraction itself.",
           "items": {
             "type": "string"
           }
