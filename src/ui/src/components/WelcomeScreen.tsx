@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { GuideOfferCard } from '@/help/GuideOfferCard';
 import { RecentRepositoryList } from './RecentRepositoryList';
 
 export function WelcomeScreen() {
@@ -79,6 +80,8 @@ export function WelcomeScreen() {
 
   return (
     <div className="flex flex-col gap-6">
+      <GuideOfferCard />
+
       <Card>
         <CardHeader>
           <CardTitle>{t('welcome.heading')}</CardTitle>

@@ -133,6 +133,40 @@ describe('WelcomeScreen', () => {
     expect(screen.getByRole('button', { name: 'Choose a folder…' })).toBeDisabled();
   });
 
+  describe('the guide offer', () => {
+    beforeEach(() => {
+      window.localStorage.clear();
+      useAppStore.setState({ helpSection: 'faq', helpGuideStep: 7, helpReturnScreen: undefined });
+    });
+
+    it('opens the guide at its first step, with a way back to the start screen', async () => {
+      const transport = new FakeTransport();
+      renderScreen(transport);
+      await settleRecentsRequest(transport);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Read the step-by-step guide' }));
+
+      const state = useAppStore.getState();
+      expect(state.screen).toBe('help');
+      expect(state.helpSection).toBe('guide');
+      expect(state.helpGuideStep).toBe(0);
+      expect(state.helpReturnScreen).toBe('welcome');
+    });
+
+    it('stays gone once dismissed, across a remount', async () => {
+      const transport = new FakeTransport();
+      const { unmount } = renderScreen(transport);
+      await settleRecentsRequest(transport);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Not now' }));
+      expect(screen.queryByTestId('guide-offer')).not.toBeInTheDocument();
+
+      unmount();
+      renderScreen(new FakeTransport());
+      expect(screen.queryByTestId('guide-offer')).not.toBeInTheDocument();
+    });
+  });
+
   it('disables the controls when git is missing', async () => {
     useAppStore.setState({
       environmentInfo: {

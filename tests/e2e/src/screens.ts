@@ -976,8 +976,83 @@ export class AnalysisScreen {
   }
 }
 
+/** Help: the step-by-step guide, the reference sections and the FAQ, and the card that offers it. */
+export class HelpScreen {
+  constructor(private readonly page: Page) {}
+
+  /** In the header on every screen. */
+  get openButton(): Locator {
+    return this.page.getByRole('button', { name: en.app.nav.help, exact: true });
+  }
+
+  get backButton(): Locator {
+    return this.page.getByRole('button', { name: en.app.nav.back, exact: true });
+  }
+
+  get heading(): Locator {
+    return this.page.getByRole('heading', { level: 2, name: en.help.heading, exact: true });
+  }
+
+  /** One of the section buttons: `guide`, `about`, `diagram`, `shortcuts`, `faq`, `troubleshooting`. */
+  section(name: keyof typeof en.help.sections): Locator {
+    return this.page
+      .getByRole('group', { name: en.help.sectionsLabel })
+      .getByRole('button', { name: en.help.sections[name], exact: true });
+  }
+
+  get guide(): Locator {
+    return this.page.getByTestId('guide');
+  }
+
+  /** "Step 3 of 15". */
+  get position(): Locator {
+    return this.page.getByTestId('guide-position');
+  }
+
+  /** The title of the step on screen. */
+  get stepHeading(): Locator {
+    return this.guide.getByRole('heading', { level: 3 });
+  }
+
+  /** Drawn twice, above the instructions and under the screenshot; the first will do. */
+  get nextButton(): Locator {
+    return this.guide.getByRole('button', { name: en.help.guide.next, exact: true }).first();
+  }
+
+  get finishButton(): Locator {
+    return this.guide.getByRole('button', { name: en.help.guide.finish, exact: true }).first();
+  }
+
+  get screenshot(): Locator {
+    return this.page.getByTestId('guide-screenshot');
+  }
+
+  get missingScreenshot(): Locator {
+    return this.page.getByTestId('guide-screenshot-missing');
+  }
+
+  faqItem(id: keyof typeof en.help.faq.items): Locator {
+    return this.page.getByTestId(`help-faq-${id}`);
+  }
+
+  // ---- the card on the start screen
+
+  get offer(): Locator {
+    return this.page.getByTestId('guide-offer');
+  }
+
+  get offerOpenButton(): Locator {
+    return this.page.getByRole('button', { name: en.help.offer.open, exact: true });
+  }
+
+  get offerDismissButton(): Locator {
+    return this.page.getByRole('button', { name: en.help.offer.dismiss, exact: true });
+  }
+}
+
 export function screens(page: Page) {
   return {
+    help: new HelpScreen(page),
     welcome: new WelcomeScreen(page),
     repository: new RepositoryScreen(page),
     changeset: new ChangesetPanel(page),

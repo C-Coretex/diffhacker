@@ -39,7 +39,11 @@ export type ProfileRunStatus = 'idle' | 'running';
  * asset resolver serves exact paths with no SPA fallback, so a URL would be state to keep in
  * sync for nothing. Revisit if a later iteration wants deep links into the graph.
  */
-export type Screen = 'welcome' | 'repository' | 'settings' | 'profile' | 'analysis';
+export type Screen = 'welcome' | 'repository' | 'settings' | 'profile' | 'analysis' | 'help';
+
+/** The parts of the Help screen, in the order its navigation lists them. */
+export const HELP_SECTIONS = ['guide', 'about', 'diagram', 'shortcuts', 'faq', 'troubleshooting'] as const;
+export type HelpSection = (typeof HELP_SECTIONS)[number];
 
 /**
  * How many tool-log rows a live run keeps.
@@ -56,6 +60,23 @@ interface AppState {
   connectionError?: string;
 
   screen: Screen;
+
+  /**
+   * Where Help was opened from, so leaving it puts the reader back there.
+   *
+   * Help is the one screen reachable from every other one — including the analysis screen, where the
+   * reviewer is most likely to have a question — so "back" cannot mean "the repository screen" the way
+   * it does for Settings. Undefined while Help is not open.
+   */
+  helpReturnScreen?: Screen;
+
+  /**
+   * Which part of Help is showing, and which step of the guide. Session state, like the rest of the
+   * view state: someone who stepped away to try step 6 and comes back for step 7 should find it, but
+   * a restart starting at the beginning is no loss.
+   */
+  helpSection: HelpSection;
+  helpGuideStep: number;
 
   /**
    * Light, dark, or whatever the operating system is asking for.
@@ -333,6 +354,10 @@ interface AppState {
   setConnectionError(message: string): void;
 
   showScreen(screen: Screen): void;
+  openHelp(): void;
+  closeHelp(): void;
+  setHelpSection(section: HelpSection): void;
+  setHelpGuideStep(step: number): void;
   setThemePreference(preference: ThemePreference): void;
 
   setEnvironment(info: EnvironmentInfo): void;
@@ -474,6 +499,8 @@ export const useAppStore = create<AppState>((set) => ({
   connection: 'connecting',
 
   screen: 'welcome',
+  helpSection: 'guide',
+  helpGuideStep: 0,
   themePreference: storedPreference(),
 
   environment: 'checking',
@@ -516,6 +543,19 @@ export const useAppStore = create<AppState>((set) => ({
   setConnectionError: (message) => set({ connection: 'error', connectionError: message }),
 
   showScreen: (screen) => set({ screen }),
+
+  // Opening Help from Help keeps the original way back: pressing the header button twice should not
+  // leave the reader with a Back button that returns to Help.
+  openHelp: () =>
+    set((state) =>
+      state.screen === 'help' ? {} : { screen: 'help', helpReturnScreen: state.screen },
+    ),
+
+  closeHelp: () =>
+    set((state) => ({ screen: state.helpReturnScreen ?? 'welcome', helpReturnScreen: undefined })),
+
+  setHelpSection: (helpSection) => set({ helpSection }),
+  setHelpGuideStep: (helpGuideStep) => set({ helpGuideStep }),
 
   setThemePreference: (themePreference) => {
     rememberPreference(themePreference);

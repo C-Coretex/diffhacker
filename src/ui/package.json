@@ -10,7 +10,8 @@
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "docs:guide": "vitest run src/help/userGuideMarkdown.test.ts -u"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.23",

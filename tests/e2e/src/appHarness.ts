@@ -103,6 +103,13 @@ export class DiffHackerApp {
         // Only the browser profile. Redirecting APPDATA or USERPROFILE as well stops WebView2
         // starting at all, and neither is consulted by AppPaths on Windows anyway.
         LOCALAPPDATA: browserProfile,
+        // And the one WebView2 actually obeys. PhotinoX resolves its profile folder through the
+        // known-folder API, which ignores LOCALAPPDATA just as AppPaths does, so without this every
+        // launch shared the developer's own %LOCALAPPDATA%\PhotinoX\EBWebView — and with it their
+        // localStorage: a theme, a merge toggle or a dismissed guide offer set by one test was still
+        // set in the next, and in the developer's real window afterwards. WebView2 lets this variable
+        // override whatever folder the host asked for, the same way it honours the debugging port.
+        WEBVIEW2_USER_DATA_FOLDER: browserProfile,
         PATH: options.withoutGit ? pathWithoutGit() : process.env.PATH,
       },
     });

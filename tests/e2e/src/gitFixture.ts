@@ -18,12 +18,30 @@ export class GitRepo {
   private constructor(
     readonly root: string,
     private readonly isolatedHome: string,
+    /** A directory created only to hold `root`, removed along with it. */
+    private readonly container?: string,
   ) {}
+
+  /**
+   * A repository whose folder is called `name`, rather than the random temp name `create` gives.
+   *
+   * The application shows a repository by its folder's name, so a screenshot of one made by `create`
+   * reads `diffhacker-e2e-guide-Xy12ab`. The user guide's screenshots want a name a reader would
+   * believe, so the random part goes one directory up instead.
+   */
+  static createNamed(label: string, name: string): GitRepo {
+    const container = mkdtempSync(join(tmpdir(), `diffhacker-e2e-${label}-`));
+    const root = join(container, name);
+    mkdirSync(root);
+    return GitRepo.initialise(new GitRepo(root, `${container}-home`, container));
+  }
 
   static create(label: string): GitRepo {
     const root = mkdtempSync(join(tmpdir(), `diffhacker-e2e-${label}-`));
-    const repo = new GitRepo(root, `${root}-home`);
+    return GitRepo.initialise(new GitRepo(root, `${root}-home`));
+  }
 
+  private static initialise(repo: GitRepo): GitRepo {
     repo.git('init', '--initial-branch=main');
     repo.git('config', 'user.email', 'fixture@diffhacker.test');
     repo.git('config', 'user.name', 'DiffHacker Fixture');
@@ -131,7 +149,7 @@ export class GitRepo {
   }
 
   dispose(): void {
-    deleteTree(this.root);
+    deleteTree(this.container ?? this.root);
     deleteTree(this.isolatedHome);
   }
 }

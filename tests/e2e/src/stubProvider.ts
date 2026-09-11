@@ -27,11 +27,19 @@ export class StubProvider {
   /** Every chat request the application made, in order. */
   readonly requests: ChatRequest[] = [];
 
-  private constructor(server: Server) {
+  private constructor(
+    server: Server,
+    private readonly models: readonly string[],
+  ) {
     this.server = server;
   }
 
-  static async start(): Promise<StubProvider> {
+  /**
+   * @param models What `/models` lists, which is what the connection test reports and checks the
+   * typed model against. `stub-model` unless a spec needs a name a reader will see — the user guide's
+   * screenshots show the connection test, and "stub-model" is not a name to show anyone.
+   */
+  static async start(models: readonly string[] = ['stub-model']): Promise<StubProvider> {
     let provider!: StubProvider;
 
     const server = createServer((request, response) => {
@@ -44,7 +52,7 @@ export class StubProvider {
       });
     });
 
-    provider = new StubProvider(server);
+    provider = new StubProvider(server, models);
 
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     return provider;
@@ -92,7 +100,7 @@ export class StubProvider {
     if (url.includes('/models')) {
       return send(response, 200, {
         object: 'list',
-        data: [{ id: 'stub-model', object: 'model' }],
+        data: this.models.map((id) => ({ id, object: 'model' })),
       });
     }
 

@@ -1,201 +1,158 @@
 # DiffHacker
-***This project is a test - coding fully delegated to the LLM agent.***
 
+**Review large Git changes as a map, not an alphabetical file list.**
 
+DiffHacker is a desktop app that takes the uncommitted change in a local repository and has an LLM
+explain it as a diagram: which files belong together, where to start reading, how each part leads
+to the next, and what could go wrong.
 
-**Review large Git changes as a graph, not an alphabetical file list.**
+> ***This project is a test - coding fully delegated to the LLM agent.***
 
-DiffHacker is a cross-platform desktop app that points at a local repository, takes the
-current uncommitted diff, and asks an LLM to turn it into a **directed review graph**:
-clusters of related change, ordered so you start at the thing that matters and walk
-downstream through its consequences.
-
-> **Project status: pre-implementation.** The plan is complete and the repository is
-> scaffolded, but no feature code exists yet. There is nothing to install. Follow the
-> [roadmap](#roadmap) if you want to track progress.
+![A change drawn as clusters of related files, with the summary and risks above it](src/ui/src/help/screenshots/09-summary-and-risks.png)
 
 ---
 
-## The problem
+## Why
 
-An AI agent just changed 300 files. Your review tool sorts them alphabetically. So you open
-`src/Api/Controllers/AccountController.cs` first — not because it matters, but because `A`
-comes first — and spend the next hour reconstructing the shape of the change in your head:
-what drove what, which files are the point and which are fallout, what is safe to skim and
-what deserves real attention.
+An AI agent just changed 300 files. Your review tool lists them alphabetically, so you open
+`AccountController.cs` first because `A` comes first, not because it matters. Then you spend an hour
+rebuilding the shape of the change in your head: what drove what, which files are the point and
+which are fallout, what is safe to skim and what deserves real attention.
 
-The structure of the change exists. It is just invisible from the file list.
+That structure exists, but you can't see it in a file list. DiffHacker rebuilds it for you, before
+you read a line of code.
 
-## What DiffHacker does
+## What it does
 
-It reconstructs that structure for you, as one diagram:
+### One diagram of the whole change
 
-- **Containers** group related change. Unrelated changes land in different containers.
-- **Nodes** are files, or specific places inside files. Every changed file appears — nothing
-  is summarised away.
-- **Edges** are reading flow: *to understand this, read from here to there.* Solid edges are
-  real code dependencies; dashed edges are conceptual relationships the LLM inferred.
-- **Ranking** puts the entry point of each container at the top. You read downstream.
-- **Hover** a node, edge or container for what changed, why, and how it affects the rest.
-  **Risks** live in their own column, never mixed into the prose.
-- **Click** a node to open the diff, with the explanation still on screen.
-- **Mark nodes reviewed** as you go, so a 300-node review is survivable.
+Related changes are grouped into **clusters**, and unrelated changes land in separate ones. Inside a
+cluster, the file to start from is on top and its consequences follow below it. **Solid lines** are
+real code dependencies; **dashed lines** are connections of intent, such as a migration and the
+endpoint that relies on it, which no import graph would show. Every changed file is on the diagram.
+Nothing is summarised away.
 
-## How it works
+![The diagram: an interface merged with its two implementations, the config that uses them, and the middleware that enforces them](src/ui/src/help/screenshots/10-diagram.png)
 
-The application does not analyse your code. It gives an LLM the tools to analyse it.
+### Every box explains itself
 
-```
-changed-file list + project profile + your instructions
-                    │
-                    ▼
-          ┌─────────────────────┐
-          │  the LLM explores   │◄──── toolbox: grep, glob, read, diff,
-          │  the repository     │      tree, metadata, report_progress
-          └─────────┬───────────┘
-                    │  structured result (JSON Schema)
-                    ▼
-      validate → persist → lay out → render
-```
+Click a file for what changed, why it changed, what it affects, and its risks. Risks always sit in
+their own column, apart from the explanation. Click a line for how two files relate, or a cluster's
+title for what the cluster is about. Everything was written during the analysis, so opening a card
+costs nothing.
 
-The initial prompt contains only the changed-file list, project context and instructions.
-Everything else the LLM pulls in itself, through tools. File contents and diffs are never
-bulk-injected.
+![An explanation card beside the rate-limit middleware: what changed, why, what it affects, and a risk](src/ui/src/help/screenshots/11-explanation-card.png)
 
-The result is validated hard before you ever see it: every changed file has a node, every
-node has exactly one container, every edge resolves, every container has exactly one entry
-point. On failure the specific problem goes back to the LLM for repair. Nothing is ever
-silently dropped or invented to make validation pass.
+### Read the code without losing your place
 
-## Design principles
+Double-click a box to open its diff beside the diagram, with the explanation still under the code.
+**Previous / Next** follow the recommended reading order, **Where to go next** follows the lines,
+and **Mark reviewed** keeps count, so a 300-file review is something you can actually finish. VS
+Code, Visual Studio or your own editor opens a file in one click.
 
-- **The LLM is the source of truth.** The app renders and persists; it does not second-guess.
-- **Language-agnostic.** No Roslyn, no tree-sitter, no ASTs. Language is metadata, nothing more.
-- **Provider-agnostic.** Bring your own key. OpenAI, Anthropic, Gemini, Grok, DeepSeek, or any
-  OpenAI-compatible endpoint — including local Ollama.
-- **Local uncommitted changes only.** Working tree vs `HEAD`. No branch picker, no PR
-  integration.
-- **Read-only.** The app never commits, stages, checks out or edits your files. Generated
-  documentation lives inside DiffHacker; writing it into your repository is a separate, opt-in
-  export that shows you every file and every byte first, and a diff for anything it would replace.
-  That export is the only code in the product that writes to your repository, and a test asserts
-  it stays that way.
-- **Nothing renders until everything exists.** No half-built graphs, no explanations
-  generated at hover time.
-- **Any changeset size.** 10 files or 1500.
+![The diff panel beside the diagram, with the explanation under the code and the file marked reviewed](src/ui/src/help/screenshots/13-mark-reviewed.png)
 
-## Privacy
+### Two ways to group the same change
 
-DiffHacker sends **portions of your source code** to whichever LLM provider you configure —
-the changed-file list up front, then whatever the model reads through the toolbox. That is
-how it works, and the app states it explicitly before your first analysis.
+**Dependency flow** keeps each chain of change whole, even where it crosses the database, the API
+and the UI. **Change clusters** groups by theme instead, so you can see which areas were touched.
+Both come from the same run, so switching is instant and free.
 
-Your API keys are encrypted with AES-GCM in your application data directory, under a master
-key held by your operating system's credential store — DPAPI on Windows, Keychain on macOS,
-libsecret on Linux. On systems with no keyring daemon the master key is derived from the
-machine and your user account instead, and the app says so rather than claiming a keyring it
-does not have. Keys never cross into the WebView. Crash reporting is opt-in only and never
-includes repository content. Local logs go to `log.txt` in your application data directory,
-with secrets redacted.
+![The same change grouped by theme: the limiter library, enforcement in the API, what users see](src/ui/src/help/screenshots/14-change-clusters.png)
 
-## Tech stack
+### Watch it work, and stay in control of the cost
 
-| Concern | Choice |
-|---|---|
-| Shell | PhotinoX (WebView2 / WKWebView / WebKitGTK) |
-| UI | React 19 + TypeScript, Vite |
-| Graph | React Flow (`@xyflow/react` v12) |
-| Layout | ELK.js `layered`, in a Web Worker |
-| Diff viewer | Monaco `DiffEditor`, bundled locally |
-| State / styling | Zustand · Tailwind CSS · shadcn/ui |
-| Host ↔ UI | JSON-RPC 2.0 over the Photino message channel |
-| Contracts | JSON Schema in `/schema` → generated C# + TypeScript |
-| Git | `git` CLI behind `IGitClient` |
-| LLM | `Microsoft.Extensions.AI` / `IChatClient` |
-| Tools | `ModelContextProtocol.Core` C# SDK — one definition, usable in-process **and** over stdio by other agents |
-| Storage | SQLite |
-| Packaging | Velopack, self-contained per RID |
+You can watch every analysis while it runs: what the model says it is doing, each tool call it
+makes, the tokens and cost so far, and how full its context is. You can stop it at any time. You can
+switch off the parts you don't need (risks, explanations, the second grouping) and choose how much
+it writes. Runs pause and ask before going past the limits you set. The last 20 runs of each
+repository are kept, and reopening one costs nothing.
 
-## Repository layout
+![An analysis in progress: the model's progress message, running totals and the tool log](src/ui/src/help/screenshots/08-run-in-progress.png)
 
-```
-/schema                  JSON Schema — the contract source of truth
-/src
-  DiffHacker.slnx
-  DiffHacker.Contracts   generated DTOs + value types
-  DiffHacker.Core        analysis orchestration, validation, domain
-  DiffHacker.Git         IGitClient + git CLI implementation
-  DiffHacker.Llm         provider registry, sessions, budgets
-  DiffHacker.Tools       the LLM toolbox: the ten tools it explores a repository with
-  DiffHacker.Mcp         diffhacker-mcp — the same toolbox over stdio, headless
-  DiffHacker.Storage     SQLite, analysis library, settings, secrets
-  DiffHacker.Host        Photino, JSON-RPC dispatcher, composition root
-  /ui                    Vite + React + TypeScript
-/tests
-/docs
-  /iterations            the implementation plan, one file per iteration
-```
+### It knows when it is out of date
 
-## Use the toolbox from your own agent
+Edit a file after the analysis ran, and a banner lists exactly what has changed since. Undo the edit
+and the analysis is current again.
 
-The tools DiffHacker gives its model are not private to it. `diffhacker-mcp` serves the same ten
-tools over stdio to any MCP client:
+![The banner saying the working tree has changed since the analysis ran](src/ui/src/help/screenshots/15-stale-banner.png)
 
-```
+## What you need
+
+- **git** on your PATH.
+- **An API key for an LLM provider.** Supported: OpenAI, Anthropic, Google Gemini, Grok (xAI),
+  DeepSeek, or any OpenAI-compatible endpoint, including a model served on your own machine. You pay
+  the provider directly for what each run uses.
+- **A local repository with uncommitted changes.** DiffHacker reviews your working tree against
+  `HEAD`: staged, unstaged and new files together.
+- **To build it:** the [.NET SDK 10](https://dotnet.microsoft.com/download) and
+  [Node.js 24](https://nodejs.org/). There are no installers yet.
+
+It is built on a cross-platform shell, but so far it has only been tested on **Windows**. macOS and
+Linux should work but are unverified.
+
+## Getting started
+
+```bash
+git clone https://github.com/C-Coretex/diffhacker.git
+cd diffhacker
 dotnet build src/DiffHacker.slnx
-claude mcp add diffhacker -- <repo>/src/DiffHacker.Mcp/bin/Release/net10.0/diffhacker-mcp --repository /path/to/your/repo
+dotnet run --project src/DiffHacker.Host
 ```
 
-It is read-only and offline by construction: no write path, no command execution and no network
-access exist anywhere in the toolbox — an architecture test asserts the absence rather than the
-disuse. It sees only what git sees, so `.git/` and everything `.gitignore` covers are invisible,
-and every result is capped and paged so a single call cannot flood a context window.
+Then:
 
-Files that tend to hold credentials — `.env`, private keys, `.npmrc`, `credentials`, `*.tfvars` —
-are **listed but never opened**, so their contents cannot reach a model. They stay visible on
-purpose: a changed `.env` is a real part of a change, and a reviewer who cannot see that it changed
-is worse off than one who can see it changed but not how.
+1. **Settings → Add a provider.** Paste your API key and press **Test connection**. The test costs
+   nothing.
+2. **Open a repository** that has uncommitted changes.
+3. **Repository profile → Analyse repository.** This is optional but recommended: it is done once,
+   and every later analysis is better for it.
+4. **Analysis → Analyse this change**, then read the diagram from the top.
 
-## Roadmap
+The **[user guide](docs/user-guide.md)** walks through all of it step by step with screenshots, and
+covers reading the diagram, keyboard shortcuts, an FAQ and troubleshooting. The same guide is inside
+the app: press **Help** in the top right corner of any screen.
 
-Fourteen sequential iterations. Full requirements for each are in
-[docs/iterations/](docs/iterations/).
+## Your code and your keys
 
-| # | Iteration | Delivers |
-|---|---|---|
-| [1](docs/iterations/iteration-01-foundation.md) | Foundation | Photino shell, JSON-RPC bridge, schema codegen, CI on 3 OSes |
-| [2](docs/iterations/iteration-02-shell-settings-repository.md) | Shell, settings, repository | Repo picker, provider config, secret store |
-| [3](docs/iterations/iteration-03-git-layer.md) | Git layer | The changeset: working tree vs `HEAD`, untracked included |
-| [4](docs/iterations/iteration-04-llm-provider-layer.md) | LLM providers | One contract, five providers, tool calling, budgets |
-| [5](docs/iterations/iteration-05-repository-toolbox.md) | Repository toolbox | The tools the LLM explores with — the heart of the product |
-| [6](docs/iterations/iteration-06-repository-knowledge-base.md) | Knowledge base | Project profile, custom instructions, opt-in doc generator |
-| [7](docs/iterations/iteration-07-analysis-pipeline.md) | Analysis pipeline | The validated, persisted graph result |
-| [8](docs/iterations/iteration-08-graph-rendering.md) | Graph rendering | The diagram |
-| [9](docs/iterations/iteration-09-explanations.md) | Explanations | Hover cards, risks column, overview panel — **MVP line** |
-| [10](docs/iterations/iteration-10-diff-viewer.md) | Diff viewer | Monaco, graph-following navigation, reviewed tracking |
-| [11](docs/iterations/iteration-11-grouping-modes.md) | Grouping modes | Dependency flow vs change clusters |
-| [12](docs/iterations/iteration-12-unchanged-intermediate-nodes.md) | Unchanged nodes | Optionally reveal the files in between |
-| [13](docs/iterations/iteration-13-cost-transparency-library.md) | Cost & library | Estimates, tool-call inspector, analysis history |
-| [14](docs/iterations/iteration-14-packaging-release.md) | Packaging | Signed installers, auto-update, docs, first run |
+- **It never changes your repository.** No commits, staging, checkouts or edits, and it only runs
+  git commands that read. The single exception is an optional documentation export, which shows you
+  every file first and writes only when you confirm.
+- **Portions of your source code are sent to the provider you choose.** That's how it works. The
+  first request carries only the list of changed files, the repository profile and your
+  instructions; the model then reads what it needs through DiffHacker's tools. Those tools see only
+  what git sees: nothing in `.git/`, nothing your `.gitignore` excludes. Files that usually hold
+  credentials (`.env`, private keys, `.npmrc` and similar) are listed but never opened.
+- **API keys are encrypted** under a key held by your operating system (DPAPI on Windows, Keychain on
+  macOS, libsecret on Linux). They are never written to the log and never reach the app's interface.
+- **Nothing is sent anywhere else.** The only network traffic is to the LLM provider you configure.
 
-**Iterations 1–9 are the MVP:** local diff → LLM-built grouped graph → explanations.
+## Use its tools from your own agent
 
-Deliberately deferred ideas are recorded in
-[docs/future-improvements.md](docs/future-improvements.md) so they are not forgotten and not
-accidentally built early.
+The read-only toolbox DiffHacker gives its model (search, read, diff, tree, metadata) is also
+available to any MCP client over stdio:
 
-## Contributing
+```bash
+dotnet build src/DiffHacker.slnx
+claude mcp add diffhacker -- <repo>/src/DiffHacker.Mcp/bin/Debug/net10.0/diffhacker-mcp --repository /path/to/your/repo
+```
 
-Not yet open for contributions — the foundation has to exist first. When it is,
-`CONTRIBUTING.md` will land alongside Iteration 14.
+It can't write files, run commands or reach the network, and it caps and pages every result so one
+call can't flood a context window.
 
-If you are working on this repository with an AI coding agent, start with
-[CLAUDE.md](CLAUDE.md). It carries the full product contract, the invariants, and the rules
-about what the agent decides on its own versus what it must ask about.
+## Development
+
+| | |
+|---|---|
+| Build everything (the UI included) | `dotnet build src/DiffHacker.slnx` |
+| .NET tests | `dotnet test src/DiffHacker.slnx` |
+| UI tests | `npm run test:run` in `src/ui` |
+| End-to-end tests (Windows) | `npm test` in `tests/e2e`, after a build |
+
+Built with .NET 10, [PhotinoX](https://github.com/ivanvoyager/PhotinoX), React 19, React Flow, ELK.js,
+Monaco and SQLite. If you work on it with an AI coding agent, start with [CLAUDE.md](CLAUDE.md).
 
 ## Licence
 
-[MIT](LICENSE).
-
-Attribution is appreciated but not legally required. If DiffHacker is useful in your product
-or workflow, a credit and a link back are the ask.
+[MIT](LICENSE). Attribution isn't required, but if DiffHacker is useful in your product or
+workflow, a credit and a link back would be appreciated.

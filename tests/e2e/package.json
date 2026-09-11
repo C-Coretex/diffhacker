@@ -8,6 +8,7 @@
     "test": "playwright test",
     "test:headed": "playwright test --headed",
     "report": "playwright show-report artifacts/playwright-report",
+    "docs:screenshots": "playwright test specs/15-user-guide.spec.ts -g \"can be followed\" --update-snapshots",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

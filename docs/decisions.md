@@ -1457,3 +1457,69 @@ not deserialise at all. The prose fields on `AnalysisNode`, `AnalysisContainer` 
 default to empty instead. `AnalysisValidator` insists on `whatChanged` and `whyItChanged` whenever node
 explanations were asked for, and on the title always. Only the root `summary` stays required: the
 overall summary is never optional.
+
+## User guide and Help
+
+A **Help** button in the header, on every screen, opens a screen of its own. It holds a fifteen-step
+guide with a screenshot per step, what the product does, how to read the diagram, the keyboard
+shortcuts, an FAQ and troubleshooting. The same content is in [docs/user-guide.md](user-guide.md) for
+anyone reading the repository before installing. The start screen offers the guide on a card that
+stays gone once dismissed.
+
+### Screenshots, not an interactive tour
+
+A guided tour over the real analysis screen with mock data was designed first. It would have run the
+unmodified `AnalysisScreen` inside a nested `RpcProvider` with an in-memory transport answering
+`analysis.*` and `changeset.fileContent`. It was dropped at the user's request in favour of
+step-by-step instructions with pictures. The pictures cover setup — provider, repository, profile —
+which a tour confined to the analysis screen could not, and a guide has no store state to snapshot
+and restore.
+
+### The screenshots are generated, by the suite that proves the steps work
+
+`tests/e2e/specs/15-user-guide.spec.ts` follows the guide against the real application and captures
+each step as it goes. It uses a fixture repository built to be read (`guideFixture.ts`) and the stub
+provider answering the way a good model would. So a step that stops being possible fails a test
+before it misleads a reader, and refreshing every picture after a UI change is one command:
+`npm run docs:screenshots` in `tests/e2e`, which is the spec with `--update-snapshots`. A normal run
+writes a guide screenshot into the source tree only when it is missing, so the first set bootstraps
+itself and no ordinary run dirties a tracked file. Captures are at 1440×900 CSS pixels, light theme
+only. One set keeps the bundle small, and the images are captured at one pixel per CSS pixel, so the
+stepper can show them at no more than natural size.
+
+No personal detail reaches an image. The fixture lives under the temp directory, whose path carries
+the operating-system user name, and the stub listens on a random port. `GuideCamera` rewrites both in
+the page's text and inputs before each capture, then fails the capture if the user name still
+appears inside a path. That rewriting is test code; nothing in the product knows about it.
+
+### One set of words, drawn twice
+
+Every word is in `en.help` (§0.6's one resource layer), written in the Markdown subset
+`lib/markdown.ts` parses, which GitHub renders the same way. The Help screen draws it with the same
+`Markdown` component the analysis uses. `help/userGuideMarkdown.ts` renders the same strings, in the
+same order, into `docs/user-guide.md`, and `userGuideMarkdown.test.ts` compares that with a Vitest
+file snapshot, so the committed document cannot drift. `npm run docs:guide` in `src/ui` rewrites it.
+The document links the screenshots where the application bundles them rather than keeping copies.
+
+The step order lives in `help/guideSteps.ts` because the steps carry screenshots. It has no imports,
+so the end-to-end suite can import it as it imports `en.ts`. `helpContent.ts` makes a step without
+copy, or copy without a step, a compile error, and `guideImages.test.ts` fails when a step's picture
+is missing. The screenshots are loaded through `import.meta.glob`, so a missing one is a placeholder
+rather than a broken build.
+
+### Help asks the host nothing
+
+It is the catalogue and a folder of images, so it works before a provider, a repository or even git
+is set up. `openHelp` records the screen it was opened from and `closeHelp` returns there, which
+matters most on the analysis screen, where Back would otherwise mean the repository screen.
+
+### The end-to-end suite shared the developer's browser profile
+
+Writing spec 15 found an older bug in the harness. Redirecting `LOCALAPPDATA` never moved WebView2's
+profile, because PhotinoX finds its folder through the known-folder API, as `AppPaths` does. Every
+launch therefore shared `%LOCALAPPDATA%\PhotinoX\EBWebView` and its `localStorage` with the
+developer's own window. The guide offer dismissed in one run was still dismissed in the next. The
+harness now also sets `WEBVIEW2_USER_DATA_FOLDER`, which WebView2 honours over the host's choice.
+
+No dependency was added: the stepper, the section picker (the pressed-button group again) and the FAQ
+(native `<details>`) are all built from what was already here.

@@ -29,6 +29,12 @@ Useful switches:
 | One spec | `npx playwright test specs/01-review-journey.spec.ts` |
 | A Release build | `DIFFHACKER_CONFIGURATION=Release npm test` |
 | Some other binary | `DIFFHACKER_HOST_EXE=/path/to/DiffHacker.Host.exe npm test` |
+| Refresh the user guide's screenshots | `npm run docs:screenshots`, then rebuild the solution |
+
+`docs:screenshots` is spec 15's guide journey with `--update-snapshots`. It overwrites the PNGs in
+`src/ui/src/help/screenshots/`, which the Help screen bundles and `docs/user-guide.md` links to. A
+normal run writes a guide screenshot into the source tree only when the file is missing, and leaves
+every other one in `artifacts/guide-screenshots/`.
 
 ## How it attaches to the window
 
@@ -43,9 +49,15 @@ DevTools Protocol. Two things make that work:
 That second one is not a convenience. .NET resolves the per-user application data directory
 through the Win32 known-folder API, which **ignores `LOCALAPPDATA`** — so on Windows there is no
 environment variable a harness could redirect, and without the switch these tests would write
-their throwaway providers and API keys into your real secret store. `LOCALAPPDATA` *is* still
-redirected, for a different reason: it is where WebView2 keeps its own browser profile, and a
-fresh one per app keeps one test's page state out of the next.
+their throwaway providers and API keys into your real secret store.
+
+The same trap applies to WebView2's own browser profile. PhotinoX resolves its folder through the
+known-folder API too, so redirecting `LOCALAPPDATA` alone left every launch sharing your real
+`%LOCALAPPDATA%\PhotinoX\EBWebView`, and its `localStorage` with it. A theme, merge toggle or
+dismissed guide offer set by one test was still set in the next one, and in your own window
+afterwards. The harness therefore also sets `WEBVIEW2_USER_DATA_FOLDER`, which WebView2 honours over
+whatever folder the host asks for. Each app gets a fresh profile, and a restart given the same root
+finds the same one.
 
 **Windows only.** CDP is a WebView2 thing; on macOS and Linux the shell is WKWebView and
 WebKitGTK, which expose no equivalent. The suite skips there rather than reporting a pass it did
@@ -91,9 +103,13 @@ specs/
   13-budget-limits.spec.ts               a run pausing at a configured limit and asking to continue
   14-analysis-parts.spec.ts              parts switched off in Settings leave the request, the
                                          screen leaves them out, and a run override is forgotten
+  15-user-guide.spec.ts                  the Help guide followed for real, each step photographed,
+                                         and Help reachable from every screen with every image loaded
 src/
   appHarness.ts    launches the host, attaches over CDP, screenshots, tears down
   gitFixture.ts    builds real repositories in temp directories
+  guideFixture.ts  the change the user guide shows, and the answer a good model gives about it
+  guideCamera.ts   the guide's screenshots: fixed size, paths redacted, written where they belong
   screens.ts       locators, one class per screen
   fixtures.ts      the `test` object with `diffhacker` and `repos`
   strings.ts       the application's catalogue, imported

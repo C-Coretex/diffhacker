@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BookOpenIcon, NetworkIcon, SettingsIcon } from 'lucide-react';
+import { BookOpenIcon, CircleHelpIcon, NetworkIcon, SettingsIcon } from 'lucide-react';
 import { describeError } from '@/i18n/errors';
 import { useT } from '@/i18n/useT';
 import { useRpc } from '@/rpc/RpcProvider';
@@ -15,6 +15,7 @@ import { SettingsScreen } from '@/components/SettingsScreen';
 import { AnalysisScreen } from '@/components/AnalysisScreen';
 import { ProfileScreen } from '@/components/ProfileScreen';
 import { HostPanel } from '@/components/HostPanel';
+import { HelpScreen } from '@/help/HelpScreen';
 
 export function App() {
   const t = useT();
@@ -24,6 +25,8 @@ export function App() {
   const connection = useAppStore((state) => state.connection);
   const screen = useAppStore((state) => state.screen);
   const showScreen = useAppStore((state) => state.showScreen);
+  const openHelp = useAppStore((state) => state.openHelp);
+  const closeHelp = useAppStore((state) => state.closeHelp);
   const setConnected = useAppStore((state) => state.setConnected);
   const setDetached = useAppStore((state) => state.setDetached);
   const setConnectionError = useAppStore((state) => state.setConnectionError);
@@ -106,7 +109,13 @@ export function App() {
         </div>
 
         <nav className="flex items-center gap-2">
-          {screen === 'settings' || screen === 'profile' || screen === 'analysis' ? (
+          {screen === 'help' ? (
+            // Back to wherever Help was opened from — the analysis screen included, which is where a
+            // reviewer is most likely to have stopped to ask something.
+            <Button variant="ghost" size="sm" onClick={closeHelp}>
+              {t('app.nav.back')}
+            </Button>
+          ) : screen === 'settings' || screen === 'profile' || screen === 'analysis' ? (
             <Button
               variant="ghost"
               size="sm"
@@ -135,6 +144,21 @@ export function App() {
             </>
           )}
 
+          {/*
+            On every screen, outside the conditional above: Help is most needed before anything is set
+            up, and on the analysis screen, which is exactly where the other buttons give way to Back.
+          */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={openHelp}
+            aria-pressed={screen === 'help'}
+            data-testid="help-button"
+          >
+            <CircleHelpIcon aria-hidden />
+            {t('app.nav.help')}
+          </Button>
+
           <ThemePicker />
         </nav>
       </header>
@@ -162,20 +186,29 @@ export function App() {
         ) : (
           <div
             className={
-              screen === 'repository'
+              screen === 'repository' || screen === 'help'
                 ? 'flex flex-col gap-6'
                 : 'mx-auto flex max-w-3xl flex-col gap-6'
             }
           >
-            <GitMissingBanner />
-            <NoProviderBanner />
+            {/*
+              Not on Help: the banners say what to do, and Help is where someone goes to find out how
+              to do it. Repeating the banner above the answer would push the answer down.
+            */}
+            {screen !== 'help' && (
+              <>
+                <GitMissingBanner />
+                <NoProviderBanner />
+              </>
+            )}
 
-            {connection !== 'connected' && <HostPanel />}
+            {connection !== 'connected' && screen !== 'help' && <HostPanel />}
 
             {screen === 'welcome' && <WelcomeScreen />}
             {screen === 'repository' && <RepositoryScreen />}
             {screen === 'settings' && <SettingsScreen />}
             {screen === 'profile' && <ProfileScreen />}
+            {screen === 'help' && <HelpScreen />}
           </div>
         )}
       </main>

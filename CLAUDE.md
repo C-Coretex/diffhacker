@@ -256,6 +256,8 @@ Run from the repository root.
 | E2E report/screenshots | `npm run report` in `tests/e2e`; PNGs in `tests/e2e/artifacts/screenshots/` |
 | Run against throwaway state | `dotnet run --project src/DiffHacker.Host -- --data-dir <path>` |
 | Serve the toolbox over MCP | `dotnet run --project src/DiffHacker.Mcp -- --repository <path>` |
+| Refresh the user guide's screenshots | `npm run docs:screenshots` in `tests/e2e` (build first, rebuild after) |
+| Regenerate `docs/user-guide.md` | `npm run docs:guide` in `src/ui` |
 
 > Never pass `--nologo` to `dotnet test`: under Microsoft.Testing.Platform it's forwarded to
 > the test executable, which rejects it ("Zero tests ran").
@@ -430,6 +432,17 @@ Run from the repository root.
   into the panel as a queue ordered by the analysis's own reading order, and previous/next then walk
   that queue. The queue ends when the reviewer leaves it or follows an edge out of the cluster —
   `openDiffFor` keeps `diffContainerId` only for a node inside it.
+- **Help is the catalogue, drawn twice.** Every word of the Help screen — the fifteen-step guide, the
+  diagram reference, shortcuts, FAQ, troubleshooting — is in `en.help`, in the Markdown subset
+  `lib/markdown.ts` parses. `help/userGuideMarkdown.ts` renders the same strings into
+  `docs/user-guide.md`, which is **generated**: edit `en.ts`, then `npm run docs:guide`; a Vitest file
+  snapshot fails when the two differ. The step order and screenshot names are `help/guideSteps.ts`,
+  which has no imports so the E2E suite can read it. The screenshots in `help/screenshots/` are
+  **generated too**, by `15-user-guide.spec.ts` following the guide against the real app. Change a
+  screen a step shows, re-run `npm run docs:screenshots` and look at every picture. The copy makes
+  claims about the product — limits, paths, what is sent to a provider — so a change to one of those is
+  a change to `en.help` as well. Help asks the host nothing, and `closeHelp` returns to the screen it
+  was opened from. See [docs/decisions.md](docs/decisions.md#user-guide-and-help).
 - **Logging:** structured entries to rolling `log.txt` in the per-user app data dir. Redact
   secrets at the sink, not at call sites.
 - **Tests:** xUnit (.NET), Vitest + RTL (UI), Playwright (E2E). Git-layer/toolbox tests run
@@ -442,7 +455,10 @@ Run from the repository root.
   assertions from `en.ts`, screenshots at every meaningful step.
 - **E2E runs against throwaway state, never yours.** Host launched with `--data-dir` (.NET's
   per-user data dir comes from the Win32 known-folder API; no env var redirects it). Anything
-  bypassing that switch writes test providers/API keys into the developer's real secret store.
+  bypassing that switch writes test providers/API keys into the developer's real secret store. The
+  WebView2 profile has the same trap — PhotinoX finds it through the known-folder API too — so the
+  harness sets `WEBVIEW2_USER_DATA_FOLDER`; without it every test shared the developer's
+  `localStorage`.
 
 ### CI is deliberately deferred
 
@@ -508,7 +524,12 @@ otherwise the absence of a banner, and an absence cannot be waited for. **Analys
 Settings; the wire is checked to carry neither the switched-off fields nor their guidance, and to
 carry the "not wanted" line instead; the screen is checked to leave out what nobody asked for. A
 one-off override is then sent and forgotten, while Settings keeps what it was told. `withoutParts`
-strips a stub answer to match, because the stripped schema forbids the fields.
+strips a stub answer to match, because the stripped schema forbids the fields. **The user guide adds
+[15-user-guide.spec.ts](tests/e2e/specs/15-user-guide.spec.ts)**. It follows Help's fifteen steps
+for real against `guideFixture.ts`, a small shop repository built to be read, and photographs each
+one through `GuideCamera`, which redacts the temp path and port and refuses an image showing the user
+name. It also checks that Help is reachable from every screen and that every step's image actually
+loaded over `diffhacker://`.
 
 > The stub answers `stream: true` with server-sent events, because `LlmSession` streams every
 > request. A stub that only sent one JSON body read as a provider returning an empty message, and
@@ -561,6 +582,10 @@ is the same, rather than a migration framework.
 **Analysis parts added none.** The run options reuse `@radix-ui/react-popover`, the verbosity picker is
 `GroupingPicker`'s pressed-button pattern, and the schema variants are the same `System.Text.Json.Nodes`
 code the second grouping already used.
+
+**Help and the user guide added none.** The section picker is the pressed-button group again, the FAQ
+is native `<details>`, the stepper is store state and two buttons, and `docs/user-guide.md` is kept
+current by Vitest's own `toMatchFileSnapshot`.
 
 **The run library and staleness added none.** The content hash is `System.Security.Cryptography`,
 the library's numbers are SQLite's own `json_extract`, the History list reuses
