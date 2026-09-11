@@ -14,6 +14,7 @@ import { useAppStore } from '@/store/appStore';
 import { Badge } from '@/components/ui/badge';
 import { Markdown } from '@/components/analysis/Markdown';
 import { ChangeStats, NodeExplanation } from '@/components/analysis/NodeExplanation';
+import { NotRequested, useProducedParts } from '@/components/analysis/AnalysisParts';
 import { RiskColumn } from '@/components/analysis/RiskList';
 import { basename } from '@/graph/truncate';
 
@@ -134,6 +135,7 @@ export function EdgeHoverCard({
   count: number;
 }) {
   const t = useT();
+  const parts = useProducedParts();
   const label = (id: string): string => basename(view.nodes.find((n) => n.id === id)?.filePath ?? id);
 
   return (
@@ -153,7 +155,7 @@ export function EdgeHoverCard({
         {edges.map((edge) => (
           <div
             key={`${edge.sourceNodeId}->${edge.targetNodeId}`}
-            className="grid grid-cols-[1.6fr_1fr] gap-3 p-3"
+            className={parts.risks ? 'grid grid-cols-[1.6fr_1fr] gap-3 p-3' : 'flex flex-col p-3'}
           >
             <div className="flex min-w-0 flex-col gap-2">
               <p className="text-xs font-medium">
@@ -177,7 +179,9 @@ export function EdgeHoverCard({
                 )}
               </div>
 
-              {edge.explanation ? (
+              {!parts.edgeExplanations ? (
+                <NotRequested />
+              ) : edge.explanation ? (
                 <Markdown text={edge.explanation} className="text-sm leading-relaxed" />
               ) : (
                 <p className="text-sm leading-relaxed">{t('analysis.hover.nothingWritten')}</p>
@@ -188,7 +192,7 @@ export function EdgeHoverCard({
               </p>
             </div>
 
-            <RiskColumn risks={edge.risks} className="min-w-0 self-start" />
+            {parts.risks && <RiskColumn risks={edge.risks} className="min-w-0 self-start" />}
           </div>
         ))}
       </div>
@@ -205,6 +209,7 @@ export function ContainerHoverCard({
   view: AnalysisView;
 }) {
   const t = useT();
+  const parts = useProducedParts();
   const entry = view.nodes.find((node) => node.id === container.entryNodeId);
 
   return (
@@ -217,18 +222,24 @@ export function ContainerHoverCard({
         </p>
       </header>
 
-      <div className="grid grid-cols-[1.6fr_1fr] gap-3 p-3">
+      <div className={parts.risks ? 'grid grid-cols-[1.6fr_1fr] gap-3 p-3' : 'flex flex-col p-3'}>
         <div className="flex min-w-0 flex-col gap-2.5">
-          <Markdown text={container.summary} className="text-sm leading-relaxed" />
-          {container.explanation && (
-            <Markdown
-              text={container.explanation}
-              className="text-sm leading-relaxed text-muted-foreground"
-            />
+          {parts.containerExplanations ? (
+            <>
+              <Markdown text={container.summary} className="text-sm leading-relaxed" />
+              {container.explanation && (
+                <Markdown
+                  text={container.explanation}
+                  className="text-sm leading-relaxed text-muted-foreground"
+                />
+              )}
+            </>
+          ) : (
+            <NotRequested />
           )}
         </div>
 
-        <RiskColumn risks={container.risks} className="min-w-0 self-start" />
+        {parts.risks && <RiskColumn risks={container.risks} className="min-w-0 self-start" />}
       </div>
     </article>
   );

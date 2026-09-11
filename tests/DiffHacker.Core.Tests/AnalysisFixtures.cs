@@ -144,7 +144,17 @@ internal static class AnalysisFixtures
         AnalysisResult result,
         bool expectChangeClusters = true,
         bool expectImplementationGroups = true) =>
-        AnalysisValidator.Validate(result, Changeset(), expectChangeClusters, expectImplementationGroups);
+        Check(
+            result,
+            AnalysisRunOptions.Default with
+            {
+                ChangeClusters = expectChangeClusters,
+                ImplementationGroups = expectImplementationGroups,
+            });
+
+    /// <summary>Validates <paramref name="result"/> as a run asked for <paramref name="options"/>.</summary>
+    public static AnalysisValidation Check(AnalysisResult result, AnalysisRunOptions options) =>
+        AnalysisValidator.Validate(result, Changeset(), options);
 
     /// <summary>
     /// <see cref="Valid"/> with the contract declared as an abstraction its caller implements. The two

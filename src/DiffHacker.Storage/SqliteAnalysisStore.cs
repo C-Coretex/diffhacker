@@ -41,6 +41,7 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                files_json       AS FilesJson,
                reviewed_json    AS ReviewedJson,
                grouping_mode    AS GroupingMode,
+               options_json     AS OptionsJson,
                trace_json       AS TraceJson
           FROM analyses
         """;
@@ -58,11 +59,11 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                 (id, repository_path, schema_version, created_at_utc, head_commit, provider_name,
                  model, input_tokens, output_tokens, cost_usd, duration_ms, repair_rounds,
                  document_json, statistics_json, diagnostics_json, files_json, reviewed_json,
-                 grouping_mode, trace_json)
+                 grouping_mode, options_json, trace_json)
             VALUES (@id, @repositoryPath, @schemaVersion, @createdAtUtc, @headCommit, @providerName,
                     @model, @inputTokens, @outputTokens, @costUsd, @durationMs, @repairRounds,
                     @documentJson, @statisticsJson, @diagnosticsJson, @filesJson, @reviewedJson,
-                    @groupingMode, @traceJson);
+                    @groupingMode, @optionsJson, @traceJson);
             """,
             new
             {
@@ -96,6 +97,9 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                 // to open in, and the application-wide default is not this analysis's business.
                 groupingMode = analysis.Grouping is { } grouping
                     ? AnalysisGroupingNames.Of(grouping)
+                    : null,
+                optionsJson = analysis.Requested is { } requested
+                    ? JsonSerializer.Serialize(requested, StorageJson.Options)
                     : null,
                 traceJson = JsonSerializer.Serialize(
                     new AnalysisTrace(analysis.ToolCalls, analysis.ProgressMessages),
@@ -441,6 +445,9 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
         /// <summary>Null before schema 7, and null until the reviewer chooses a grouping.</summary>
         public string? GroupingMode { get; init; }
 
+        /// <summary>Null before schema 9, where what the run asked for is inferred from the document.</summary>
+        public string? OptionsJson { get; init; }
+
         public required string TraceJson { get; init; }
 
         public Analysis ToAnalysis()
@@ -468,6 +475,9 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                     : JsonSerializer.Deserialize<List<ChangedFileFacts>>(FilesJson, StorageJson.Options) ?? [],
                 ReviewedNodeIds = Read(ReviewedJson),
                 Grouping = AnalysisGroupingNames.Parse(GroupingMode),
+                Requested = OptionsJson is null
+                    ? null
+                    : JsonSerializer.Deserialize<AnalysisRunOptions>(OptionsJson, StorageJson.Options),
                 ToolCalls = trace?.ToolCalls ?? [],
                 ProgressMessages = trace?.ProgressMessages ?? [],
             };

@@ -133,7 +133,7 @@ public sealed partial class AnalysisRunner(
 
         var conversation = new LlmConversation
         {
-            SystemPrompt = AnalysisPrompt.SystemPrompt(options.ChangeClusters, options.ImplementationGroups),
+            SystemPrompt = AnalysisPrompt.SystemPrompt(options),
             UserMessage = AnalysisPrompt.OpeningMessage(RepositoryName(repositoryPath), changeset, storedProfile),
             Tools = toolbox.Tools,
             ResponseFormat = new LlmResponseFormat
@@ -142,7 +142,7 @@ public sealed partial class AnalysisRunner(
 
                 // The prompt and the schema agree about which parts exist, or the model is asked for
                 // a field it was told nothing about and told about a field it cannot answer in.
-                SchemaJson = AnalysisResponseSchema.For(options.ChangeClusters, options.ImplementationGroups),
+                SchemaJson = AnalysisResponseSchema.For(options),
             },
             MaxSchemaRepairs = RepairRoundsFor(changeset.Files.Count, SchemaRepairFloor, SchemaRepairCeiling),
             MaxResultRepairs = RepairRoundsFor(changeset.Files.Count, ResultRepairFloor, ResultRepairCeiling),
@@ -156,11 +156,7 @@ public sealed partial class AnalysisRunner(
                     return ["The answer could not be read back as an analysis document."];
                 }
 
-                validation = AnalysisValidator.Validate(
-                    candidate,
-                    changeset.Files,
-                    options.ChangeClusters,
-                    options.ImplementationGroups);
+                validation = AnalysisValidator.Validate(candidate, changeset.Files, options);
                 return validation.ErrorMessages;
             },
         };
@@ -229,6 +225,10 @@ public sealed partial class AnalysisRunner(
             Duration = stopwatch.Elapsed,
             RepairRounds = run.ResultRepairs,
             Document = candidate,
+
+            // Kept beside the answer, so an empty risk list can later be told apart from a run that
+            // was never asked for risks.
+            Requested = options,
 
             // Recorded for dependency flow, the grouping an analysis opens in; the four numbers that
             // depend on the grouping are recomputed for the other one on read.

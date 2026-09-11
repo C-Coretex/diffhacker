@@ -41,6 +41,29 @@ public sealed record Analysis
     public required AnalysisResult Document { get; init; }
 
     /// <summary>
+    /// Which parts of the analysis the run asked for, and at what verbosity. Null on an analysis
+    /// written before database schema 9; <see cref="RequestedParts"/> answers for those.
+    /// <para>
+    /// Beside the document rather than inside it, like <see cref="Grouping"/>: the document is the
+    /// model's answer, and what it was asked for is not part of the answer. It is the only thing that
+    /// tells "no risks were found" from "risks were not asked for", and the reviewer is owed the
+    /// difference.
+    /// </para>
+    /// </summary>
+    public AnalysisRunOptions? Requested { get; init; }
+
+    /// <summary>
+    /// What the run asked for, as far as it can be told. <see cref="Requested"/> when it was
+    /// recorded. For an older analysis, the two groupings and implementation groups are read from the
+    /// document, which does know, and everything else was always produced then.
+    /// </summary>
+    public AnalysisRunOptions RequestedParts => Requested ?? AnalysisRunOptions.Legacy with
+    {
+        ChangeClusters = Document.ClusterContainers.Count > 0,
+        ImplementationGroups = Document.ImplementationGroups is not null,
+    };
+
+    /// <summary>
     /// The numbers, computed for the dependency-flow grouping. Use <see cref="StatisticsFor"/> when
     /// showing another one.
     /// </summary>

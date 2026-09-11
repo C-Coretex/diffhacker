@@ -347,6 +347,64 @@ export function stubImplementationResult(paths: readonly string[]) {
   };
 }
 
+/** The parts a run can be told to skip, which a stub answer must then leave out. */
+export interface SkippedParts {
+  readonly risks?: boolean;
+  readonly nodeExplanations?: boolean;
+  readonly edgeExplanations?: boolean;
+  readonly containerExplanations?: boolean;
+}
+
+/**
+ * The same answer without the parts a run was told to skip. Removed rather than emptied, because the
+ * schema such a run answers in has no such fields and forbids additional ones — an answer that still
+ * carried them would be sent back for repair, exactly as a real model's would.
+ */
+export function withoutParts(stub: object, skipped: SkippedParts): Record<string, unknown> {
+  type Json = Record<string, unknown>;
+
+  const result = stub as { dependencyContainers: Json[]; nodes: Json[]; edges: Json[] } & Json;
+
+  const strip = (item: Json, fields: readonly string[]): Json =>
+    Object.fromEntries(Object.entries(item).filter(([key]) => !fields.includes(key)));
+
+  const containerFields = [
+    ...(skipped.risks ? ['risks'] : []),
+    ...(skipped.containerExplanations ? ['summary', 'explanation'] : []),
+  ];
+
+  const nodeFields = [
+    ...(skipped.risks ? ['risks'] : []),
+    ...(skipped.nodeExplanations ? ['whatChanged', 'whyItChanged', 'howItAffectsOthers', 'implementationNotes'] : []),
+  ];
+
+  const edgeFields = [
+    ...(skipped.risks ? ['risks'] : []),
+    ...(skipped.edgeExplanations ? ['explanation'] : []),
+  ];
+
+  const answer: Json = {
+    ...result,
+    dependencyContainers: result.dependencyContainers.map((c) => strip(c, containerFields)),
+    nodes: result.nodes.map((n) => {
+      const node = strip(n, nodeFields);
+      // The risky state is a risk judgement, so the schema without risks has no such value.
+      return skipped.risks ? { ...node, states: (n.states as string[]).filter((s) => s !== 'risky') } : node;
+    }),
+    edges: result.edges.map((e) => strip(e, edgeFields)),
+  };
+
+  if (Array.isArray(answer.clusterContainers)) {
+    answer.clusterContainers = (answer.clusterContainers as Json[]).map((c) => strip(c, containerFields));
+  }
+
+  if (skipped.risks) {
+    delete answer.overallRisks;
+  }
+
+  return answer;
+}
+
 /**
  * The same document with one file left out, so a run has something specific to be sent back for.
  * Requirement 4 is that the failure fed to the model is specific, and this is what makes it so.

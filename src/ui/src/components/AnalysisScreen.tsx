@@ -1,11 +1,13 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { HistoryIcon, Loader2Icon, NetworkIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
-import type { AnalysisGroupingMode, AnalysisView } from '@/contracts';
+import type { AnalysisGroupingMode, AnalysisOptions, AnalysisView } from '@/contracts';
 import { describeError } from '@/i18n/errors';
 import { formatCount } from '@/i18n/format';
 import { useT } from '@/i18n/useT';
+import { FALLBACK_OPTIONS, sameOptions, verbosityLabel } from '@/lib/analysisParts';
 import {
   getAnalysis,
+  getAnalysisDefaults,
   listAnalyses,
   onAnalysisProgress,
   onBudgetLimitReached,
@@ -18,10 +20,10 @@ import { useAppStore } from '@/store/appStore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
 import { AnalysisLibraryButton } from './analysis/AnalysisLibrary';
+import { AnalysisPartsProvider } from './analysis/AnalysisParts';
 import { MarkdownReferences } from './analysis/Markdown';
+import { RunOptionsPopover } from './analysis/RunOptionsPopover';
 import { StaleAnalysisBanner } from './analysis/StaleAnalysisBanner';
 import { useFreshnessCheck } from './analysis/useFreshnessCheck';
 import { AnalysisOverviewBand } from './AnalysisOverviewBand';
@@ -94,12 +96,28 @@ export function AnalysisScreen() {
   const abort = useRef<AbortController>(null);
   const path = repository?.path;
 
-  // Local rather than in the store, and defaulted from the host: what the next run should ask for is
-  // remembered application-wide, so the box comes back ticked the way it was left.
-  const [changeClusters, setChangeClusters] = useState<boolean>();
-  const produceChangeClusters = changeClusters ?? view?.produceChangeClusters ?? true;
-  const [implementationGroups, setImplementationGroups] = useState<boolean>();
-  const produceImplementationGroups = implementationGroups ?? view?.produceImplementationGroups ?? true;
+  // What the next run asks for: the defaults from Settings, unless the reviewer changed them for this
+  // run. The change is local and dropped once a run succeeds — the host never remembers it either —
+  // so trimming one expensive re-run never quietly trims the ones after it.
+  const defaults = useAppStore((state) => state.analysisDefaults);
+  const setDefaults = useAppStore((state) => state.setAnalysisDefaults);
+  const [override, setOverride] = useState<AnalysisOptions>();
+  const baseline = defaults ?? FALLBACK_OPTIONS;
+  const nextRun = override ?? baseline;
+
+  // Asked each time the screen opens, so a default changed in Settings a moment ago is the one the
+  // options start from.
+  useEffect(() => {
+    if (!client) return;
+
+    getAnalysisDefaults(client)
+      .then(setDefaults)
+      .catch((caught: unknown) => {
+        // The run still works: the host resolves anything the request leaves out from the same
+        // defaults, so the fallback shown here is a display problem, not a spending one.
+        console.warn('[analysis] The run defaults could not be read.', caught);
+      });
+  }, [client, setDefaults]);
 
   // Reading the stored analysis never starts a conversation, which is the whole reason it is
   // stored: the money was spent once.
@@ -162,14 +180,16 @@ export function AnalysisScreen() {
       setAnalysis(
         await runAnalysis(
           client,
-          {
-            repositoryPath: path,
-            changeClusters: produceChangeClusters,
-            implementationGroups: produceImplementationGroups,
-          },
+          // Every part named, even when it matches the defaults: what the reviewer saw in the options
+          // is exactly what is asked for, whatever Settings says by the time the request lands.
+          { repositoryPath: path, ...nextRun },
           controller.signal,
         ),
       );
+
+      // One-off: the next run starts from the defaults again. A failed or stopped run keeps it, so
+      // trying again asks for what was just asked for.
+      setOverride(undefined);
     } catch (caught) {
       // A cancelled run is not a failure to report as one, but it did spend money, so the message
       // says what happened rather than pretending nothing did.
@@ -178,7 +198,7 @@ export function AnalysisScreen() {
       abort.current = null;
       endRun();
     }
-  }, [client, path, startRun, setAnalysis, endRun, produceChangeClusters, produceImplementationGroups, t]);
+  }, [client, path, startRun, setAnalysis, endRun, nextRun, t]);
 
   /**
    * Switches which grouping the diagram shows. It reads the stored answer a second way and spends
@@ -226,63 +246,41 @@ export function AnalysisScreen() {
         </div>
 
         {/*
-          Beside the button that spends the money, not in a settings page: this is the only control
-          on the screen that change what a run costs, and the moment to decide is the moment you are
-          about to pay. Their state is remembered application-wide by the host, so each is a default
-          you set once and an override you can make per run.
+          One group, so a long provenance line wraps the three together rather than parting the
+          options from the button they configure.
         */}
-        <div className="ml-auto flex items-center gap-2">
-          <Checkbox
-            id="analysis-change-clusters"
-            checked={produceChangeClusters}
+        <div className="ml-auto flex items-center gap-3">
+          {/*
+            Beside the button that spends the money: the moment to decide what a run leaves out is
+            the moment you are about to pay for it. The defaults are set in Settings; this changes
+            them for the next run only.
+          */}
+          <RunOptionsPopover
+            value={nextRun}
+            defaults={baseline}
+            onChange={(next) => setOverride(sameOptions(next, baseline) ? undefined : next)}
             disabled={run === 'running'}
-            onChange={(event) => setChangeClusters(event.target.checked)}
-            data-testid="toggle-change-clusters"
           />
-          <Label
-            htmlFor="analysis-change-clusters"
-            className="text-xs font-normal text-muted-foreground"
-            title={t('analysis.changeClustersBody')}
-          >
-            {t('analysis.changeClusters')}
-          </Label>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="analysis-implementation-groups"
-            checked={produceImplementationGroups}
+          <Button
             disabled={run === 'running'}
-            onChange={(event) => setImplementationGroups(event.target.checked)}
-            data-testid="toggle-implementation-groups"
-          />
-          <Label
-            htmlFor="analysis-implementation-groups"
-            className="text-xs font-normal text-muted-foreground"
-            title={t('analysis.implementationGroupsBody')}
+            onClick={() => void analyse()}
+            data-testid="analysis-run-button"
           >
-            {t('analysis.implementationGroups')}
-          </Label>
+            {run === 'running' ? (
+              <Loader2Icon className="size-4 animate-spin" aria-hidden />
+            ) : (
+              <NetworkIcon aria-hidden />
+            )}
+            {run === 'running'
+              ? t('analysis.running')
+              : view?.hasAnalysis
+                ? t('analysis.rerun')
+                : t('analysis.run')}
+          </Button>
+
+          <AnalysisLibraryButton disabled={run === 'running'} />
         </div>
-
-        <Button
-          disabled={run === 'running'}
-          onClick={() => void analyse()}
-          data-testid="analysis-run-button"
-        >
-          {run === 'running' ? (
-            <Loader2Icon className="size-4 animate-spin" aria-hidden />
-          ) : (
-            <NetworkIcon aria-hidden />
-          )}
-          {run === 'running'
-            ? t('analysis.running')
-            : view?.hasAnalysis
-              ? t('analysis.rerun')
-              : t('analysis.run')}
-        </Button>
-
-        <AnalysisLibraryButton disabled={run === 'running'} />
       </header>
 
       {analysed && !view.isLatest && <EarlierRunNotice view={view} />}
@@ -334,15 +332,21 @@ export function AnalysisScreen() {
           {/* Only ever drawn here, where no run is going: a run replaces this whole block. */}
           <StaleAnalysisBanner view={view} onReanalyse={() => void analyse()} />
 
-          {/* Every file the model's prose names, wherever it is drawn, opens from the text. */}
-          <MarkdownReferences view={view}>
-            <AnalysisOverviewBand view={view} />
-            <ReviewWorkspace
-              view={view}
-              onChangeGrouping={(grouping) => void changeGrouping(grouping)}
-              groupingBusy={switching}
-            />
-          </MarkdownReferences>
+          {/*
+            Every file the model's prose names, wherever it is drawn, opens from the text; and every
+            card knows which parts this run was asked for, so it can leave out what nobody asked for
+            rather than showing it empty.
+          */}
+          <AnalysisPartsProvider view={view}>
+            <MarkdownReferences view={view}>
+              <AnalysisOverviewBand view={view} />
+              <ReviewWorkspace
+                view={view}
+                onChangeGrouping={(grouping) => void changeGrouping(grouping)}
+                groupingBusy={switching}
+              />
+            </MarkdownReferences>
+          </AnalysisPartsProvider>
         </div>
       )}
 
@@ -578,6 +582,36 @@ function Provenance({ view }: { view: AnalysisView }) {
       {(view.repairRounds ?? 0) > 0 && (
         <span>{t('analysis.repairs', { count: view.repairRounds ?? 0 })}</span>
       )}
+      {view.verbosity && (
+        <span data-testid="analysis-verbosity">
+          {t('analysis.parts.verbosityLine', { verbosity: t(verbosityLabel(view.verbosity)) })}
+        </span>
+      )}
+      <SkippedParts view={view} />
     </div>
+  );
+}
+
+/**
+ * Which parts the run behind this analysis was not asked for, so an empty card or a missing risk
+ * column reads as a choice that was made rather than as the model finding nothing. The two groupings
+ * and implementation groups are not listed: their own controls already say so where they are drawn.
+ */
+function SkippedParts({ view }: { view: AnalysisView }) {
+  const t = useT();
+
+  const skipped = [
+    !view.risksProduced && t('analysis.parts.skippedRisks'),
+    !view.nodeExplanationsProduced && t('analysis.parts.skippedNodeExplanations'),
+    !view.edgeExplanationsProduced && t('analysis.parts.skippedEdgeExplanations'),
+    !view.containerExplanationsProduced && t('analysis.parts.skippedContainerExplanations'),
+  ].filter((part): part is string => typeof part === 'string');
+
+  if (skipped.length === 0) return null;
+
+  return (
+    <span data-testid="analysis-skipped-parts">
+      {t('analysis.parts.skipped', { parts: skipped.join(', ') })}
+    </span>
   );
 }

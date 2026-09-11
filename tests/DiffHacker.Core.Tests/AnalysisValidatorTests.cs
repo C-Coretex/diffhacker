@@ -813,7 +813,9 @@ public sealed class AnalysisValidatorTests
         // the two halves of "nothing to say" should agree rather than argue.
         var empty = new AnalysisResult { Summary = "Nothing changed." };
 
-        AnalysisValidator.Validate(empty, [], expectChangeClusters: false).IsValid.ShouldBeTrue();
+        AnalysisValidator
+            .Validate(empty, [], AnalysisRunOptions.Default with { ChangeClusters = false, ImplementationGroups = false })
+            .IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -869,16 +871,17 @@ public sealed class AnalysisValidatorTests
     public void An_overlong_summary_risk_and_container_field_are_all_reported()
     {
         // Every written field has a budget, not only the ones on a node.
+        var budgets = AnalysisFieldBudgets.For(AnalysisRunOptions.Default.Verbosity);
         var result = AnalysisFixtures.Valid();
         var verbose = result with
         {
-            Summary = new string('x', AnalysisFieldBudgets.OverallSummary * 3),
-            OverallRisks = [new string('x', AnalysisFieldBudgets.Risk * 3)],
+            Summary = new string('x', budgets.OverallSummary * 3),
+            OverallRisks = [new string('x', budgets.Risk * 3)],
             DependencyContainers =
             [
                 result.DependencyContainers[0] with
                 {
-                    Explanation = new string('x', AnalysisFieldBudgets.ContainerExplanation * 3),
+                    Explanation = new string('x', budgets.ContainerExplanation * 3),
                 },
                 result.DependencyContainers[1],
             ],
@@ -904,12 +907,98 @@ public sealed class AnalysisValidatorTests
         var result = AnalysisFixtures.Valid();
         var other = new[] { AnalysisFixtures.File("src/Elsewhere.cs") };
 
-        var validation = AnalysisValidator.Validate(result, other, expectChangeClusters: true);
+        var validation = AnalysisValidator.Validate(
+            result,
+            other,
+            AnalysisRunOptions.Default with { ImplementationGroups = false });
 
         validation.IsValid.ShouldBeFalse();
         validation.Errors.Count(static d => d.Code == AnalysisDiagnosticCodes.UnknownFile).ShouldBe(3);
         validation.Errors.ShouldContain(d =>
             d.Code == AnalysisDiagnosticCodes.FileNotCovered && d.Subject == "src/Elsewhere.cs");
+    }
+
+    [Fact]
+    public void A_run_without_node_explanations_is_not_asked_for_the_prose_it_was_never_given_room_for()
+    {
+        // The schema that run answered in had no whatChanged or whyItChanged, so an empty one is the
+        // only answer the model could give — rejecting it would be a repair round nobody can pass.
+        var result = AnalysisFixtures.Valid();
+        var titlesOnly = result with
+        {
+            Nodes = [.. result.Nodes.Select(static node => node with { WhatChanged = string.Empty, WhyItChanged = string.Empty })],
+        };
+
+        AnalysisFixtures
+            .Check(titlesOnly, AnalysisRunOptions.Default with { NodeExplanations = false })
+            .IsValid.ShouldBeTrue();
+
+        // The same answer to a run that did ask for them is still wrong.
+        AnalysisFixtures.Check(titlesOnly).Errors
+            .ShouldContain(d => d.Code == AnalysisDiagnosticCodes.EmptyNodeField);
+    }
+
+    [Fact]
+    public void A_run_without_node_explanations_still_insists_on_a_title()
+    {
+        var result = AnalysisFixtures.Valid();
+        var untitled = result with
+        {
+            Nodes = [result.Nodes[0] with { Title = " " }, result.Nodes[1], result.Nodes[2]],
+        };
+
+        AnalysisFixtures.Check(untitled, AnalysisRunOptions.Default with { NodeExplanations = false }).Errors
+            .ShouldHaveSingleItem().Code.ShouldBe(AnalysisDiagnosticCodes.EmptyNodeField);
+    }
+
+    [Theory]
+    [InlineData(AnalysisVerbosity.Brief)]
+    [InlineData(AnalysisVerbosity.Medium)]
+    [InlineData(AnalysisVerbosity.Detailed)]
+    public void The_length_warning_is_measured_against_the_verbosity_the_run_asked_for(AnalysisVerbosity verbosity)
+    {
+        // The prompt asked for this verbosity's lengths, so "too long" means too long for those: a
+        // detailed run is not reported for writing what it was asked to write.
+        var budget = AnalysisFieldBudgets.For(verbosity).NodeProse;
+        var options = AnalysisRunOptions.Default with { Verbosity = verbosity };
+        var result = AnalysisFixtures.Valid();
+
+        AnalysisResult WithWhatChanged(int length) => result with
+        {
+            Nodes = [result.Nodes[0] with { WhatChanged = new string('x', length) }, result.Nodes[1], result.Nodes[2]],
+        };
+
+        AnalysisFixtures.Check(WithWhatChanged(budget * AnalysisFieldBudgets.OvershootFactor), options).Warnings
+            .ShouldNotContain(d => d.Code == AnalysisDiagnosticCodes.VerboseField);
+
+        AnalysisFixtures.Check(WithWhatChanged((budget * AnalysisFieldBudgets.OvershootFactor) + 1), options).Warnings
+            .ShouldContain(d => d.Code == AnalysisDiagnosticCodes.VerboseField && d.Subject == result.Nodes[0].Id);
+    }
+
+    [Fact]
+    public void The_three_verbosities_ask_for_rising_lengths_and_brief_is_the_default()
+    {
+        var brief = AnalysisFieldBudgets.For(AnalysisVerbosity.Brief);
+        var medium = AnalysisFieldBudgets.For(AnalysisVerbosity.Medium);
+        var detailed = AnalysisFieldBudgets.For(AnalysisVerbosity.Detailed);
+
+        foreach (var pick in new Func<AnalysisFieldBudgetSet, int>[]
+        {
+            static b => b.NodeProse,
+            static b => b.ContainerSummary,
+            static b => b.ContainerExplanation,
+            static b => b.OverallSummary,
+            static b => b.Risk,
+        })
+        {
+            pick(brief).ShouldBeLessThan(pick(medium));
+            pick(medium).ShouldBeLessThan(pick(detailed));
+        }
+
+        // Titles are labels the renderer clamps, so they do not grow.
+        detailed.NodeTitle.ShouldBe(brief.NodeTitle);
+
+        AnalysisRunOptions.Default.Verbosity.ShouldBe(AnalysisVerbosity.Brief);
     }
 
     /// <summary>

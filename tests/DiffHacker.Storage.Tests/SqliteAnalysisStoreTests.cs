@@ -523,6 +523,59 @@ public sealed class SqliteAnalysisStoreTests : IAsyncLifetime
             .ShouldBe("change_clusters");
     }
 
+    [Fact]
+    public async Task What_a_run_asked_for_survives_a_restart()
+    {
+        // The only thing that tells "no risks were found" from "risks were not asked for".
+        var requested = AnalysisRunOptions.Default with
+        {
+            Risks = false,
+            EdgeExplanations = false,
+            Verbosity = AnalysisVerbosity.Detailed,
+        };
+
+        await _store.SaveAsync(Sample() with { Requested = requested }, TestContext.Current.CancellationToken);
+
+        await Restart();
+
+        (await _store.GetLatestAsync("/repo", TestContext.Current.CancellationToken))
+            .ShouldNotBeNull()
+            .Requested.ShouldBe(requested);
+    }
+
+    [Fact]
+    public async Task An_analysis_that_recorded_nothing_reads_back_as_not_recorded_and_infers_its_parts()
+    {
+        // A row written before schema 9 has a null options_json. It opens, and what it was asked for
+        // is inferred: the two groupings and implementation groups from its document, and every other
+        // part as produced — which it was, since nothing could be switched off then.
+        await _store.SaveAsync(Sample() with { Requested = null }, TestContext.Current.CancellationToken);
+
+        var stored = (await _store.GetLatestAsync("/repo", TestContext.Current.CancellationToken)).ShouldNotBeNull();
+
+        stored.Requested.ShouldBeNull();
+        stored.RequestedParts.Risks.ShouldBeTrue();
+        stored.RequestedParts.NodeExplanations.ShouldBeTrue();
+        stored.RequestedParts.Verbosity.ShouldBe(AnalysisVerbosity.Medium);
+        stored.RequestedParts.ChangeClusters.ShouldBe(stored.Document.ClusterContainers.Count > 0);
+    }
+
+    [Fact]
+    public async Task The_options_column_holds_the_spellings_the_schema_uses()
+    {
+        await _store.SaveAsync(
+            Sample() with { Requested = AnalysisRunOptions.Default with { Verbosity = AnalysisVerbosity.Detailed } },
+            TestContext.Current.CancellationToken);
+
+        await using var connection = await _database.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT options_json FROM analyses WHERE id = 'analysis1';";
+
+        var json = (await command.ExecuteScalarAsync(TestContext.Current.CancellationToken)).ShouldBeOfType<string>();
+
+        json.ShouldContain("\"detailed\"");
+    }
+
     /// <summary>Closes the database and opens it again, the way the application does on restart.</summary>
     private async Task Restart()
     {

@@ -21,10 +21,12 @@ namespace DiffHacker.Core.Analyses;
 /// gets it right the first time, and repair rounds cost real money on a large change.
 /// </para>
 /// <para>
-/// It is assembled from sections rather than written as one literal because two of them come in two
-/// versions: a run that was not asked for the change-clusters grouping is not told about it at all.
-/// Telling a model about work it must not do costs the tokens of the instruction on every turn and
-/// invites the work anyway.
+/// It is assembled from sections rather than written as one literal because most of it depends on
+/// <see cref="AnalysisRunOptions"/>: a part the reviewer switched off — the second grouping,
+/// implementation groups, risks, node, edge or cluster explanations — has its guidance removed, and
+/// the field lengths follow the run's verbosity. Guidance about work that is not wanted costs its
+/// tokens on every turn and invites the work anyway. What replaces it, for the parts a model would
+/// otherwise volunteer, is one short <see cref="NotWanted"/> section saying plainly not to do it.
 /// </para>
 /// <para>
 /// <b>The division of labour with the schema matters, and is easy to lose.</b> Both this prompt and
@@ -45,36 +47,99 @@ public static class AnalysisPrompt
     public const string SchemaKey = "analysis-result";
 
     /// <summary>
-    /// What the model is told, for a run that wants both groupings or only the first, with or
-    /// without implementation groups.
+    /// What the model is told, for the parts of an analysis this run asks for.
     /// </summary>
-    /// <param name="changeClusters">
-    /// Whether the second grouping was asked for. When it was not, its fields are not in the schema
-    /// either (<see cref="AnalysisResponseSchema"/>) and nothing here mentions them — a model told
-    /// about work it must not do has been charged for reading the instruction.
+    /// <param name="options">
+    /// Which parts were asked for, and how long their prose should be; <see cref="AnalysisRunOptions.Default"/>
+    /// when null. A part that was not asked for is absent from the schema too
+    /// (<see cref="AnalysisResponseSchema"/>), and its guidance is absent here — a model told how to do
+    /// work it must not do has been charged for reading the instruction.
     /// </param>
-    /// <param name="implementationGroups">
-    /// Whether implementation groups were asked for, on the same terms: absent from the schema and
-    /// never mentioned here when they were not.
-    /// </param>
-    public static string SystemPrompt(bool changeClusters = true, bool implementationGroups = true) =>
-        string.Join(
+    public static string SystemPrompt(AnalysisRunOptions? options = null)
+    {
+        options ??= AnalysisRunOptions.Default;
+
+        return string.Join(
             "\n\n",
             new[]
             {
                 Opening,
+                NotWanted(options),
                 WhatAClusterIs,
-                changeClusters ? TwoGroupings : OneGroupingOnly,
+                options.ChangeClusters ? TwoGroupings(options) : OneGroupingOnly,
                 StartingPoint,
                 MembershipOrder,
-                Edges,
-                implementationGroups ? ImplementationGroups : null,
-                changeClusters ? ReadingOrderBoth : ReadingOrderOne,
+                Edges(options.EdgeExplanations),
+                options.ImplementationGroups ? ImplementationGroups : null,
+                options.ChangeClusters ? ReadingOrderBoth : ReadingOrderOne,
                 RulesShared,
-                changeClusters ? RulesBoth : RulesOne,
-                Writing,
-                Formatting,
+                options.ChangeClusters ? RulesBoth : RulesOne,
+                Writing(options),
+                Formatting(options),
             }.OfType<string>());
+    }
+
+    /// <summary>
+    /// The parts this run was told not to produce, said once and plainly. Null when every part is
+    /// wanted.
+    /// <para>
+    /// Removing a field from the schema stops the model writing it there, not doing the work: a model
+    /// that has always been asked for risks notices a dangerous migration and says so in a summary
+    /// instead. So each part a model would otherwise volunteer gets one line here, near the top, where
+    /// it shapes the exploration rather than only the answer. Implementation groups are not listed —
+    /// nothing would prompt a model to declare them, and naming them would only cost their tokens —
+    /// and the second grouping says so in its own section, which it replaces.
+    /// </para>
+    /// </summary>
+    private static string? NotWanted(AnalysisRunOptions options)
+    {
+        var lines = new List<string>();
+
+        if (!options.Risks)
+        {
+            lines.Add(
+                "- Risks. Do not assess what could go wrong, and do not slip a warning into a title or "
+                + "a summary instead.");
+        }
+
+        if (!options.NodeExplanations)
+        {
+            lines.Add(
+                "- Node explanations. A node is its title, its place in a container and its "
+                + "importance — no account of what changed, why, what it affects or how it is built. "
+                + "Read a file only as far as placing and ordering it needs, and make the title say "
+                + "what the file does in this change.");
+        }
+
+        if (!options.EdgeExplanations)
+        {
+            lines.Add(
+                "- Edge explanations. An edge is its two ends and its kind. Choose edges as carefully "
+                + "as ever; do not describe them.");
+        }
+
+        if (!options.ContainerExplanations)
+        {
+            lines.Add(
+                "- Cluster explanations. A container is its title, its entry node and its members — no "
+                + "summary and no explanation. Make the title say what the cluster is about.");
+        }
+
+        if (lines.Count == 0)
+        {
+            return null;
+        }
+
+        return
+            """
+            ## !! NOT WANTED ON THIS RUN !!
+
+            The reviewer switched these off. Their fields do not exist; spend no exploration, reasoning
+            or words on them:
+
+            """
+            + string.Join("\n", lines);
+    }
 
     private const string Opening =
         """
@@ -149,15 +214,30 @@ public static class AnalysisPrompt
     /// <summary>
     /// The section Iteration 11 exists for. Two groupings of one node set, and the reviewer switches
     /// between them — so the difference between them has to be stated as a difference in purpose,
-    /// not as two goes at the same question.
+    /// not as two goes at the same question. The two phrases naming explanations follow the run's
+    /// options, so a run without them is not told to give the second grouping "real explanations".
     /// </summary>
-    private const string TwoGroupings =
+    private static string TwoGroupings(AnalysisRunOptions options) =>
+        TwoGroupingsTemplate
+            .Replace(
+                "{shared}",
+                options.NodeExplanations ? "Same nodes, same explanations, same edges" : "Same nodes, same edges",
+                StringComparison.Ordinal)
+            .Replace(
+                "{real}",
+                options.ContainerExplanations
+                    ? "Give it real cluster titles, real summaries, real explanations and its own entry points."
+                    : "Give it real cluster titles and its own entry points.",
+                StringComparison.Ordinal);
+
+    /// <inheritdoc cref="TwoGroupings"/>
+    private const string TwoGroupingsTemplate =
         """
         ## !! GROUP THE SAME NODES TWICE !!
 
-        The reviewer has a switch with two positions, and you fill in both. Same nodes, same
-        explanations, same edges — grouped two different ways, because two different questions get
-        asked of one change and no single grouping answers both.
+        The reviewer has a switch with two positions, and you fill in both. {shared} — grouped two
+        different ways, because two different questions get asked of one change and no single
+        grouping answers both.
 
         **dependencyContainers — dependency flow.** Clusters that keep a COMPLETE change path
         intact. When a change runs from a migration, through the token that reads it, into the
@@ -170,9 +250,8 @@ public static class AnalysisPrompt
         now breaks across three clusters, and that is correct here — this grouping answers "what
         areas did this touch, and how much of each?", and it is genuinely useful for that.
 
-        It is not a fallback and not a rough draft of the other one. Give it real cluster titles,
-        real summaries, real explanations and its own entry points. A reviewer who switches to it and
-        finds the first grouping with the labels changed has been given nothing.
+        It is not a fallback and not a rough draft of the other one. {real} A reviewer who switches
+        to it and finds the first grouping with the labels changed has been given nothing.
 
         The two are independent: different clusters, different ids, different number of them,
         different reading order. What they cannot differ on is coverage — every node appears exactly
@@ -220,13 +299,34 @@ public static class AnalysisPrompt
         one that matters more first.
         """;
 
-    private const string Edges =
+    /// <summary>
+    /// What an edge is. The first paragraph comes in two versions: explained in prose, or — when the
+    /// reviewer switched edge explanations off — its two ends and its kind and nothing more.
+    /// </summary>
+    private static string Edges(bool explained) =>
+        (explained ? EdgesExplained : EdgesUnexplained) + "\n\n" + EdgesShared;
+
+    private const string EdgesExplained =
         """
         ## Edges — how reading flows
 
         An edge means "to understand the target, read from the source". Do not classify it as
         calls, implements or uses — explain it in prose.
+        """;
 
+    /// <inheritdoc cref="Edges"/>
+    private const string EdgesUnexplained =
+        """
+        ## Edges — how reading flows
+
+        An edge means "to understand the target, read from the source". Do not classify it as
+        calls, implements or uses. On this run an edge is its two ends and its kind, with nothing
+        written about it.
+        """;
+
+    /// <inheritdoc cref="Edges"/>
+    private const string EdgesShared =
+        """
         Mark it direct when real code backs it, conceptual when you inferred it from intent,
         workflow or reading order. Conceptual edges are not weaker guesses and not a last resort:
         they are how you say "these belong to the same idea" when no import says it for you. A
@@ -333,7 +433,78 @@ public static class AnalysisPrompt
           each.
         """;
 
-    private const string Writing =
+    /// <summary>
+    /// How long each field should be and what belongs in it. Built rather than written out, because
+    /// the list of fields is the list the run asked for and the numbers are the run's verbosity
+    /// (<see cref="AnalysisFieldBudgets.For"/>) — the same numbers the validator measures against.
+    /// </summary>
+    private static string Writing(AnalysisRunOptions options)
+    {
+        var budgets = AnalysisFieldBudgets.For(options.Verbosity);
+        var builder = new StringBuilder(WritingOpening);
+
+        if (Tone(options.Verbosity) is { } tone)
+        {
+            builder.Append(' ').Append(tone);
+        }
+
+        builder
+            .Append("\n\n")
+            .Append(CultureInfo.InvariantCulture, $"- node title: {budgets.NodeTitle} characters. Not a sentence — a label, like a good commit subject.\n");
+
+        if (options.NodeExplanations)
+        {
+            builder.Append(CultureInfo.InvariantCulture,
+                $"- node whatChanged, whyItChanged, howItAffectsOthers, implementationNotes: {budgets.NodeProse} each.\n");
+        }
+
+        builder.Append(CultureInfo.InvariantCulture, $"- container title: {budgets.ContainerTitle}.");
+
+        if (options.ContainerExplanations)
+        {
+            builder.Append(CultureInfo.InvariantCulture,
+                $" container summary: {budgets.ContainerSummary}. container explanation: {budgets.ContainerExplanation}.");
+        }
+
+        builder.Append(CultureInfo.InvariantCulture, $"\n- the overall summary: {budgets.OverallSummary}.");
+
+        if (options.Risks)
+        {
+            builder.Append(CultureInfo.InvariantCulture, $" Each individual risk: {budgets.Risk}.");
+        }
+
+        builder.Append("\n\n").Append(WritingMiddle).Append('\n');
+
+        if (options.NodeExplanations)
+        {
+            builder.Append(WritingNodeProse).Append('\n');
+        }
+
+        if (options.Risks)
+        {
+            builder.Append(WritingRisks).Append('\n');
+        }
+
+        return builder.Append(WritingClosing).ToString();
+    }
+
+    /// <summary>
+    /// One sentence on what the verbosity means. Medium has none: its lengths are the ones the rest
+    /// of this section was written around.
+    /// </summary>
+    private static string? Tone(AnalysisVerbosity verbosity) => verbosity switch
+    {
+        AnalysisVerbosity.Brief =>
+            "This run asks for brief prose: one tight sentence is usually the whole of a field.",
+        AnalysisVerbosity.Detailed =>
+            "This run asks for detailed prose: the reviewer reads the cards rather than skims them, "
+            + "so use the room for the specifics and reasoning a shorter answer would drop — never for "
+            + "preamble.",
+        _ => null,
+    };
+
+    /// <inheritdoc cref="Writing"/>
+    private const string WritingOpening =
         """
         ## Writing — short, because of where it is read
 
@@ -341,12 +512,11 @@ public static class AnalysisPrompt
         three hundred others beside it. A paragraph in that box is a paragraph nobody reads: it is
         clipped, and what survives is the least useful half of your sentence. Every field below has
         a length that fits where it lands.
+        """;
 
-        - node title: 60 characters. Not a sentence — a label, like a good commit subject.
-        - node whatChanged, whyItChanged, howItAffectsOthers, implementationNotes: 240 each.
-        - container title: 50. container summary: 200. container explanation: 600.
-        - the overall summary: 800. Each individual risk: 200.
-
+    /// <inheritdoc cref="Writing"/>
+    private const string WritingMiddle =
+        """
         Say the specific thing and stop. "Cache key now includes the tenant" is worth ten times
         "This change modifies the caching behaviour of the system in order to account for tenancy",
         and it is a third of the length. Cut the preamble, not the content: no "This file", no
@@ -355,12 +525,27 @@ public static class AnalysisPrompt
         Going over is not rejected, and you should never drop a fact to fit. But a field that runs
         to twice its length is recorded as too long, and the reviewer sees it truncated.
 
+        """;
+
+    /// <inheritdoc cref="Writing"/>
+    private const string WritingNodeProse =
+        """
         - whyItChanged is what reviewers need and what models most often waste. "The method was
           updated" is not a reason. "Because the cache key now includes the tenant, every caller
           had to pass one" is.
         - howItAffectsOthers hands the reader on: what is coming next and why.
+        """;
+
+    /// <inheritdoc cref="Writing"/>
+    private const string WritingRisks =
+        """
         - Risks go in risks, never in an explanation, summary or notes. They are read as a separate
           column, and a warning buried in prose is a warning nobody sees.
+        """;
+
+    /// <inheritdoc cref="Writing"/>
+    private const string WritingClosing =
+        """
         - importance is 1–5 and it is a budget, not a compliment. A mechanical rename is a 1 even
           in an important file. If everything is a 5 you have said nothing.
         - Some files are listed with contents withheld — credentials, key material. Give them a
@@ -371,16 +556,56 @@ public static class AnalysisPrompt
     /// What the prose is drawn as. The renderer understands exactly this subset
     /// (<c>src/ui/src/lib/markdown.ts</c>), so the list here is the grammar, not a style suggestion —
     /// and a model told "Markdown" without it reaches for headings and tables a business card has no
-    /// room for.
+    /// room for. The list of fields it applies to is the list the run asked for.
     /// </summary>
-    private const string Formatting =
+    private static string Formatting(AnalysisRunOptions options)
+    {
+        var fields = new List<string> { "The overall summary" };
+
+        if (options.ContainerExplanations)
+        {
+            fields.Add("container summaries and explanations");
+        }
+
+        if (options.NodeExplanations)
+        {
+            fields.Add("the four node prose fields");
+        }
+
+        if (options.EdgeExplanations)
+        {
+            fields.Add("edge explanations");
+        }
+
+        if (options.Risks)
+        {
+            fields.Add("risks");
+        }
+
+        var rendered = fields.Count == 1
+            ? $"{fields[0]} is"
+            : $"{string.Join(", ", fields.Take(fields.Count - 1))} and {fields[^1]} are";
+
+        var codeBlocks = options.ContainerExplanations
+            ? "Code blocks only in the overall summary and container explanations"
+            : "Code blocks only in the overall summary";
+
+        var riskLine = options.Risks ? " A risk is one line: inline formatting only." : string.Empty;
+
+        return FormattingTemplate
+            .Replace("{rendered}", rendered, StringComparison.Ordinal)
+            .Replace("{codeBlocks}", codeBlocks, StringComparison.Ordinal)
+            .Replace("{riskLine}", riskLine, StringComparison.Ordinal);
+    }
+
+    /// <inheritdoc cref="Formatting"/>
+    private const string FormattingTemplate =
         """
         ## Formatting — a little Markdown, for the skimming eye
 
-        The overall summary, container summaries and explanations, the four node prose fields, edge
-        explanations and risks are rendered as Markdown — this much of it and no more: **bold**,
-        *italic*, `code`, bullet and numbered lists, and ``` fenced code blocks. Headings, tables,
-        links, images and HTML are not rendered; do not use them. Titles are plain text.
+        {rendered} rendered as Markdown — this much of it and no more: **bold**, *italic*, `code`,
+        bullet and numbered lists, and ``` fenced code blocks. Headings, tables, links, images and
+        HTML are not rendered; do not use them. Titles are plain text.
 
         - A changed file's path in backticks, spelled exactly as the changed-file list spells it,
           becomes a link that opens that file's diff: `src/Cache/CacheKey.cs`. It is the cheapest
@@ -389,8 +614,7 @@ public static class AnalysisPrompt
           everywhere is emphasis nowhere.
         - A list only for genuinely parallel items — the three call sites that changed. Prose
           otherwise.
-        - Code blocks only in the overall summary and container explanations, a few lines, and only
-          when the code says it better than a sentence. A risk is one line: inline formatting only.
+        - {codeBlocks}, a few lines, and only when the code says it better than a sentence.{riskLine}
         - Markup counts toward the lengths above.
 
         Answer with the structured document alone.

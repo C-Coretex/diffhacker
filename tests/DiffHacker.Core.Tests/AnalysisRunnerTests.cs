@@ -231,6 +231,55 @@ public sealed class AnalysisRunnerTests
     }
 
     [Fact]
+    public async Task A_run_without_risks_or_prose_asks_for_less_accepts_the_thinner_answer_and_records_what_it_asked()
+    {
+        // All three consumers of the options at once — prompt, schema and validator — because any one
+        // of them disagreeing is a run that fails: a schema forbidding a field the validator insists
+        // on, or a prompt describing one the schema will reject.
+        var options = AnalysisRunOptions.Default with
+        {
+            Risks = false,
+            NodeExplanations = false,
+            EdgeExplanations = false,
+            Verbosity = AnalysisVerbosity.Detailed,
+        };
+
+        var valid = AnalysisFixtures.Valid();
+        var thin = valid with
+        {
+            OverallRisks = [],
+            Nodes = [.. valid.Nodes.Select(static node => node with
+            {
+                WhatChanged = string.Empty,
+                WhyItChanged = string.Empty,
+                HowItAffectsOthers = string.Empty,
+                ImplementationNotes = string.Empty,
+                Risks = [],
+            })],
+            Edges = [.. valid.Edges.Select(static edge => edge with { Explanation = string.Empty, Risks = [] })],
+        };
+
+        var harness = new Harness { Options = options };
+        harness.Sessions.Answers = [Serialize(thin)];
+
+        var result = await harness.RunAsync(TestContext.Current.CancellationToken);
+
+        result.Succeeded.ShouldBeTrue();
+
+        var conversation = harness.Sessions.Session.Conversation.ShouldNotBeNull();
+
+        conversation.SystemPrompt.ShouldContain("NOT WANTED ON THIS RUN");
+        conversation.SystemPrompt.ShouldContain("detailed prose");
+        conversation.ResponseFormat.ShouldNotBeNull().SchemaJson.ShouldNotContain("overallRisks");
+        conversation.ResponseFormat.ShouldNotBeNull().SchemaJson.ShouldNotContain("whyItChanged");
+
+        harness.Sessions.Session.Rejections.ShouldBeEmpty();
+
+        // Stored beside the answer, so the screen can say "not asked for" rather than "none found".
+        harness.Store.Saved.ShouldHaveSingleItem().Requested.ShouldBe(options);
+    }
+
+    [Fact]
     public async Task A_run_that_wanted_implementation_groups_rejects_an_answer_without_them()
     {
         var harness = new Harness();

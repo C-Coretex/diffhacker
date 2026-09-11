@@ -349,7 +349,8 @@ Run from the repository root.
   when one file holds two unrelated changes. §0.6's "stable across re-runs" is enforced by
   `AnalysisNodeId`, not hoped for.
 - **Reviewed marks are node ids on the analysis row**, in schema 6's nullable `reviewed_json`;
-  schema 7's nullable `grouping_mode` sits beside them. `SetNodesReviewedAsync` and
+  schema 7's nullable `grouping_mode` and schema 9's nullable `options_json` (what the run asked for,
+  written once with the row) sit beside them. `SetNodesReviewedAsync` and
   `SetGroupingAsync` are the only two methods on `IAnalysisStore` that change a stored analysis, and
   **neither can touch the document** — both write the reviewer's own state, never the model's answer.
   `DeleteOneAsync` removes a run whole, row and all, and cannot touch one either. A re-run writes a
@@ -385,12 +386,23 @@ Run from the repository root.
   two groupings, and the wire derives both per grouping so the renderer never noticed. That deleted
   three error codes rather than adding any — see
   [docs/decisions.md](docs/decisions.md#grouping-modes).
-- **The second grouping is optional, and then it is absent from the request.**
-  `AnalysisPrompt.SystemPrompt(false)` and `AnalysisResponseSchema.For(false)` both drop it, which
-  matters twice over: `StructuredOutput.PromptSuffix` sends the schema in the prompt *as well as* as
-  the response format. An analysis then holds one grouping, reports that in
+- **Every optional part is absent from the request when it is off.** `AnalysisRunOptions` names them:
+  the second grouping, implementation groups, risks, node/edge/cluster explanations, plus verbosity
+  (brief — the default — medium, detailed). `AnalysisPrompt.SystemPrompt(options)` drops a part's
+  guidance and adds one line to a `NOT WANTED ON THIS RUN` section for the parts a model would
+  otherwise volunteer. `AnalysisResponseSchema.For(options)` drops its fields and scrubs any
+  description that mentions it. This matters twice over, because `StructuredOutput.PromptSuffix`
+  sends the schema in the prompt *as well as* as the response format. Verbosity changes the prompt's
+  numbers (`AnalysisFieldBudgets.For`) and the validator's length warning, never the schema.
+  **Defaults live in Settings** (`AnalysisDefaults`, `analysis.getDefaults`/`saveDefaults`). A run's
+  own options travel on `analysis.run` and are never remembered: the renderer forgets them once the
+  run succeeds, and the host never stores them as defaults. What a run asked for is stored in schema
+  9's nullable `options_json` (`Analysis.Requested`) and reported as `AnalysisView.*Produced`. The
+  renderer reads those flags through `AnalysisPartsProvider` and leaves out what nobody asked for; it
+  never shows it as empty. With one grouping, an analysis reports that in
   `AnalysisView.availableGroupings`, and the other control is disabled with its reason.
-  `LegacyAnalysisDocument` gives a pre-1.10 document the same shape.
+  `LegacyAnalysisDocument` gives a pre-1.10 document the same shape. See
+  [docs/decisions.md](docs/decisions.md#analysis-parts).
 - **Implementation groups are the model's declaration; merging them is the renderer's.** The app
   cannot tell an interface from any other file (§0.2.3), so `implementationGroups` — an abstraction
   and the nodes implementing it — is part of the model's answer, optional in the request exactly like
@@ -491,7 +503,12 @@ through a silence), the inspector's rows checked against the calls the stub scri
 listed after a restart and an earlier one reopened with the provider's request count unchanged, and
 a real file edited on disk — same line counts, so only the content hash can see it — then put back.
 Freshness is waited on through the analysis surface's `data-freshness` attribute, because "fresh" is
-otherwise the absence of a banner, and an absence cannot be waited for.
+otherwise the absence of a banner, and an absence cannot be waited for. **Analysis parts add
+[14-analysis-parts.spec.ts](tests/e2e/specs/14-analysis-parts.spec.ts)**. Defaults are saved in
+Settings; the wire is checked to carry neither the switched-off fields nor their guidance, and to
+carry the "not wanted" line instead; the screen is checked to leave out what nobody asked for. A
+one-off override is then sent and forgotten, while Settings keeps what it was told. `withoutParts`
+strips a stub answer to match, because the stripped schema forbids the fields.
 
 > The stub answers `stream: true` with server-sent events, because `LlmSession` streams every
 > request. A stub that only sent one JSON body read as a provider returning an empty message, and
@@ -540,6 +557,10 @@ navigation is built from `AnalysisView.edges` the renderer already holds.
 `aria-pressed` buttons — rather than `@radix-ui/react-toggle-group`; the schema variant is thirty
 lines of `System.Text.Json.Nodes` over the one schema in `/schema`; and the legacy-document upgrade
 is the same, rather than a migration framework.
+
+**Analysis parts added none.** The run options reuse `@radix-ui/react-popover`, the verbosity picker is
+`GroupingPicker`'s pressed-button pattern, and the schema variants are the same `System.Text.Json.Nodes`
+code the second grouping already used.
 
 **The run library and staleness added none.** The content hash is `System.Security.Cryptography`,
 the library's numbers are SQLite's own `json_extract`, the History list reuses

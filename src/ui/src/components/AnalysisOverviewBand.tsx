@@ -78,7 +78,7 @@ export function AnalysisOverviewBand({ view }: { view: AnalysisView }) {
           {t('analysis.summaryHeading')}
         </button>
 
-        {!showSummary && (
+        {!showSummary && view.risksProduced && (
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
             <TriangleAlertIcon className="size-3.5 shrink-0 text-warning-foreground" aria-hidden />
             {t('analysis.riskTotal', { count: riskCount })}
@@ -107,7 +107,18 @@ export function AnalysisOverviewBand({ view }: { view: AnalysisView }) {
         </button>
       </div>
 
-      {showSummary && (
+      {/*
+        A run not asked for risks has no risk column at all rather than one saying "no risks were
+        reported" — that would be a reassurance nobody earned. The provenance line says they were
+        not asked for.
+      */}
+      {showSummary && !view.risksProduced && (
+        <div className="px-6 pb-3 pt-2">
+          <Markdown text={view.summary} className="text-sm leading-relaxed" />
+        </div>
+      )}
+
+      {showSummary && view.risksProduced && (
         <div className="grid grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] gap-6 px-6 pb-3 pt-2">
           <Markdown text={view.summary} className="text-sm leading-relaxed" />
 
@@ -161,7 +172,7 @@ function Expanded({ view }: { view: AnalysisView }) {
       <div className="grid gap-6 lg:grid-cols-3">
         <ReadingOrder view={view} />
         <Clusters view={view} />
-        <RiskRegister view={view} />
+        {view.risksProduced && <RiskRegister view={view} />}
       </div>
 
       <Separator className="my-6" />
@@ -576,8 +587,13 @@ function Statistics({ view }: { view: AnalysisView }) {
           label={t('analysis.statFanOut')}
           value={stats.highestFanOutNodeId ?? t('analysis.statNone')}
         />
-        <Stat label={t('analysis.statRiskyNodes')} value={formatCount(stats.riskyNodeCount)} />
-        <Stat label={t('analysis.statRisks')} value={formatCount(stats.riskCount)} />
+        {/* Zero because nobody asked is not zero because nothing was found, so neither is shown. */}
+        {view.risksProduced && (
+          <>
+            <Stat label={t('analysis.statRiskyNodes')} value={formatCount(stats.riskyNodeCount)} />
+            <Stat label={t('analysis.statRisks')} value={formatCount(stats.riskCount)} />
+          </>
+        )}
       </dl>
 
       <p className="text-xs text-muted-foreground">

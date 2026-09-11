@@ -49,6 +49,7 @@ public sealed partial class AnalysisRpcTarget(
     IAnalysisStore store,
     IAnalysisRunner runner,
     IAppSettingStore settings,
+    AnalysisDefaults defaults,
     RunEventNotifier runEvents,
     AnalysisFreshnessChecker freshness,
     ILogger<AnalysisRpcTarget> logger)
@@ -60,18 +61,10 @@ public sealed partial class AnalysisRpcTarget(
     /// </summary>
     private const string DefaultGroupingKey = "analysis.grouping.default";
 
-    /// <summary>Whether runs should ask for the second grouping. The remembered answer, overridable per run.</summary>
-    private const string ProduceClustersKey = "analysis.grouping.clusters";
-
-    /// <summary>Whether runs should ask for implementation groups. Remembered and overridable the same way.</summary>
-    private const string ProduceImplementationGroupsKey = "analysis.implementationGroups.produce";
-
     [JsonRpcMethod("analysis.get")]
     public async Task<AnalysisView> GetAsync(AnalysisRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-
-        var nextRun = await NextRunAsync(null, cancellationToken).ConfigureAwait(false);
 
         // Reading never runs anything. That is the whole promise of persisting the result: the
         // conversation happened once and was paid for once — and the reason reopening an earlier
@@ -86,7 +79,7 @@ public sealed partial class AnalysisRpcTarget(
 
             if (latest is null)
             {
-                return AnalysisWire.Empty(request.RepositoryPath, nextRun);
+                return AnalysisWire.Empty(request.RepositoryPath);
             }
 
             stored = latest;
@@ -100,24 +93,22 @@ public sealed partial class AnalysisRpcTarget(
         var grouping = await ResolveGroupingAsync(stored, cancellationToken).ConfigureAwait(false);
         var isLatest = await IsLatestAsync(stored, cancellationToken).ConfigureAwait(false);
 
-        return AnalysisWire.ToWire(stored, grouping, nextRun, isLatest);
+        return AnalysisWire.ToWire(stored, grouping, isLatest);
     }
 
+    /// <summary>
+    /// Runs an analysis of the working tree. Each part the request names overrides the default for
+    /// this run only; nothing about the request is remembered. The defaults change through
+    /// <c>analysis.saveDefaults</c> and nowhere else, so trimming one expensive re-run never quietly
+    /// trims the ones after it.
+    /// </summary>
     [JsonRpcMethod("analysis.run")]
     public async Task<AnalysisView> RunAsync(AnalysisRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var options = await NextRunAsync(request, cancellationToken).ConfigureAwait(false);
-
-        // Remembered before the run rather than after it, so a run that is cancelled or fails still
-        // leaves the controls showing what the reviewer chose.
-        await settings
-            .SetAsync(ProduceClustersKey, options.ChangeClusters ? "true" : "false", cancellationToken)
-            .ConfigureAwait(false);
-
-        await settings
-            .SetAsync(ProduceImplementationGroupsKey, options.ImplementationGroups ? "true" : "false", cancellationToken)
+        var options = await defaults
+            .ResolveAsync(AnalysisWire.OverridesOf(request), cancellationToken)
             .ConfigureAwait(false);
 
         AnalysisRunResult result;
@@ -151,7 +142,38 @@ public sealed partial class AnalysisRpcTarget(
         var grouping = await ResolveGroupingAsync(result.Analysis, cancellationToken).ConfigureAwait(false);
 
         // A run that has just been stored is the latest by construction.
-        return AnalysisWire.ToWire(result.Analysis, grouping, options, isLatest: true);
+        return AnalysisWire.ToWire(result.Analysis, grouping, isLatest: true);
+    }
+
+    /// <summary>
+    /// What a run asks for when the renderer does not say: the defaults set in Settings. The run
+    /// popover starts from these, and so does a run request that leaves a part out.
+    /// </summary>
+    [JsonRpcMethod("analysis.getDefaults")]
+    public async Task<AnalysisOptions> GetDefaultsAsync(CancellationToken cancellationToken) =>
+        AnalysisWire.ToWire(await defaults.GetAsync(cancellationToken).ConfigureAwait(false));
+
+    /// <summary>Replaces the defaults, and answers with them as they now read back.</summary>
+    [JsonRpcMethod("analysis.saveDefaults")]
+    public async Task<AnalysisOptions> SaveDefaultsAsync(AnalysisOptions request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var saved = await defaults
+            .SaveAsync(AnalysisWire.FromWire(request), cancellationToken)
+            .ConfigureAwait(false);
+
+        DefaultsSaved(
+            logger,
+            saved.ChangeClusters,
+            saved.ImplementationGroups,
+            saved.Risks,
+            saved.NodeExplanations,
+            saved.EdgeExplanations,
+            saved.ContainerExplanations,
+            AnalysisVerbosityNames.Of(saved.Verbosity));
+
+        return AnalysisWire.ToWire(saved);
     }
 
     /// <summary>
@@ -192,10 +214,9 @@ public sealed partial class AnalysisRpcTarget(
             .SetAsync(DefaultGroupingKey, AnalysisGroupingNames.Of(grouping), cancellationToken)
             .ConfigureAwait(false);
 
-        var nextRun = await NextRunAsync(null, cancellationToken).ConfigureAwait(false);
         var isLatest = await IsLatestAsync(stored, cancellationToken).ConfigureAwait(false);
 
-        return AnalysisWire.ToWire(stored with { Grouping = grouping }, grouping, nextRun, isLatest);
+        return AnalysisWire.ToWire(stored with { Grouping = grouping }, grouping, isLatest);
     }
 
     /// <summary>
@@ -363,37 +384,6 @@ public sealed partial class AnalysisRpcTarget(
             : AnalysisGrouping.DependencyFlow;
     }
 
-    /// <summary>
-    /// What a run should ask for: for each optional part, what the caller said, else what is
-    /// remembered, else yes. Absent means "remembered" rather than "no", so a renderer that does not
-    /// know about a field cannot silently make analyses cheaper and less useful.
-    /// </summary>
-    /// <param name="request">The run request, or null when only the remembered choices are wanted.</param>
-    private async Task<AnalysisRunOptions> NextRunAsync(
-        AnalysisRequest? request,
-        CancellationToken cancellationToken) => new()
-    {
-        ChangeClusters = await ResolveAsync(request?.ChangeClusters, ProduceClustersKey, cancellationToken)
-            .ConfigureAwait(false),
-        ImplementationGroups = await ResolveAsync(
-                request?.ImplementationGroups,
-                ProduceImplementationGroupsKey,
-                cancellationToken)
-            .ConfigureAwait(false),
-    };
-
-    private async Task<bool> ResolveAsync(bool? requested, string key, CancellationToken cancellationToken)
-    {
-        if (requested is { } asked)
-        {
-            return asked;
-        }
-
-        var setting = await settings.GetAsync(key, cancellationToken).ConfigureAwait(false);
-
-        return !string.Equals(setting, "false", StringComparison.Ordinal);
-    }
-
     [JsonRpcMethod("analysis.setReviewed")]
     public async Task<ReviewedState> SetReviewedAsync(
         SetNodesReviewedRequest request,
@@ -492,4 +482,21 @@ public sealed partial class AnalysisRpcTarget(
         Level = LogLevel.Information,
         Message = "Deleted analysis {AnalysisId} from the library.")]
     private static partial void AnalysisDeleted(ILogger logger, string analysisId);
+
+    [LoggerMessage(
+        EventId = 7104,
+        Level = LogLevel.Information,
+        Message = "Saved analysis defaults: change clusters={ChangeClusters}, implementation groups="
+            + "{ImplementationGroups}, risks={Risks}, node explanations={NodeExplanations}, edge "
+            + "explanations={EdgeExplanations}, cluster explanations={ContainerExplanations}, "
+            + "verbosity={Verbosity}.")]
+    private static partial void DefaultsSaved(
+        ILogger logger,
+        bool changeClusters,
+        bool implementationGroups,
+        bool risks,
+        bool nodeExplanations,
+        bool edgeExplanations,
+        bool containerExplanations,
+        string verbosity);
 }

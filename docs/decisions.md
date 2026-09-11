@@ -1023,6 +1023,9 @@ An analysis produced that way holds one grouping, says so in `AnalysisView.avail
 the control offering the other is disabled with its reason rather than hidden — the view is unbought,
 not missing.
 
+The "remembered toggle" is no longer how it is set: since 1.15 it is one of the
+[analysis parts](#analysis-parts), defaulted in Settings and overridable for one run.
+
 ### Order is a list's order, not a number on the node
 
 `rank` was an integer on the node and `entry_point` was one of its states. Neither can describe two
@@ -1368,3 +1371,89 @@ passed a value on and every layer below it faithfully returned null. Only
 `13-budget-limits.spec.ts` — a real save, a real restart-free re-read, a real run against the
 now-configured limit — caught it, which is the whole reason that suite exists rather than a unit test
 standing in for it.
+
+## Analysis parts
+
+A reviewer can switch off parts of an analysis to make runs cheaper and faster: the second grouping
+and implementation groups (both optional already), risks, and three kinds of prose — node, edge and
+cluster explanations — plus how much the prose asks for (brief, medium, detailed). The defaults are
+set in Settings; the run options beside the Analyse button change them for one run.
+
+### Taken out of the request, and the model is told not to do the work
+
+As with the second grouping, a part that is off is removed from the request rather than asked for and
+thrown away. `AnalysisPrompt.SystemPrompt(options)` drops that part's guidance, and
+`AnalysisResponseSchema.For(options)` removes its fields. `additionalProperties: false` then makes an
+answer that writes them anyway a schema failure.
+
+Removing the field stops the model writing it *there*, not doing the work. A model that has always
+been asked for risks notices a dangerous migration and says so in a summary instead. So the prompt gains
+one short `## !! NOT WANTED ON THIS RUN !!` section with a line per disabled part that a model would
+otherwise volunteer, placed near the top so it shapes exploration and not only the answer.
+Implementation groups are left out of it: nothing would make a model declare them unprompted, and naming
+them only to forbid them would cost their tokens.
+
+The schema variant also rewrites the few descriptions that mention a removed part ("No risks here.",
+the `risky` state, the list of node prose fields). `AnalysisResponseSchemaTests` checks that the
+risk-free schema contains no "risk" in any case, so a description added later that talks about risk
+fails a test rather than quietly inviting the work back. `risky` goes from the node-state enum with
+the risk fields: it is a risk judgement under another name.
+
+That line or two of "not wanted" can make the *prompt* longer than the one it replaced. The honest
+measure is what a turn re-sends — the prompt plus the schema twice — and `AnalysisPromptTests` checks
+that every opt-out makes that smaller. The larger saving is in output tokens, which no preamble
+measure sees: edge explanations alone are one sentence per edge, and there can be hundreds.
+
+### A re-serialised variant must not be bigger than what it was cut from
+
+The first version of the edge-explanations test failed: the variant came out *larger* than the full
+schema file. `JsonNode.ToJsonString` used the default encoder, which writes every apostrophe and dash
+in the descriptions as a six-character `\uXXXX` escape, and the platform newline, which is `\r\n` on
+Windows. Together those outweighed the one field removed. Variants are now written with
+`UnsafeRelaxedJsonEscaping` (the text is never embedded in HTML) and `NewLine = "\n"`. This also
+shrank the change-clusters variant, which had carried the same overhead since Iteration 11, and made
+the request the same on every OS.
+
+### Defaults in Settings, overrides forgotten
+
+Before 1.15, the last run's checkbox became the next run's default. A reviewer who trimmed one expensive
+re-run had silently trimmed every run after it. Now `AnalysisDefaults` holds the defaults, and
+`analysis.saveDefaults` — called only from Settings — is the only thing that writes them. An
+`analysis.run` request names its parts. Any it leaves out come from the defaults, so a renderer that
+does not know about a part cannot change what a run costs, and nothing about the request is remembered.
+The renderer drops its override once a run succeeds and keeps it after a failure, so a retry asks for
+the same thing. The two settings keys that existed before are still the keys, so an upgrade keeps a
+reviewer's choice.
+
+### Brief is the default verbosity
+
+Most prose is read in a hover card. Medium — the lengths every analysis before 1.15 was written
+against — often ran past what a card shows, and output tokens are the dearest part of a run. Brief
+halves the prose budgets; Detailed roughly doubles them. Titles stay the same at every level, because
+the box clamps them anyway. Verbosity changes the prompt's numbers and the validator's "too long"
+warning, never the schema: lengths stay asked for rather than enforced, for the reason
+`AnalysisFieldBudgets` gives.
+
+### What was asked for is stored beside the answer
+
+An empty risk list means two different things: nothing was found, or nobody asked. Only the second
+justifies hiding the risk column; showing "No risks were reported" for it would be a reassurance nobody
+earned. So `Analysis.Requested` is stored in schema 9's nullable `options_json`, beside the document for
+the reason `grouping_mode` is. The view reports it as `risksProduced` and three `*ExplanationsProduced`
+flags. An older row infers what it can from its document (the two groupings, implementation groups)
+and reports everything else as produced, which it was. Its verbosity stays absent rather than being
+guessed.
+
+The renderer reads those flags through one `AnalysisPartsProvider` over the analysis surface, following
+`GraphActionsContext`'s rule, rather than each card subscribing to the store. A part that was not
+asked for is left out — no risk column, no risk register, no risk statistics — or, where a card would
+otherwise be empty, replaced by one line saying the explanations were not asked for. The provenance line
+lists what was skipped.
+
+### The document's prose fields are no longer `required`
+
+System.Text.Json enforces C#'s `required` keyword, so an answer to a schema without `whatChanged` would
+not deserialise at all. The prose fields on `AnalysisNode`, `AnalysisContainer` and `AnalysisEdge`
+default to empty instead. `AnalysisValidator` insists on `whatChanged` and `whyItChanged` whenever node
+explanations were asked for, and on the title always. Only the root `summary` stays required: the
+overall summary is never optional.

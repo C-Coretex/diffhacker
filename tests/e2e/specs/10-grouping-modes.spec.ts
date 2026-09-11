@@ -184,7 +184,7 @@ test('a run told not to produce change clusters never mentions them, and says th
 
     // The opt-out is only worth having if it takes the work out of the request, so that is what is
     // asserted — at the wire, not by looking at the screen.
-    await analysis.changeClustersToggle.uncheck();
+    await analysis.setRunOption('change-clusters', false);
 
     provider.answers({
       ...stubGroupedResult(changed),
@@ -217,7 +217,13 @@ test('a run told not to produce change clusters never mentions them, and says th
 
     await app.shot('one-grouping-only');
 
-    // And the choice is remembered, so the next run does not quietly cost more again.
+    // And the choice was for that run only. The defaults live in Settings, so the next run — even
+    // after a restart — starts from them again: trimming one run never quietly trims every run
+    // after it. Turning the second grouping off for good is a Settings decision, and 14 covers it.
+    await analysis.openRunOptions();
+    await expect(analysis.runOption('change-clusters')).toBeChecked();
+    await analysis.closeRunOptions();
+
     const root = await app.stop();
     const restarted = await diffhacker.launch({ root });
     const screensAfter = screens(restarted.page);
@@ -227,7 +233,12 @@ test('a run told not to produce change clusters never mentions them, and says th
     await screensAfter.welcome.open(repo.root);
     await reopened.openButton.click();
     await expect(reopened.rerunButton).toBeVisible({ timeout: 30_000 });
-    await expect(reopened.changeClustersToggle).not.toBeChecked();
+
+    // The stored analysis still holds one grouping — that is a fact about the run — while the next
+    // run asks for both, because that is what the defaults say.
+    await expect(reopened.groupingOption('change_clusters')).toBeDisabled();
+    await reopened.openRunOptions();
+    await expect(reopened.runOption('change-clusters')).toBeChecked();
   } finally {
     await provider.stop();
   }

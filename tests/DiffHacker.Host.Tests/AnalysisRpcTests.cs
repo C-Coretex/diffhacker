@@ -234,6 +234,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
             _store,
             runner,
             _settings,
+            new AnalysisDefaults(_settings),
             new RunEventNotifier(new SilentNotifier(), NullLogger<RunEventNotifier>.Instance),
             new AnalysisFreshnessChecker(Git, TimeProvider.System),
             NullLogger<AnalysisRpcTarget>.Instance);
@@ -463,47 +464,149 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task What_a_run_should_ask_for_is_remembered_and_reported_back()
+    public async Task Defaults_never_set_are_every_part_at_brief()
     {
-        // The one control that changes what an analysis costs, so it comes back the way it was left
-        // rather than resetting to the expensive answer every time the screen opens.
-        (await _target.GetAsync(Request(), TestContext.Current.CancellationToken))
-            .ProduceChangeClusters.ShouldBeTrue("both groupings unless the reviewer said otherwise.");
+        var defaults = await _target.GetDefaultsAsync(TestContext.Current.CancellationToken);
 
-        await _target.RunAsync(Request(changeClusters: false), TestContext.Current.CancellationToken);
+        defaults.ShouldBeEquivalentTo(Options());
 
-        _runner.LastOptions.ShouldNotBeNull().ChangeClusters.ShouldBeFalse();
-
-        (await _target.GetAsync(Request(), TestContext.Current.CancellationToken))
-            .ProduceChangeClusters.ShouldBeFalse();
-
-        // Absent means "what you remembered", so a caller that does not know about the field cannot
-        // silently change what a run costs.
+        // And a run that names nothing asks for exactly that.
         await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
 
-        _runner.LastOptions.ShouldNotBeNull().ChangeClusters.ShouldBeFalse();
+        _runner.LastOptions.ShouldBe(AnalysisRunOptions.Default);
+        _runner.LastOptions!.Verbosity.ShouldBe(AnalysisVerbosity.Brief);
     }
 
     [Fact]
-    public async Task Whether_a_run_asks_for_implementation_groups_is_remembered_on_its_own()
+    public async Task Saved_defaults_are_read_back_and_are_what_a_run_naming_nothing_asks_for()
     {
-        (await _target.GetAsync(Request(), TestContext.Current.CancellationToken))
-            .ProduceImplementationGroups.ShouldBeTrue("asked for unless the reviewer said otherwise.");
+        var saved = await _target.SaveDefaultsAsync(
+            Options(risks: false, edgeExplanations: false, verbosity: AnalysisVerbosityLevel.Detailed),
+            TestContext.Current.CancellationToken);
 
-        await _target.RunAsync(Request(implementationGroups: false), TestContext.Current.CancellationToken);
+        saved.Risks.ShouldBeFalse();
+        saved.EdgeExplanations.ShouldBeFalse();
+        saved.Verbosity.ShouldBe(AnalysisVerbosityLevel.Detailed);
 
-        _runner.LastOptions.ShouldNotBeNull().ImplementationGroups.ShouldBeFalse();
-        _runner.LastOptions.ChangeClusters.ShouldBeTrue("the two choices are independent.");
+        (await _target.GetDefaultsAsync(TestContext.Current.CancellationToken)).ShouldBeEquivalentTo(saved);
 
-        var view = await _target.GetAsync(Request(), TestContext.Current.CancellationToken);
-
-        view.ProduceImplementationGroups.ShouldBeFalse();
-        view.ProduceChangeClusters.ShouldBeTrue();
-
-        // Absent means remembered, exactly as for the other choice.
+        // Absent means "the default", so a caller that does not know about a part cannot silently
+        // change what a run costs.
         await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
 
-        _runner.LastOptions.ShouldNotBeNull().ImplementationGroups.ShouldBeFalse();
+        _runner.LastOptions.ShouldBe(AnalysisRunOptions.Default with
+        {
+            Risks = false,
+            EdgeExplanations = false,
+            Verbosity = AnalysisVerbosity.Detailed,
+        });
+    }
+
+    [Fact]
+    public async Task A_run_override_applies_to_that_run_only_and_is_never_remembered()
+    {
+        // Before 1.15 the last run's choice became the default. Now the defaults change in Settings
+        // and nowhere else, so trimming one expensive re-run never quietly trims every run after it.
+        await _target.RunAsync(
+            Request(
+                changeClusters: false,
+                implementationGroups: false,
+                risks: false,
+                nodeExplanations: false,
+                edgeExplanations: false,
+                containerExplanations: false,
+                verbosity: AnalysisRequestVerbosity.Detailed),
+            TestContext.Current.CancellationToken);
+
+        _runner.LastOptions.ShouldBe(new AnalysisRunOptions
+        {
+            ChangeClusters = false,
+            ImplementationGroups = false,
+            Risks = false,
+            NodeExplanations = false,
+            EdgeExplanations = false,
+            ContainerExplanations = false,
+            Verbosity = AnalysisVerbosity.Detailed,
+        });
+
+        (await _target.GetDefaultsAsync(TestContext.Current.CancellationToken)).ShouldBeEquivalentTo(Options());
+
+        await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        _runner.LastOptions.ShouldBe(AnalysisRunOptions.Default);
+    }
+
+    [Fact]
+    public async Task One_part_can_be_overridden_while_the_rest_follow_the_defaults()
+    {
+        await _target.SaveDefaultsAsync(Options(risks: false), TestContext.Current.CancellationToken);
+
+        await _target.RunAsync(Request(risks: true, changeClusters: false), TestContext.Current.CancellationToken);
+
+        _runner.LastOptions.ShouldBe(AnalysisRunOptions.Default with { ChangeClusters = false });
+    }
+
+    [Fact]
+    public async Task The_choices_remembered_before_defaults_existed_are_still_the_defaults()
+    {
+        // Settings keys written by 1.14's per-run memory. A reviewer who had turned the second
+        // grouping off keeps it off rather than finding it back on after an upgrade.
+        await _settings.SetAsync("analysis.grouping.clusters", "false", TestContext.Current.CancellationToken);
+        await _settings.SetAsync("analysis.implementationGroups.produce", "false", TestContext.Current.CancellationToken);
+
+        var defaults = await _target.GetDefaultsAsync(TestContext.Current.CancellationToken);
+
+        defaults.ChangeClusters.ShouldBeFalse();
+        defaults.ImplementationGroups.ShouldBeFalse();
+        defaults.Risks.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task The_view_says_which_parts_the_run_behind_it_was_asked_for()
+    {
+        // So the screen hides a risk column nobody asked for, rather than saying "no risks".
+        var view = await _target.RunAsync(
+            Request(risks: false, edgeExplanations: false, verbosity: AnalysisRequestVerbosity.Medium),
+            TestContext.Current.CancellationToken);
+
+        view.RisksProduced.ShouldBeFalse();
+        view.EdgeExplanationsProduced.ShouldBeFalse();
+        view.NodeExplanationsProduced.ShouldBeTrue();
+        view.ContainerExplanationsProduced.ShouldBeTrue();
+        view.Verbosity.ShouldBe(AnalysisViewVerbosity.Medium);
+
+        // And reading it back later says the same: it is stored, not recomputed from today's defaults.
+        await _target.SaveDefaultsAsync(Options(), TestContext.Current.CancellationToken);
+
+        var reread = await _target.GetAsync(Request(), TestContext.Current.CancellationToken);
+
+        reread.RisksProduced.ShouldBeFalse();
+        reread.Verbosity.ShouldBe(AnalysisViewVerbosity.Medium);
+    }
+
+    [Fact]
+    public async Task An_analysis_from_before_parts_were_recorded_says_it_had_every_part_and_no_known_verbosity()
+    {
+        var legacy = AnalysisSamples.Completed("/repo") with { Id = "legacy", Requested = null };
+        await _store.SaveAsync(legacy, TestContext.Current.CancellationToken);
+
+        var view = await _target.GetAsync(Request(analysisId: "legacy"), TestContext.Current.CancellationToken);
+
+        view.RisksProduced.ShouldBeTrue();
+        view.NodeExplanationsProduced.ShouldBeTrue();
+        view.EdgeExplanationsProduced.ShouldBeTrue();
+        view.ContainerExplanationsProduced.ShouldBeTrue();
+        view.Verbosity.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_repository_never_analysed_reports_no_parts_produced()
+    {
+        var view = await _target.GetAsync(Request(), TestContext.Current.CancellationToken);
+
+        view.HasAnalysis.ShouldBeFalse();
+        view.RisksProduced.ShouldBeFalse();
+        view.Verbosity.ShouldBeNull();
     }
 
     [Fact]
@@ -867,6 +970,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         _store,
         _runner,
         _settings,
+        new AnalysisDefaults(_settings),
         new RunEventNotifier(new SilentNotifier(), NullLogger<RunEventNotifier>.Instance),
         new AnalysisFreshnessChecker(Git, TimeProvider.System),
         NullLogger<AnalysisRpcTarget>.Instance);
@@ -874,12 +978,39 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
     private static AnalysisRequest Request(
         bool? changeClusters = null,
         bool? implementationGroups = null,
-        string? analysisId = null) =>
+        string? analysisId = null,
+        bool? risks = null,
+        bool? nodeExplanations = null,
+        bool? edgeExplanations = null,
+        bool? containerExplanations = null,
+        AnalysisRequestVerbosity? verbosity = null) =>
         new(
             analysisId: analysisId,
             changeClusters: changeClusters,
+            containerExplanations: containerExplanations,
+            edgeExplanations: edgeExplanations,
             implementationGroups: implementationGroups,
-            repositoryPath: "/repo");
+            nodeExplanations: nodeExplanations,
+            repositoryPath: "/repo",
+            risks: risks,
+            verbosity: verbosity);
+
+    private static AnalysisOptions Options(
+        bool changeClusters = true,
+        bool implementationGroups = true,
+        bool risks = true,
+        bool nodeExplanations = true,
+        bool edgeExplanations = true,
+        bool containerExplanations = true,
+        AnalysisVerbosityLevel verbosity = AnalysisVerbosityLevel.Brief) =>
+        new(
+            changeClusters: changeClusters,
+            containerExplanations: containerExplanations,
+            edgeExplanations: edgeExplanations,
+            implementationGroups: implementationGroups,
+            nodeExplanations: nodeExplanations,
+            risks: risks,
+            verbosity: verbosity);
 
     private static HashSet<string> Ids(AnalysisView view) =>
         [.. view.Nodes.Select(static node => node.Id)];
@@ -908,6 +1039,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
                 _store,
                 runner,
                 _settings,
+                new AnalysisDefaults(_settings),
                 new RunEventNotifier(new SilentNotifier(), NullLogger<RunEventNotifier>.Instance),
                 new AnalysisFreshnessChecker(Git, TimeProvider.System),
                 NullLogger<AnalysisRpcTarget>.Instance),
@@ -968,6 +1100,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
             {
                 Id = $"analysis{Runs}",
                 CreatedAtUtc = DateTimeOffset.UnixEpoch.AddMinutes(Runs),
+                Requested = options,
             };
             await store.SaveAsync(analysis, cancellationToken);
 

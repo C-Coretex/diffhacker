@@ -179,8 +179,8 @@ public sealed partial class AnalysisPromptTests
         // Measured rather than assumed, because this is the only reason the opt-out exists. The
         // schema shrinks too — see AnalysisResponseSchemaTests — and both halves are re-sent every
         // turn, the schema twice over.
-        var both = AnalysisPrompt.SystemPrompt(changeClusters: true).Length;
-        var one = AnalysisPrompt.SystemPrompt(changeClusters: false).Length;
+        var both = AnalysisPrompt.SystemPrompt().Length;
+        var one = AnalysisPrompt.SystemPrompt(AnalysisRunOptions.Default with { ChangeClusters = false }).Length;
 
         one.ShouldBeLessThan(both);
     }
@@ -225,7 +225,7 @@ public sealed partial class AnalysisPromptTests
         prompt.ShouldNotContain("implementationGroups");
         prompt.ShouldNotContain("Implementation groups");
 
-        AnalysisPrompt.SystemPrompt(implementationGroups: false).Length
+        AnalysisPrompt.SystemPrompt(AnalysisRunOptions.Default with { ImplementationGroups = false }).Length
             .ShouldBeLessThan(AnalysisPrompt.SystemPrompt().Length);
 
         prompt.ShouldEndWith("Answer with the structured document alone.");
@@ -254,30 +254,163 @@ public sealed partial class AnalysisPromptTests
         prompt.ShouldContain("Cut the preamble, not the content");
     }
 
-    [Fact]
-    public void The_prompt_states_every_length_budget_the_validator_measures_against()
+    [Theory]
+    [InlineData(AnalysisVerbosity.Brief)]
+    [InlineData(AnalysisVerbosity.Medium)]
+    [InlineData(AnalysisVerbosity.Detailed)]
+    public void The_prompt_states_every_length_budget_the_validator_measures_against(AnalysisVerbosity verbosity)
     {
-        // Three readers of one set of numbers: this prompt, AnalysisValidator's warning, and the
-        // renderer's truncation. A budget changed in AnalysisFieldBudgets and not here would have
-        // the model asked for one length and reported against another.
-        var prompt = Prompt();
+        // Two readers of one set of numbers: this prompt and AnalysisValidator's warning. A budget
+        // changed in AnalysisFieldBudgets and not here would have the model asked for one length and
+        // reported against another — at whichever verbosity the run asked for.
+        var budgets = AnalysisFieldBudgets.For(verbosity);
+        var prompt = Prompt(AnalysisRunOptions.Default with { Verbosity = verbosity });
 
-        foreach (var budget in new[]
+        prompt.ShouldContain($"node title: {budgets.NodeTitle} characters");
+        prompt.ShouldContain($"implementationNotes: {budgets.NodeProse} each");
+        prompt.ShouldContain($"container title: {budgets.ContainerTitle}.");
+        prompt.ShouldContain($"container summary: {budgets.ContainerSummary}.");
+        prompt.ShouldContain($"container explanation: {budgets.ContainerExplanation}.");
+        prompt.ShouldContain($"the overall summary: {budgets.OverallSummary}.");
+        prompt.ShouldContain($"Each individual risk: {budgets.Risk}.");
+    }
+
+    [Fact]
+    public void Brief_and_detailed_runs_are_told_what_their_lengths_are_for()
+    {
+        Prompt(AnalysisRunOptions.Default with { Verbosity = AnalysisVerbosity.Brief })
+            .ShouldContain("brief prose");
+        Prompt(AnalysisRunOptions.Default with { Verbosity = AnalysisVerbosity.Detailed })
+            .ShouldContain("detailed prose");
+
+        // Medium is the lengths the section was written around, and adds nothing.
+        var medium = Prompt(AnalysisRunOptions.Default with { Verbosity = AnalysisVerbosity.Medium });
+        medium.ShouldNotContain("brief prose");
+        medium.ShouldNotContain("detailed prose");
+    }
+
+    [Fact]
+    public void A_run_with_every_part_is_never_told_anything_is_unwanted()
+    {
+        Prompt(AnalysisRunOptions.Default).ShouldNotContain("NOT WANTED ON THIS RUN");
+    }
+
+    [Fact]
+    public void A_run_without_risks_is_told_plainly_not_to_assess_them_and_given_no_guidance_about_them()
+    {
+        // Removing the field stops the model writing it there, not doing the work: a model used to
+        // being asked for risks puts a warning in a summary instead. So it is told once, plainly —
+        // and every line about how to write a risk goes.
+        var prompt = Prompt(AnalysisRunOptions.Default with { Risks = false });
+
+        prompt.ShouldContain("NOT WANTED ON THIS RUN");
+        prompt.ShouldContain("Do not assess what could go wrong");
+
+        // Case-sensitive, because the one line saying not to is headed "Risks.".
+        prompt.ShouldNotContain("risks", Case.Sensitive);
+        prompt.ShouldNotContain("risky", Case.Sensitive);
+        prompt.ShouldNotContain("Each individual risk");
+        prompt.ShouldNotContain("A risk is one line");
+
+        PerTurn(AnalysisRunOptions.Default with { Risks = false }).ShouldBeLessThan(PerTurn(AnalysisRunOptions.Default));
+    }
+
+    [Fact]
+    public void A_run_without_node_explanations_never_names_the_prose_fields()
+    {
+        var prompt = Prompt(AnalysisRunOptions.Default with { NodeExplanations = false });
+
+        prompt.ShouldContain("NOT WANTED ON THIS RUN");
+        prompt.ShouldContain("Node explanations.");
+
+        foreach (var field in new[] { "whatChanged", "whyItChanged", "howItAffectsOthers", "implementationNotes" })
         {
-            AnalysisFieldBudgets.NodeTitle,
-            AnalysisFieldBudgets.NodeProse,
-            AnalysisFieldBudgets.ContainerTitle,
-            AnalysisFieldBudgets.ContainerSummary,
-            AnalysisFieldBudgets.ContainerExplanation,
-            AnalysisFieldBudgets.OverallSummary,
-            AnalysisFieldBudgets.Risk,
+            prompt.ShouldNotContain(field);
+        }
+
+        prompt.ShouldNotContain("the four node prose fields");
+        prompt.ShouldNotContain("same explanations");
+
+        // A title still has to say something, and is still asked for.
+        prompt.ShouldContain("node title:");
+    }
+
+    [Fact]
+    public void A_run_without_edge_explanations_is_told_an_edge_is_its_ends_and_its_kind()
+    {
+        var prompt = Prompt(AnalysisRunOptions.Default with { EdgeExplanations = false });
+
+        prompt.ShouldContain("Edge explanations.");
+        prompt.ShouldContain("its two ends and its kind");
+        prompt.ShouldNotContain("explain it in prose");
+        prompt.ShouldNotContain("edge explanations and");
+
+        // Choosing edges still matters as much as ever, so that guidance stays.
+        prompt.ShouldContain("not a last resort");
+        prompt.ShouldContain("reachable from its container's entry node");
+    }
+
+    [Fact]
+    public void A_run_without_cluster_explanations_asks_for_titles_only()
+    {
+        var prompt = Prompt(AnalysisRunOptions.Default with { ContainerExplanations = false });
+
+        prompt.ShouldContain("Cluster explanations.");
+        prompt.ShouldNotContain("container summary:");
+        prompt.ShouldNotContain("container explanation:");
+        prompt.ShouldNotContain("real summaries, real explanations");
+        prompt.ShouldNotContain("container summaries and explanations");
+        prompt.ShouldContain("Give it real cluster titles and its own entry points");
+
+        // The overall summary is always asked for.
+        prompt.ShouldContain("the overall summary:");
+    }
+
+    [Fact]
+    public void Implementation_groups_turned_off_are_not_listed_as_unwanted()
+    {
+        // Nothing would prompt a model to declare them, so naming them only to forbid them would
+        // cost their tokens for nothing — the rule that keeps them out of the prompt altogether.
+        Prompt(AnalysisRunOptions.Default with { ImplementationGroups = false })
+            .ShouldNotContain("NOT WANTED ON THIS RUN");
+    }
+
+    [Fact]
+    public void Every_opt_out_makes_each_turn_smaller_and_the_prompt_still_ends_by_asking_for_the_document()
+    {
+        // Measured as what a turn actually re-sends — the prompt, and the schema twice over — rather
+        // than the prompt alone. Saying "not wanted" costs a line or two of prompt; the fields it
+        // replaces cost far more in the schema, and that trade is the whole point.
+        var full = PerTurn(AnalysisRunOptions.Default);
+
+        foreach (var options in new[]
+        {
+            AnalysisRunOptions.Default with { ChangeClusters = false },
+            AnalysisRunOptions.Default with { ImplementationGroups = false },
+            AnalysisRunOptions.Default with { Risks = false },
+            AnalysisRunOptions.Default with { NodeExplanations = false },
+            AnalysisRunOptions.Default with { EdgeExplanations = false },
+            AnalysisRunOptions.Default with { ContainerExplanations = false },
         })
         {
-            prompt.ShouldContain(
-                budget.ToString(CultureInfo.InvariantCulture),
-                Case.Sensitive,
-                $"the prompt has to state the {budget}-character budget the validator measures against");
+            PerTurn(options).ShouldBeLessThan(full, options.ToString());
+            Prompt(options).ShouldEndWith("Answer with the structured document alone.");
         }
+
+        // Every part off at once reads as one prompt, not a patchwork.
+        var bare = Prompt(new AnalysisRunOptions
+        {
+            ChangeClusters = false,
+            ImplementationGroups = false,
+            Risks = false,
+            NodeExplanations = false,
+            EdgeExplanations = false,
+            ContainerExplanations = false,
+        });
+
+        bare.ShouldContain("The overall summary is rendered as Markdown");
+        bare.ShouldContain("Code blocks only in the overall summary, a few lines");
+        bare.ShouldEndWith("Answer with the structured document alone.");
     }
 
     [Fact]
@@ -399,7 +532,22 @@ public sealed partial class AnalysisPromptTests
     /// wherever the paragraph happens to wrap.
     /// </summary>
     private static string Prompt(bool changeClusters = true, bool implementationGroups = true) =>
-        WhitespaceRuns().Replace(AnalysisPrompt.SystemPrompt(changeClusters, implementationGroups), " ");
+        Prompt(AnalysisRunOptions.Default with
+        {
+            ChangeClusters = changeClusters,
+            ImplementationGroups = implementationGroups,
+        });
+
+    /// <inheritdoc cref="Prompt(bool, bool)"/>
+    private static string Prompt(AnalysisRunOptions options) =>
+        WhitespaceRuns().Replace(AnalysisPrompt.SystemPrompt(options), " ");
+
+    /// <summary>
+    /// The characters a run re-sends on every turn for these options: the system prompt, and the
+    /// response schema twice — once as the response format and once in <c>StructuredOutput.PromptSuffix</c>.
+    /// </summary>
+    private static int PerTurn(AnalysisRunOptions options) =>
+        AnalysisPrompt.SystemPrompt(options).Length + (2 * AnalysisResponseSchema.For(options).Length);
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRuns();

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.14/open-in-editor-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.15/open-in-editor-request.schema.json",
   "title": "OpenInEditorRequest",
   "description": "Parameters of editor.open. Says which file and which editor, never which command: whether the editor is handed a two-sided diff or a single file at a line is decided by the host from which sides of the file actually exist, so the renderer cannot ask for a comparison against a side that is not there.",
   "type": "object",

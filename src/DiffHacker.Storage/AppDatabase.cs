@@ -23,7 +23,7 @@ public sealed partial class AppDatabase : IAsyncDisposable
     /// Bumped whenever <see cref="MigrateAsync"/> gains a step. Stored in the file, so an older
     /// build opening a newer database can say so rather than misreading it.
     /// </summary>
-    private const int CurrentSchemaVersion = 8;
+    private const int CurrentSchemaVersion = 9;
 
     private readonly string _connectionString;
     private readonly ILogger<AppDatabase> _logger;
@@ -335,6 +335,20 @@ public sealed partial class AppDatabase : IAsyncDisposable
                 ALTER TABLE provider_profiles ADD COLUMN max_tool_calls   INTEGER NULL;
                 ALTER TABLE provider_profiles ADD COLUMN max_total_tokens INTEGER NULL;
                 """,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+
+        if (version < 9)
+        {
+            // Which parts of the analysis the run asked for — the groupings, implementation groups,
+            // risks, the three kinds of explanation — and at what verbosity, as one JSON object.
+            // Nullable and additive like every column above: a version-8 row reads back as "not
+            // recorded", and what it was asked for is then inferred from the document it holds.
+            //
+            // Beside the document rather than inside it, for the reason grouping_mode is: the
+            // document is the model's answer, and what it was asked for is not part of the answer.
+            await connection.ExecuteAsync(new CommandDefinition(
+                "ALTER TABLE analyses ADD COLUMN options_json TEXT NULL;",
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
 

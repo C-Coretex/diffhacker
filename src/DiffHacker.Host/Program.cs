@@ -168,6 +168,9 @@ internal static class Program
         services.AddSingleton<RepositoryDocumentationWriter>();
         services.AddSingleton<IAnalysisRunner, AnalysisRunner>();
 
+        // What a run asks for when the reviewer did not say: the defaults set in Settings.
+        services.AddSingleton<AnalysisDefaults>();
+
         // Whether a stored analysis still describes the working tree. Git and the clock, nothing
         // else: checking an analysis must never be able to start a run.
         services.AddSingleton<AnalysisFreshnessChecker>();

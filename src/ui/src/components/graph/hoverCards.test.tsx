@@ -1,6 +1,9 @@
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { edge, testView } from '@/graph/testGraph';
+import { en } from '@/i18n/en';
+import { AnalysisPartsProvider } from '@/components/analysis/AnalysisParts';
+import { NodeExplanation } from '@/components/analysis/NodeExplanation';
 import { EdgeHoverCard } from './hoverCards';
 
 /**
@@ -67,5 +70,58 @@ describe('EdgeHoverCard', () => {
     expect(screen.getByText('Read Contract.cs, then Notes.md')).toBeInTheDocument();
     expect(screen.getByText('Read Caller.cs, then Notes.md')).toBeInTheDocument();
     expect(screen.getAllByTestId('risk-column')).toHaveLength(2);
+  });
+
+  it('says an explanation was not asked for, and draws no risk column, on a run that skipped both', () => {
+    // An empty explanation on a run told to skip them is not "nothing written", and an empty risk
+    // column on a run never asked for risks is not "no risks". Both would mislead.
+    const skipped = testView({ risksProduced: false, edgeExplanationsProduced: false });
+
+    render(
+      <AnalysisPartsProvider view={skipped}>
+        <EdgeHoverCard
+          view={skipped}
+          count={1}
+          edges={[{ ...edge('src/Contract.cs', 'src/Caller.cs', 'direct'), explanation: '' }]}
+        />
+      </AnalysisPartsProvider>,
+    );
+
+    expect(screen.getByText(en.analysis.parts.explanationsNotRequested)).toBeInTheDocument();
+    expect(screen.queryByText(en.analysis.hover.nothingWritten)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('risk-column')).not.toBeInTheDocument();
+
+    // What the edge is still says itself: its ends and its kind are always asked for.
+    expect(screen.getByText('direct')).toBeInTheDocument();
+  });
+});
+
+describe('NodeExplanation', () => {
+  it('says the prose was not asked for rather than showing an empty card', () => {
+    const view = testView({ nodeExplanationsProduced: false, risksProduced: false });
+    const node = { ...view.nodes[0]!, whatChanged: '', whyItChanged: '' };
+
+    render(
+      <AnalysisPartsProvider view={view}>
+        <NodeExplanation node={node} />
+      </AnalysisPartsProvider>,
+    );
+
+    expect(screen.getByText(en.analysis.parts.explanationsNotRequested)).toBeInTheDocument();
+    expect(screen.queryByText(en.analysis.nodeWhatChanged)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('risk-column')).not.toBeInTheDocument();
+  });
+
+  it('draws everything, as before, for an analysis that had every part', () => {
+    const view = testView({ nodes: [{ ...testView().nodes[0]!, risks: ['Older clients break.'] }] });
+
+    render(
+      <AnalysisPartsProvider view={view}>
+        <NodeExplanation node={view.nodes[0]!} />
+      </AnalysisPartsProvider>,
+    );
+
+    expect(screen.queryByText(en.analysis.parts.explanationsNotRequested)).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('risk-column')).getByText('Older clients break.')).toBeInTheDocument();
   });
 });

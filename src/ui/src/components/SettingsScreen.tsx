@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { AnalysisDefaultsForm } from './AnalysisDefaultsForm';
 import { EditorSettingsForm } from './EditorSettingsForm';
 import { ProviderForm } from './ProviderForm';
 import { TestConnectionPanel } from './TestConnectionPanel';
@@ -162,6 +163,8 @@ export function SettingsScreen() {
           onDone={() => setEditing(undefined)}
         />
       )}
+
+      <AnalysisDefaultsForm />
 
       <EditorSettingsForm />
     </div>

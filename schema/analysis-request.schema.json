@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.14/analysis-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.15/analysis-request.schema.json",
   "title": "AnalysisRequest",
   "description": "Names the repository an analysis.get or analysis.run call applies to, and what a run should ask the model for. The path travels on every call rather than being held as host state, for the same reason it does on profile requests: the renderer owns which repository is open, and a stale host-side selection would be a way to spend money analysing the wrong one.",
   "type": "object",
@@ -17,11 +17,33 @@
     },
     "changeClusters": {
       "type": "boolean",
-      "description": "Whether this run should also produce the change-clusters grouping. Absent means the choice the host remembers, so a renderer that does not know about this field cannot change what a run costs. Ignored by analysis.get, which spends nothing."
+      "description": "Whether this run should also produce the change-clusters grouping. Absent means the default set in Settings, so a renderer that does not know about this field cannot change what a run costs. An override applies to this run only and is never remembered. Ignored by analysis.get, which spends nothing."
     },
     "implementationGroups": {
       "type": "boolean",
-      "description": "Whether this run should also declare which abstractions were changed alongside their implementations, so the diagram can draw each as one box. Absent means the choice the host remembers, as for changeClusters. Ignored by analysis.get."
+      "description": "Whether this run should also declare which abstractions were changed alongside their implementations, so the diagram can draw each as one box. Absent means the default set in Settings, as for changeClusters. Ignored by analysis.get."
+    },
+    "risks": {
+      "type": "boolean",
+      "description": "Whether this run should assess risks. Absent means the default set in Settings, as for changeClusters."
+    },
+    "nodeExplanations": {
+      "type": "boolean",
+      "description": "Whether this run should write each node's prose fields. Absent means the default set in Settings."
+    },
+    "edgeExplanations": {
+      "type": "boolean",
+      "description": "Whether this run should explain each edge. Absent means the default set in Settings."
+    },
+    "containerExplanations": {
+      "type": "boolean",
+      "description": "Whether this run should give each cluster a summary and an explanation. Absent means the default set in Settings."
+    },
+    "verbosity": {
+      "title": "AnalysisRequestVerbosity",
+      "type": "string",
+      "enum": ["brief", "medium", "detailed"],
+      "description": "How long this run's prose should be. Absent means the default set in Settings. The same values as AnalysisVerbosityLevel in analysis-options.schema.json, held to it by AnalysisAgreementTests."
     }
   }
 }

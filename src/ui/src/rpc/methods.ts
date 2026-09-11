@@ -1,6 +1,7 @@
 import type {
   AnalysisFreshness,
   AnalysisLibrary,
+  AnalysisOptions,
   AnalysisProgress,
   AnalysisRefRequest,
   AnalysisRequest,
@@ -110,6 +111,8 @@ export const RpcMethods = {
   getAnalysisTrace: 'analysis.trace',
   checkAnalysisFreshness: 'analysis.checkFreshness',
   deleteAnalysis: 'analysis.delete',
+  getAnalysisDefaults: 'analysis.getDefaults',
+  saveAnalysisDefaults: 'analysis.saveDefaults',
 
   describeEditors: 'editor.describe',
   saveEditorSettings: 'editor.save',
@@ -437,6 +440,25 @@ export function checkAnalysisFreshness(
 /** Forgets one stored run, and answers with the library as it now stands. */
 export function deleteAnalysis(client: RpcClient, request: AnalysisRefRequest): Promise<AnalysisLibrary> {
   return client.call<AnalysisLibrary>(RpcMethods.deleteAnalysis, request);
+}
+
+/**
+ * What a run asks for when the reviewer does not say: the parts of an analysis switched on in
+ * Settings, and the verbosity. The run options start from these.
+ */
+export function getAnalysisDefaults(client: RpcClient): Promise<AnalysisOptions> {
+  return client.call<AnalysisOptions>(RpcMethods.getAnalysisDefaults);
+}
+
+/**
+ * Replaces the defaults, and answers with them as the host now reads them. The only way they change:
+ * a run's own options are sent with that run and never remembered.
+ */
+export function saveAnalysisDefaults(
+  client: RpcClient,
+  request: AnalysisOptions,
+): Promise<AnalysisOptions> {
+  return client.call<AnalysisOptions>(RpcMethods.saveAnalysisDefaults, request);
 }
 
 /** Which external editors this machine has, and the command configured for one it does not. */

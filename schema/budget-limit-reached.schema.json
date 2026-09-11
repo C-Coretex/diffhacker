@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.14/budget-limit-reached.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.15/budget-limit-reached.schema.json",
   "title": "BudgetLimitReached",
   "description": "Payload of the run.budgetLimitReached notification: an analysis or repository-profiling run has hit one of its configured limits and is paused, waiting to be told whether to keep going. The renderer answers with run.answerBudgetPrompt naming promptId; the run stays paused on the host until it does, or until the request is cancelled some other way.",
   "type": "object",

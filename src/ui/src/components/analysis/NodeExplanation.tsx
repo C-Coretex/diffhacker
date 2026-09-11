@@ -1,6 +1,7 @@
 import type { AnalysisNodeInfo, ChangedFileFactsInfo } from '@/contracts';
 import { useT } from '@/i18n/useT';
 import { Markdown } from '@/components/analysis/Markdown';
+import { NotRequested, useProducedParts } from '@/components/analysis/AnalysisParts';
 import { RiskColumn } from '@/components/analysis/RiskList';
 import { cn } from '@/lib/utils';
 
@@ -30,24 +31,32 @@ export function NodeExplanation({
   className?: string;
 }) {
   const t = useT();
+  const parts = useProducedParts();
 
   return (
     <div
       className={cn(
         'gap-3',
-        columns ? 'grid grid-cols-[1.6fr_1fr]' : 'flex flex-col',
+        // A risk column nobody asked for is not drawn at all, so the prose takes the width.
+        columns && parts.risks ? 'grid grid-cols-[1.6fr_1fr]' : 'flex flex-col',
         className,
       )}
       data-testid="node-explanation"
     >
       <div className="flex min-w-0 flex-col gap-2.5">
-        <Prose label={t('analysis.nodeWhatChanged')} value={node.whatChanged} />
-        <Prose label={t('analysis.nodeWhyItChanged')} value={node.whyItChanged} />
-        <Prose label={t('analysis.nodeAffects')} value={node.howItAffectsOthers} />
-        <Prose label={t('analysis.nodeNotes')} value={node.implementationNotes} />
+        {parts.nodeExplanations ? (
+          <>
+            <Prose label={t('analysis.nodeWhatChanged')} value={node.whatChanged} />
+            <Prose label={t('analysis.nodeWhyItChanged')} value={node.whyItChanged} />
+            <Prose label={t('analysis.nodeAffects')} value={node.howItAffectsOthers} />
+            <Prose label={t('analysis.nodeNotes')} value={node.implementationNotes} />
+          </>
+        ) : (
+          <NotRequested />
+        )}
       </div>
 
-      <RiskColumn risks={node.risks} className="min-w-0 self-start" />
+      {parts.risks && <RiskColumn risks={node.risks} className="min-w-0 self-start" />}
     </div>
   );
 }

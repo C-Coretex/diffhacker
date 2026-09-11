@@ -97,10 +97,17 @@ public sealed record AnalysisContainer
 
     public required string Title { get; init; }
 
-    public required string Summary { get; init; }
+    /// <summary>
+    /// Empty when the run was not asked for container explanations, and then absent from the
+    /// document the model wrote. Not <c>required</c> for that reason: System.Text.Json enforces the
+    /// keyword, and an answer to a schema without the field would fail to read back.
+    /// </summary>
+    public string Summary { get; init; } = string.Empty;
 
-    public required string Explanation { get; init; }
+    /// <inheritdoc cref="Summary"/>
+    public string Explanation { get; init; } = string.Empty;
 
+    /// <summary>Empty when the run was not asked for risks.</summary>
     public IReadOnlyList<string> Risks { get; init; } = [];
 
     /// <summary>Where this container sits among the containers of its grouping, from 1.</summary>
@@ -146,9 +153,15 @@ public sealed record AnalysisNode
 
     public required string Title { get; init; }
 
-    public required string WhatChanged { get; init; }
+    /// <summary>
+    /// Empty only when the run was not asked for node explanations — then the four prose fields are
+    /// absent from the schema, and not <c>required</c> here so that answer still reads back.
+    /// <see cref="AnalysisValidator"/> insists on it whenever it was asked for.
+    /// </summary>
+    public string WhatChanged { get; init; } = string.Empty;
 
-    public required string WhyItChanged { get; init; }
+    /// <inheritdoc cref="WhatChanged"/>
+    public string WhyItChanged { get; init; } = string.Empty;
 
     public string HowItAffectsOthers { get; init; } = string.Empty;
 
@@ -180,7 +193,8 @@ public sealed record AnalysisEdge
 
     public required AnalysisEdgeKind Kind { get; init; }
 
-    public required string Explanation { get; init; }
+    /// <summary>Empty when the run was not asked for edge explanations, and then absent from the answer.</summary>
+    public string Explanation { get; init; } = string.Empty;
 
     public IReadOnlyList<string> Risks { get; init; } = [];
 }

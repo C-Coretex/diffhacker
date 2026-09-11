@@ -148,7 +148,7 @@ test('a run told not to look for implementation groups never mentions them, and 
   try {
     const { app, analysis } = await ready(diffhacker, repos, provider);
 
-    await analysis.implementationGroupsToggle.uncheck();
+    await analysis.setRunOption('implementation-groups', false);
 
     provider.answers({ ...stubImplementationResult(changed), implementationGroups: undefined });
 
@@ -169,10 +169,11 @@ test('a run told not to look for implementation groups never mentions them, and 
     await expect(analysis.mergeImplementationsToggle).toBeDisabled();
     await expect(analysis.mergeImplementationsToggle).toHaveAttribute('title', en.analysis.graph.merged.notAsked);
 
-    // And the choice is remembered for the next run.
-    await expect(analysis.implementationGroupsToggle).not.toBeChecked();
-
     await app.shot('an analysis with no implementation groups asked for');
+
+    // And the choice was for that run only: the next one starts from the defaults in Settings.
+    await analysis.openRunOptions();
+    await expect(analysis.runOption('implementation-groups')).toBeChecked();
   } finally {
     await provider.stop();
   }

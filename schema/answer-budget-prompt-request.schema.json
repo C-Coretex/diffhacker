@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.14/answer-budget-prompt-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.15/answer-budget-prompt-request.schema.json",
   "title": "AnswerBudgetPromptRequest",
   "description": "Request for run.answerBudgetPrompt: the reviewer's answer to a run.budgetLimitReached prompt. Naming a promptId that is not currently waiting is a no-op rather than an error, since the run may already have ended some other way — cancelled, or failed outright — by the time the click reaches the host.",
   "type": "object",

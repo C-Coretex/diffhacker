@@ -88,6 +88,9 @@ specs/
   11-implementation-groups.spec.ts       abstractions drawn with their implementations as one box
   12-run-library.spec.ts                 the live run strip, the tool-call inspector, earlier runs
                                          reopened for free, and a stale analysis said to be one
+  13-budget-limits.spec.ts               a run pausing at a configured limit and asking to continue
+  14-analysis-parts.spec.ts              parts switched off in Settings leave the request, the
+                                         screen leaves them out, and a run override is forgotten
 src/
   appHarness.ts    launches the host, attaches over CDP, screenshots, tears down
   gitFixture.ts    builds real repositories in temp directories

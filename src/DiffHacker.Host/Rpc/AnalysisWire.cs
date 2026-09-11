@@ -42,19 +42,21 @@ namespace DiffHacker.Host.Rpc;
 internal static class AnalysisWire
 {
     /// <summary>
-    /// What the renderer is shown when a repository has never been analysed. It still carries
-    /// <paramref name="nextRun"/>, because the controls that bind to it are about what the next run
-    /// will spend and are on screen before any analysis exists.
+    /// What the renderer is shown when a repository has never been analysed. What the next run will
+    /// ask for is not here: that is the defaults, read through <c>analysis.getDefaults</c>, and one
+    /// place to read them is one thing that cannot disagree with Settings.
     /// </summary>
-    public static AnalysisView Empty(string repositoryPath, AnalysisRunOptions nextRun) => new(
+    public static AnalysisView Empty(string repositoryPath) => new(
         analysisId: null,
         availableGroupings: [AnalysisGroupingMode.Dependency_flow],
         changedFiles: [],
+        containerExplanationsProduced: false,
         containers: [],
         costUsd: null,
         createdAtUtc: null,
         diagnostics: [],
         durationMs: null,
+        edgeExplanationsProduced: false,
         edges: [],
         grouping: AnalysisGroupingMode.Dependency_flow,
         hasAnalysis: false,
@@ -64,36 +66,39 @@ internal static class AnalysisWire
         inputTokens: null,
         isLatest: false,
         model: null,
+        nodeExplanationsProduced: false,
         nodes: [],
         outputTokens: null,
         overallRisks: [],
-        produceChangeClusters: nextRun.ChangeClusters,
-        produceImplementationGroups: nextRun.ImplementationGroups,
         providerDisplayName: null,
         readingOrder: [],
         repairRounds: null,
         repositoryPath: repositoryPath,
         reviewedNodeIds: [],
+        risksProduced: false,
         schemaVersion: null,
         statistics: null,
         summary: string.Empty,
-        toolCallCount: 0);
+        toolCallCount: 0,
+        verbosity: null);
 
     /// <param name="analysis">The stored analysis.</param>
     /// <param name="grouping">Which of its groupings to project.</param>
-    /// <param name="nextRun">What the next run will ask for — the remembered choices, not this analysis's.</param>
     /// <param name="isLatest">Whether this is the repository's most recent analysis.</param>
     public static AnalysisView ToWire(
         Analysis analysis,
         AnalysisGrouping grouping,
-        AnalysisRunOptions nextRun,
         bool isLatest)
     {
-        ArgumentNullException.ThrowIfNull(nextRun);
         ArgumentNullException.ThrowIfNull(analysis);
 
         var document = analysis.Document;
         var view = document.For(grouping);
+
+        // What the run asked for, so the screen can hide a part nobody asked for rather than claim
+        // it came back empty. Verbosity is only known when it was recorded.
+        var requested = analysis.RequestedParts;
+        AnalysisViewVerbosity? verbosity = analysis.Requested is { } recorded ? ToViewWire(recorded.Verbosity) : null;
 
         var containerOf = new Dictionary<string, string>(StringComparer.Ordinal);
         var order = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -145,6 +150,7 @@ internal static class AnalysisWire
                         summary: container.Summary,
                         title: container.Title)),
             ],
+            containerExplanationsProduced: requested.ContainerExplanations,
             costUsd: analysis.Usage.EstimatedCostUsd?.ToString(CultureInfo.InvariantCulture),
             createdAtUtc: analysis.CreatedAtUtc,
             diagnostics:
@@ -161,6 +167,7 @@ internal static class AnalysisWire
                         subject: diagnostic.Subject)),
             ],
             durationMs: (int)analysis.Duration.TotalMilliseconds,
+            edgeExplanationsProduced: requested.EdgeExplanations,
             edges:
             [
                 .. document.Edges.Select(edge => new AnalysisEdgeInfo(
@@ -179,6 +186,7 @@ internal static class AnalysisWire
             inputTokens: Saturate(analysis.Usage.InputTokens),
             isLatest: isLatest,
             model: analysis.Model,
+            nodeExplanationsProduced: requested.NodeExplanations,
             nodes:
             [
                 // Sorted the way the diagram is read — container order, then rank — so the renderer
@@ -209,18 +217,97 @@ internal static class AnalysisWire
             ],
             outputTokens: Saturate(analysis.Usage.OutputTokens),
             overallRisks: document.OverallRisks,
-            produceChangeClusters: nextRun.ChangeClusters,
-            produceImplementationGroups: nextRun.ImplementationGroups,
             providerDisplayName: analysis.ProviderDisplayName,
             readingOrder: analysis.ReadingOrderFor(grouping),
             repairRounds: analysis.RepairRounds,
             repositoryPath: analysis.RepositoryPath,
             reviewedNodeIds: analysis.ReviewedNodeIds,
+            risksProduced: requested.Risks,
             schemaVersion: analysis.SchemaVersion,
             statistics: ToWire(analysis.StatisticsFor(grouping)),
             summary: document.Summary,
-            toolCallCount: analysis.ToolCalls.Count);
+            toolCallCount: analysis.ToolCalls.Count,
+            verbosity: verbosity);
     }
+
+    /// <summary>The defaults as the renderer's settings form and run popover read them.</summary>
+    public static AnalysisOptions ToWire(AnalysisRunOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        return new AnalysisOptions(
+            changeClusters: options.ChangeClusters,
+            containerExplanations: options.ContainerExplanations,
+            edgeExplanations: options.EdgeExplanations,
+            implementationGroups: options.ImplementationGroups,
+            nodeExplanations: options.NodeExplanations,
+            risks: options.Risks,
+            verbosity: options.Verbosity switch
+            {
+                AnalysisVerbosity.Brief => AnalysisVerbosityLevel.Brief,
+                AnalysisVerbosity.Medium => AnalysisVerbosityLevel.Medium,
+                AnalysisVerbosity.Detailed => AnalysisVerbosityLevel.Detailed,
+                _ => throw new ArgumentOutOfRangeException(nameof(options), options.Verbosity, "Unnamed verbosity."),
+            });
+    }
+
+    /// <summary>The defaults as the renderer sent them to be saved.</summary>
+    public static AnalysisRunOptions FromWire(AnalysisOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        return new AnalysisRunOptions
+        {
+            ChangeClusters = options.ChangeClusters,
+            ImplementationGroups = options.ImplementationGroups,
+            Risks = options.Risks,
+            NodeExplanations = options.NodeExplanations,
+            EdgeExplanations = options.EdgeExplanations,
+            ContainerExplanations = options.ContainerExplanations,
+            Verbosity = options.Verbosity switch
+            {
+                AnalysisVerbosityLevel.Brief => AnalysisVerbosity.Brief,
+                AnalysisVerbosityLevel.Medium => AnalysisVerbosity.Medium,
+                AnalysisVerbosityLevel.Detailed => AnalysisVerbosity.Detailed,
+                _ => throw new ArgumentOutOfRangeException(nameof(options), options.Verbosity, "Unnamed verbosity."),
+            },
+        };
+    }
+
+    /// <summary>
+    /// The parts one run request names. What it leaves out is left to the defaults — see
+    /// <see cref="AnalysisDefaults.ResolveAsync"/>.
+    /// </summary>
+    public static AnalysisRunOverrides OverridesOf(AnalysisRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return new AnalysisRunOverrides
+        {
+            ChangeClusters = request.ChangeClusters,
+            ImplementationGroups = request.ImplementationGroups,
+            Risks = request.Risks,
+            NodeExplanations = request.NodeExplanations,
+            EdgeExplanations = request.EdgeExplanations,
+            ContainerExplanations = request.ContainerExplanations,
+            Verbosity = request.Verbosity switch
+            {
+                null => null,
+                AnalysisRequestVerbosity.Brief => AnalysisVerbosity.Brief,
+                AnalysisRequestVerbosity.Medium => AnalysisVerbosity.Medium,
+                AnalysisRequestVerbosity.Detailed => AnalysisVerbosity.Detailed,
+                _ => throw new ArgumentOutOfRangeException(nameof(request), request.Verbosity, "Unnamed verbosity."),
+            },
+        };
+    }
+
+    private static AnalysisViewVerbosity ToViewWire(AnalysisVerbosity verbosity) => verbosity switch
+    {
+        AnalysisVerbosity.Brief => AnalysisViewVerbosity.Brief,
+        AnalysisVerbosity.Medium => AnalysisViewVerbosity.Medium,
+        AnalysisVerbosity.Detailed => AnalysisViewVerbosity.Detailed,
+        _ => throw new ArgumentOutOfRangeException(nameof(verbosity), verbosity, "Unnamed verbosity."),
+    };
 
     /// <summary>
     /// The library. Summaries arrive most recent first, so the first one is the latest — the same

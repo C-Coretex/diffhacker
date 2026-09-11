@@ -35,33 +35,32 @@ public static class AnalysisValidator
     /// </summary>
     /// <param name="result">The model's answer, already known to match the schema.</param>
     /// <param name="changedFiles">Every file in the changeset. The completeness rule is measured against this.</param>
-    /// <param name="expectChangeClusters">
-    /// Whether the run asked for the second grouping. When it did not, the cluster fields were not
-    /// in the schema the model answered and their absence is not a finding.
-    /// </param>
-    /// <param name="expectImplementationGroups">
-    /// Whether the run asked for implementation groups. Their <i>absence</i> is only a finding when it
-    /// did; groups that are present are checked either way.
+    /// <param name="options">
+    /// What the run asked for. A part it did not ask for was not in the schema the model answered, so
+    /// its absence is not a finding: no second grouping, no implementation groups, and no node prose
+    /// to insist on. The length warnings are measured against the run's verbosity. Implementation
+    /// groups that are present are checked either way.
     /// </param>
     public static AnalysisValidation Validate(
         AnalysisResult result,
         IReadOnlyList<ChangedFile> changedFiles,
-        bool expectChangeClusters,
-        bool expectImplementationGroups = false)
+        AnalysisRunOptions options)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(changedFiles);
+        ArgumentNullException.ThrowIfNull(options);
 
+        var budgets = AnalysisFieldBudgets.For(options.Verbosity);
         var diagnostics = new List<AnalysisDiagnostic>();
         var nodesById = CheckNodeIdentity(result, diagnostics);
 
         CheckFileCoverage(result, changedFiles, diagnostics, nodesById);
-        CheckNodeContent(result, diagnostics);
+        CheckNodeContent(result, options.NodeExplanations, diagnostics);
         CheckEdges(result, nodesById, diagnostics);
         CheckCycles(result, diagnostics);
-        CheckSharedFieldLengths(result, diagnostics);
+        CheckSharedFieldLengths(result, budgets, diagnostics);
 
-        if (expectChangeClusters && result.ClusterContainers.Count == 0)
+        if (options.ChangeClusters && result.ClusterContainers.Count == 0)
         {
             diagnostics.Add(AnalysisDiagnostic.Error(
                 AnalysisDiagnosticCodes.GroupingMissing,
@@ -71,7 +70,7 @@ public static class AnalysisValidator
                 AnalysisGrouping.ChangeClusters));
         }
 
-        if (expectImplementationGroups && result.ImplementationGroups is null)
+        if (options.ImplementationGroups && result.ImplementationGroups is null)
         {
             diagnostics.Add(AnalysisDiagnostic.Error(
                 AnalysisDiagnosticCodes.ImplementationGroupsMissing,
@@ -90,7 +89,7 @@ public static class AnalysisValidator
             CheckMembership(result, nodesById, membership, grouping, diagnostics);
             CheckReadingOrder(result, view, nodesById, diagnostics);
             CheckReachability(result, view, diagnostics);
-            CheckContainerFieldLengths(view, diagnostics);
+            CheckContainerFieldLengths(view, budgets, diagnostics);
             CheckImplementationGroupsTogether(result, view, diagnostics);
         }
 
@@ -319,17 +318,23 @@ public static class AnalysisValidator
     /// true to say about what changed and why, but nothing to say about downstream effects or
     /// implementation detail — so a thin node passes, and only an empty one does not.
     /// </para>
+    /// <para>
+    /// A run that did not ask for node explanations had no prose fields in its schema, so only the
+    /// title is insisted on there.
+    /// </para>
     /// </summary>
-    private static void CheckNodeContent(AnalysisResult result, List<AnalysisDiagnostic> diagnostics)
+    private static void CheckNodeContent(
+        AnalysisResult result,
+        bool expectProse,
+        List<AnalysisDiagnostic> diagnostics)
     {
         foreach (var node in result.Nodes)
         {
-            foreach (var (field, value) in new[]
-            {
-                ("title", node.Title),
-                ("whatChanged", node.WhatChanged),
-                ("whyItChanged", node.WhyItChanged),
-            })
+            var required = expectProse
+                ? new[] { ("title", node.Title), ("whatChanged", node.WhatChanged), ("whyItChanged", node.WhyItChanged) }
+                : [("title", node.Title)];
+
+            foreach (var (field, value) in required)
             {
                 if (string.IsNullOrWhiteSpace(value))
                 {
@@ -747,9 +752,10 @@ public static class AnalysisValidator
     /// Fields that ran to more than twice the length they were asked for, on everything the two
     /// groupings share.
     /// <para>
-    /// Warnings, always. The prompt states every budget in <see cref="AnalysisFieldBudgets"/>, and a
-    /// model that overshoots has still answered the question — the text is simply longer than the
-    /// box it is read in, and the renderer truncates it. Making this an error would send a
+    /// Warnings, always. The prompt states every budget in <see cref="AnalysisFieldBudgets"/> for the
+    /// run's verbosity, and these are measured against the same set. A model that overshoots has
+    /// still answered the question — the text is simply longer than the box it is read in. Making
+    /// this an error would send a
     /// three-hundred-node document back to be rewritten because one sentence ran long, and that
     /// repair round costs more than the verbosity does.
     /// </para>
@@ -759,26 +765,29 @@ public static class AnalysisValidator
     /// seeing, which is a model being verbose everywhere rather than once.
     /// </para>
     /// </summary>
-    private static void CheckSharedFieldLengths(AnalysisResult result, List<AnalysisDiagnostic> diagnostics)
+    private static void CheckSharedFieldLengths(
+        AnalysisResult result,
+        AnalysisFieldBudgetSet budgets,
+        List<AnalysisDiagnostic> diagnostics)
     {
-        Report(diagnostics, string.Empty, "summary", result.Summary, AnalysisFieldBudgets.OverallSummary, null);
+        Report(diagnostics, string.Empty, "summary", result.Summary, budgets.OverallSummary, null);
 
         foreach (var risk in result.OverallRisks)
         {
-            Report(diagnostics, string.Empty, "risk", risk, AnalysisFieldBudgets.Risk, null);
+            Report(diagnostics, string.Empty, "risk", risk, budgets.Risk, null);
         }
 
         foreach (var node in result.Nodes)
         {
-            Report(diagnostics, node.Id, "title", node.Title, AnalysisFieldBudgets.NodeTitle, null);
-            Report(diagnostics, node.Id, "whatChanged", node.WhatChanged, AnalysisFieldBudgets.NodeProse, null);
-            Report(diagnostics, node.Id, "whyItChanged", node.WhyItChanged, AnalysisFieldBudgets.NodeProse, null);
-            Report(diagnostics, node.Id, "howItAffectsOthers", node.HowItAffectsOthers, AnalysisFieldBudgets.NodeProse, null);
-            Report(diagnostics, node.Id, "implementationNotes", node.ImplementationNotes, AnalysisFieldBudgets.NodeProse, null);
+            Report(diagnostics, node.Id, "title", node.Title, budgets.NodeTitle, null);
+            Report(diagnostics, node.Id, "whatChanged", node.WhatChanged, budgets.NodeProse, null);
+            Report(diagnostics, node.Id, "whyItChanged", node.WhyItChanged, budgets.NodeProse, null);
+            Report(diagnostics, node.Id, "howItAffectsOthers", node.HowItAffectsOthers, budgets.NodeProse, null);
+            Report(diagnostics, node.Id, "implementationNotes", node.ImplementationNotes, budgets.NodeProse, null);
 
             foreach (var risk in node.Risks)
             {
-                Report(diagnostics, node.Id, "risk", risk, AnalysisFieldBudgets.Risk, null);
+                Report(diagnostics, node.Id, "risk", risk, budgets.Risk, null);
             }
         }
     }
@@ -786,17 +795,18 @@ public static class AnalysisValidator
     /// <inheritdoc cref="CheckSharedFieldLengths"/>
     private static void CheckContainerFieldLengths(
         AnalysisGroupingView view,
+        AnalysisFieldBudgetSet budgets,
         List<AnalysisDiagnostic> diagnostics)
     {
         foreach (var container in view.Containers)
         {
-            Report(diagnostics, container.Id, "title", container.Title, AnalysisFieldBudgets.ContainerTitle, view.Grouping);
-            Report(diagnostics, container.Id, "summary", container.Summary, AnalysisFieldBudgets.ContainerSummary, view.Grouping);
-            Report(diagnostics, container.Id, "explanation", container.Explanation, AnalysisFieldBudgets.ContainerExplanation, view.Grouping);
+            Report(diagnostics, container.Id, "title", container.Title, budgets.ContainerTitle, view.Grouping);
+            Report(diagnostics, container.Id, "summary", container.Summary, budgets.ContainerSummary, view.Grouping);
+            Report(diagnostics, container.Id, "explanation", container.Explanation, budgets.ContainerExplanation, view.Grouping);
 
             foreach (var risk in container.Risks)
             {
-                Report(diagnostics, container.Id, "risk", risk, AnalysisFieldBudgets.Risk, view.Grouping);
+                Report(diagnostics, container.Id, "risk", risk, budgets.Risk, view.Grouping);
             }
         }
     }

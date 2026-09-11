@@ -120,6 +120,36 @@ public sealed class AnalysisAgreementTests
     }
 
     [Fact]
+    public void The_three_verbosity_enums_agree()
+    {
+        // The defaults, one run's override, and what the view says the run was asked for: three files,
+        // three generated types, one set of spellings.
+        string[] expected = ["brief", "medium", "detailed"];
+
+        WireValues<AnalysisVerbosityLevel>().ShouldBe(expected);
+        WireValues<AnalysisRequestVerbosity>().ShouldBe(expected);
+        WireValues<AnalysisViewVerbosity>().ShouldBe(expected);
+    }
+
+    [Fact]
+    public void Every_part_a_run_can_skip_can_be_defaulted_overridden_and_reported()
+    {
+        string[] parts = ["changeClusters", "implementationGroups", "risks", "nodeExplanations", "edgeExplanations", "containerExplanations"];
+
+        foreach (var part in parts)
+        {
+            Names<AnalysisOptions>().ShouldContain(part);
+            Names<AnalysisRequest>().ShouldContain(part);
+        }
+
+        // What the view reports: the two groupings through availableGroupings, the rest as flags.
+        foreach (var flag in new[] { "implementationGroupsProduced", "risksProduced", "nodeExplanationsProduced", "edgeExplanationsProduced", "containerExplanationsProduced" })
+        {
+            Names<AnalysisView>().ShouldContain(flag);
+        }
+    }
+
+    [Fact]
     public void The_two_edge_kind_enums_agree()
     {
         string[] expected = ["direct", "conceptual"];

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type {
   AnalysisFreshness,
   AnalysisLibrary,
+  AnalysisOptions,
   AnalysisProgress,
   AnalysisTrace,
   AnalysisView,
@@ -302,6 +303,12 @@ interface AppState {
   /** Which external editors are available, from `editor.describe`. Undefined until asked. */
   editors?: EditorSettings;
 
+  /**
+   * The parts of an analysis a run asks for unless told otherwise, from `analysis.getDefaults`.
+   * Undefined until asked. Settings writes it; the run options on the analysis screen only read it.
+   */
+  analysisDefaults?: AnalysisOptions;
+
   setConnected(hostInfo: HostInfo): void;
   setDetached(): void;
   setConnectionError(message: string): void;
@@ -379,6 +386,7 @@ interface AppState {
   setDiffExplanationOpen(open: boolean): void;
   setEditorError(message: string | undefined): void;
   setEditors(editors: EditorSettings): void;
+  setAnalysisDefaults(defaults: AnalysisOptions): void;
 }
 
 /**
@@ -761,6 +769,8 @@ export const useAppStore = create<AppState>((set) => ({
   setEditorError: (editorError) => set({ editorError }),
 
   setEditors: (editors) => set({ editors }),
+
+  setAnalysisDefaults: (analysisDefaults) => set({ analysisDefaults }),
 }));
 
 /**

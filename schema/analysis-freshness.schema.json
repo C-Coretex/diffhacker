@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.14/analysis-freshness.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.15/analysis-freshness.schema.json",
   "title": "AnalysisFreshness",
   "description": "Whether the working tree has moved since a stored analysis ran, returned by analysis.checkFreshness. Asked after the analysis is already on screen rather than before, so reopening stays instant; the answer then either confirms the picture or puts a prompt to re-analyse above it. Compared per file: the set of changed paths, their status, and a SHA-256 of each file's working-tree content recorded at run time — so reverting an edit makes the analysis fresh again. HEAD moving is always stale, because the committed side of every diff moved with it.",
   "type": "object",

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.14/analysis-library.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.15/analysis-library.schema.json",
   "title": "AnalysisLibrary",
   "description": "Every stored analysis of one repository, most recent first, as the facts a reviewer chooses between: when, which model, what it cost, how large the change was. Returned by analysis.list and analysis.delete. Listing never reads a document, and reopening one is analysis.get with its id — neither starts a conversation.",
   "type": "object",

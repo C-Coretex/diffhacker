@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.15/analysis-options.schema.json",
+  "title": "AnalysisOptions",
+  "description": "Which parts of an analysis a run asks the model for, and how long their prose should be. Returned by analysis.getDefaults and taken and returned whole by analysis.saveDefaults, which is the only way the defaults change: a run's own overrides travel on analysis.run and are never remembered. A part that is off is removed from the prompt and from the response schema, so it costs nothing on any turn.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "changeClusters",
+    "implementationGroups",
+    "risks",
+    "nodeExplanations",
+    "edgeExplanations",
+    "containerExplanations",
+    "verbosity"
+  ],
+  "properties": {
+    "changeClusters": {
+      "type": "boolean",
+      "description": "Whether a run also produces the change-clusters grouping. Dependency flow is always produced."
+    },
+    "implementationGroups": {
+      "type": "boolean",
+      "description": "Whether a run declares which abstractions were changed alongside their implementations."
+    },
+    "risks": {
+      "type": "boolean",
+      "description": "Whether a run assesses risks: overall, per cluster, per node and per edge, and the risky node state."
+    },
+    "nodeExplanations": {
+      "type": "boolean",
+      "description": "Whether each node gets what changed, why, what it affects and implementation notes. Titles are always produced."
+    },
+    "edgeExplanations": {
+      "type": "boolean",
+      "description": "Whether each edge gets an explanation. Its ends and kind are always produced."
+    },
+    "containerExplanations": {
+      "type": "boolean",
+      "description": "Whether each cluster gets a summary and an explanation. Its title is always produced."
+    },
+    "verbosity": {
+      "title": "AnalysisVerbosityLevel",
+      "type": "string",
+      "enum": ["brief", "medium", "detailed"],
+      "description": "How long the prose a run asks for should be. medium is the lengths every analysis before 1.15 was written against; brief is about half of that and detailed about twice."
+    }
+  }
+}

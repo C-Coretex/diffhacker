@@ -424,14 +424,66 @@ export const en = {
     emptyBody:
       'One run reads the working tree, explores the repository and produces the whole result at once. It costs real money, so nothing starts until you ask.',
 
-    // The one control on this screen that changes what a run costs, so it says what it buys and
-    // sits beside the button that spends the money rather than in a settings page.
-    changeClusters: 'Also group by theme',
-    changeClustersBody:
-      'Asks the same run for a second grouping, so you can switch between them afterwards without paying again. Turn it off and the run is a little cheaper and only the dependency-flow grouping exists.',
-    implementationGroups: 'Group interfaces with implementations',
-    implementationGroupsBody:
-      'Asks the same run which changed abstractions — interfaces, abstract bases, traits, headers — have changed implementations beside them, so the diagram can draw each as one box. Turn it off and the run is a little cheaper and nothing can be merged.',
+    /**
+     * Which parts of an analysis a run asks the model for. The defaults live in Settings; the run
+     * options beside the button that spends the money change them for one run only. Each body says
+     * what the part buys and what turning it off leaves, because that is the decision being made.
+     */
+    parts: {
+      heading: 'What an analysis asks for',
+      description:
+        'What every run asks the model for unless you change it for one run. A part you turn off is left out of the request entirely and the model is told not to do that work, so runs get cheaper and faster.',
+
+      changeClusters: 'Also group by theme',
+      changeClustersBody:
+        'Asks the same run for a second grouping, so you can switch between them afterwards without paying again. Off: only the dependency-flow grouping exists.',
+      implementationGroups: 'Group interfaces with implementations',
+      implementationGroupsBody:
+        'Asks which changed abstractions — interfaces, abstract bases, traits, headers — have changed implementations beside them, so the diagram can draw each as one box. Off: nothing can be merged.',
+      risks: 'Risks',
+      risksBody:
+        'Asks what could go wrong — for the change as a whole, each cluster, each file and each relationship. Off: no risk columns are shown.',
+      nodeExplanations: 'File explanations',
+      nodeExplanationsBody:
+        'What changed in each file, why, what it affects, and notes on how it is built. Off: each file keeps its title.',
+      edgeExplanations: 'Relationship explanations',
+      edgeExplanationsBody:
+        'A sentence on each line between two files, saying how the change affects that relationship. Off: the lines stay, without text.',
+      containerExplanations: 'Cluster explanations',
+      containerExplanationsBody:
+        'A summary and a longer explanation for each cluster. Off: each cluster keeps its title.',
+
+      groupingsLegend: 'Groupings',
+      contentLegend: 'Content',
+      verbosity: 'How much to write',
+      verbosityBrief: 'Brief',
+      verbosityBriefBody: 'About a sentence per field. The cheapest, and usually all a card has room for.',
+      verbosityMedium: 'Medium',
+      verbosityMediumBody: 'A few sentences per field — the lengths analyses were written at before this setting existed.',
+      verbosityDetailed: 'Detailed',
+      verbosityDetailedBody: 'Room for the specifics and reasoning a shorter answer drops. The most expensive.',
+
+      save: 'Save defaults',
+      saving: 'Saving…',
+      saved: 'Saved.',
+
+      trigger: 'Run options',
+      triggerAll: '{verbosity} · everything',
+      triggerSome: '{verbosity} · {count} part(s) off',
+      popoverHeading: 'The next run',
+      popoverBody: 'Applies to the next run only and is not remembered. Change the defaults in Settings.',
+      changed: 'Changed from your defaults',
+      reset: 'Reset to defaults',
+
+      skipped: 'Not asked for: {parts}',
+      verbosityLine: '{verbosity} prose',
+      skippedRisks: 'risks',
+      skippedNodeExplanations: 'file explanations',
+      skippedEdgeExplanations: 'relationship explanations',
+      skippedContainerExplanations: 'cluster explanations',
+      explanationsNotRequested: 'Explanations were not asked for on this run.',
+    },
+
     cleanHeading: 'Nothing to analyse',
     cleanBody: 'The working tree matches HEAD, so there is no change to describe.',
 

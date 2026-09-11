@@ -26,7 +26,15 @@ public interface IAnalysisRunner
 /// What this run should ask the model for, as distinct from what the analysis is <i>of</i>.
 /// <para>
 /// A record rather than a parameter because it is the shape the answer to "which parts of the
-/// analysis do I actually want to pay for?" takes, and there will be more of them than one.
+/// analysis do I actually want to pay for?" takes. Every part that is switched off is taken out of
+/// the prompt and out of the response schema — not asked for and discarded — because both reach the
+/// model on every turn, and the schema twice. The prompt then says plainly that the work is not
+/// wanted, so the model does not do it anyway in a field that is still there.
+/// </para>
+/// <para>
+/// Value equality matters: <see cref="AnalysisResponseSchema"/> caches a schema per distinct set of
+/// options, and the record is stored beside the document so the renderer can tell "not asked for"
+/// from "nothing to say".
 /// </para>
 /// </summary>
 public sealed record AnalysisRunOptions
@@ -45,8 +53,39 @@ public sealed record AnalysisRunOptions
     /// </summary>
     public bool ImplementationGroups { get; init; } = true;
 
-    /// <summary>Everything — what a run does unless the reviewer said otherwise.</summary>
+    /// <summary>
+    /// Whether to ask for risks — overall, per container, per node and per edge, and the risky state.
+    /// False removes every one of those fields, and the prompt tells the model not to assess risk at
+    /// all rather than letting it fold warnings into the prose.
+    /// </summary>
+    public bool Risks { get; init; } = true;
+
+    /// <summary>
+    /// Whether each node gets its four prose fields — what changed, why, what it affects, notes.
+    /// False leaves a node its title, its place and its importance.
+    /// </summary>
+    public bool NodeExplanations { get; init; } = true;
+
+    /// <summary>Whether each edge gets an explanation. False leaves it its two ends and its kind.</summary>
+    public bool EdgeExplanations { get; init; } = true;
+
+    /// <summary>Whether each container gets a summary and an explanation. False leaves it its title.</summary>
+    public bool ContainerExplanations { get; init; } = true;
+
+    /// <summary>How long the prose that is asked for should be.</summary>
+    public AnalysisVerbosity Verbosity { get; init; } = AnalysisVerbosity.Brief;
+
+    /// <summary>
+    /// Every part, at the default verbosity — what a run does unless the reviewer said otherwise.
+    /// </summary>
     public static AnalysisRunOptions Default { get; } = new();
+
+    /// <summary>
+    /// What an analysis written before 1.15 was asked for, as far as it can be told: every part it
+    /// could have had, at the lengths the prompt then asked for. The two groupings and implementation
+    /// groups are read from the document instead, which does know.
+    /// </summary>
+    public static AnalysisRunOptions Legacy { get; } = new() { Verbosity = AnalysisVerbosity.Medium };
 }
 
 /// <summary>The outcome of one analysis run, complete with what it cost.</summary>

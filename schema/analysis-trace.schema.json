@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.14/analysis-trace.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.15/analysis-trace.schema.json",
   "title": "AnalysisTrace",
   "description": "The recorded trace of one stored analysis: every tool call the model made, in the order it asked for them, and everything it said through report_progress. Returned by analysis.trace on demand rather than carried on AnalysisView, because a run may make five hundred calls and the view is re-sent on every read and every grouping switch.",
   "type": "object",

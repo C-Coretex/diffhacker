@@ -299,7 +299,47 @@ export class SettingsScreen {
     await this.saveEditorCommandsButton.click();
     await expect(this.page.getByText(en.editors.saved, { exact: true })).toBeVisible();
   }
+
+  // ------------------------------------------------------ What an analysis asks for, by default
+
+  /** The card holding the analysis defaults. */
+  get analysisDefaults(): Locator {
+    return this.page.getByTestId('analysis-defaults');
+  }
+
+  /**
+   * One default part's checkbox. `part` is the kebab-case slug: `change-clusters`,
+   * `implementation-groups`, `risks`, `node-explanations`, `edge-explanations` or
+   * `container-explanations`.
+   */
+  analysisDefault(part: AnalysisPartSlug): Locator {
+    return this.page.getByTestId(`default-option-${part}`);
+  }
+
+  /** One of the three verbosity buttons in the defaults. */
+  analysisDefaultVerbosity(verbosity: 'brief' | 'medium' | 'detailed'): Locator {
+    return this.page.getByTestId(`default-option-verbosity-${verbosity}`);
+  }
+
+  get saveAnalysisDefaultsButton(): Locator {
+    return this.page.getByTestId('analysis-defaults-save');
+  }
+
+  /** Saves the defaults and waits for the host to have taken them. */
+  async saveAnalysisDefaults(): Promise<void> {
+    await this.saveAnalysisDefaultsButton.click();
+    await expect(this.analysisDefaults.getByText(en.analysis.parts.saved, { exact: true })).toBeVisible();
+  }
 }
+
+/** The parts an analysis can be told to skip, as their controls' test ids spell them. */
+export type AnalysisPartSlug =
+  | 'change-clusters'
+  | 'implementation-groups'
+  | 'risks'
+  | 'node-explanations'
+  | 'edge-explanations'
+  | 'container-explanations';
 
 export class ProfileScreen {
   constructor(private readonly page: Page) {}
@@ -540,14 +580,58 @@ export class AnalysisScreen {
     return this.page.getByTestId('grouping-explanation');
   }
 
-  /** Whether the next run should ask for the second grouping. Beside the Analyse button. */
-  get changeClustersToggle(): Locator {
-    return this.page.getByTestId('toggle-change-clusters');
+  /**
+   * The run options beside the Analyse button: what the next run asks for. Its text summarises it —
+   * the verbosity and how many parts are off — and `data-changed` says whether it differs from the
+   * defaults set in Settings.
+   */
+  get runOptionsButton(): Locator {
+    return this.page.getByTestId('run-options-button');
   }
 
-  /** Whether the next run should ask for implementation groups. Beside the Analyse button too. */
-  get implementationGroupsToggle(): Locator {
-    return this.page.getByTestId('toggle-implementation-groups');
+  /** The open run-options popover. */
+  get runOptions(): Locator {
+    return this.page.getByTestId('run-options');
+  }
+
+  /** One part's checkbox in the run options. Only present while the popover is open. */
+  runOption(part: AnalysisPartSlug): Locator {
+    return this.page.getByTestId(`run-option-${part}`);
+  }
+
+  /** One of the three verbosity buttons in the run options. */
+  runOptionVerbosity(verbosity: 'brief' | 'medium' | 'detailed'): Locator {
+    return this.page.getByTestId(`run-option-verbosity-${verbosity}`);
+  }
+
+  /** Opens the run options, if they are not open already. */
+  async openRunOptions(): Promise<void> {
+    if (!(await this.runOptions.isVisible())) {
+      await this.runOptionsButton.click();
+    }
+
+    await expect(this.runOptions).toBeVisible();
+  }
+
+  /** Closes the run options, so the Analyse button is not behind the popover. */
+  async closeRunOptions(): Promise<void> {
+    await this.page.keyboard.press('Escape');
+    await expect(this.runOptions).toHaveCount(0);
+  }
+
+  /**
+   * Sets one part for the next run only, through the popover, and closes it again. The defaults in
+   * Settings are untouched — which is the difference the specs exist to prove.
+   */
+  async setRunOption(part: AnalysisPartSlug, on: boolean): Promise<void> {
+    await this.openRunOptions();
+    await this.runOption(part).setChecked(on);
+    await this.closeRunOptions();
+  }
+
+  /** The provenance line's "Not asked for: …", present only when a run skipped a part. */
+  get skippedParts(): Locator {
+    return this.page.getByTestId('analysis-skipped-parts');
   }
 
   /** The toolbar's view-only toggle: draw each abstraction with its implementations as one box. */

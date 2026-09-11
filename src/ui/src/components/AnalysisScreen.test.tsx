@@ -1,7 +1,13 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AnalysisFreshness, AnalysisLibrary, AnalysisTrace, AnalysisView } from '@/contracts';
+import type {
+  AnalysisFreshness,
+  AnalysisLibrary,
+  AnalysisOptions,
+  AnalysisTrace,
+  AnalysisView,
+} from '@/contracts';
 import { en } from '@/i18n/en';
 import { RpcProvider } from '@/rpc/RpcProvider';
 import { useAppStore } from '@/store/appStore';
@@ -23,12 +29,28 @@ function emptyView(): AnalysisView {
     reviewedNodeIds: [],
     grouping: 'dependency_flow',
     availableGroupings: ['dependency_flow', 'change_clusters'],
-    produceChangeClusters: true,
     implementationGroups: [],
     implementationGroupsProduced: false,
-    produceImplementationGroups: true,
+    risksProduced: false,
+    nodeExplanationsProduced: false,
+    edgeExplanationsProduced: false,
+    containerExplanationsProduced: false,
     isLatest: false,
     toolCallCount: 0,
+  };
+}
+
+/** The defaults Settings holds, as `analysis.getDefaults` answers them. */
+function defaults(overrides: Partial<AnalysisOptions> = {}): AnalysisOptions {
+  return {
+    changeClusters: true,
+    implementationGroups: true,
+    risks: true,
+    nodeExplanations: true,
+    edgeExplanations: true,
+    containerExplanations: true,
+    verbosity: 'brief',
+    ...overrides,
   };
 }
 
@@ -36,6 +58,11 @@ function analysedView(overrides: Partial<AnalysisView> = {}): AnalysisView {
   return {
     ...emptyView(),
     hasAnalysis: true,
+    risksProduced: true,
+    nodeExplanationsProduced: true,
+    edgeExplanationsProduced: true,
+    containerExplanationsProduced: true,
+    verbosity: 'medium',
     analysisId: 'analysis1',
     schemaVersion: '1.7.0',
     createdAtUtc: '2026-05-01T00:00:00Z',
@@ -170,6 +197,7 @@ describe('AnalysisScreen', () => {
       analysisFreshness: undefined,
       analysisStaleDismissed: undefined,
       analysisTrace: undefined,
+      analysisDefaults: undefined,
       graphOverviewOpen: false,
     });
   });
@@ -185,28 +213,102 @@ describe('AnalysisScreen', () => {
     expect(screen.getByRole('button', { name: 'Analyse this change' })).toBeInTheDocument();
   });
 
-  it('asks the next run for implementation groups the way the reviewer last left the box', async () => {
-    // The host remembers the choice and reports it on every view, so the box comes back as it was
-    // left; ticking it again is an override the run request carries.
+  it('starts the next run from the Settings defaults, sends a one-off change, and never saves it', async () => {
+    // The defaults change in Settings and nowhere else. A change in the run options is for the next
+    // run only: sent with it, never written back, and gone once that run succeeds.
+    const transport = new FakeTransport();
+    renderScreen(transport);
+
+    await waitFor(() => expect(requests(transport, 'analysis.get')).toHaveLength(1));
+    act(() => {
+      transport.respondTo('analysis.getDefaults', defaults({ risks: false }));
+      transport.respondTo('analysis.get', emptyView());
+    });
+
+    const trigger = await screen.findByTestId('run-options-button');
+    await waitFor(() => expect(trigger).toHaveTextContent('Brief · 1 part(s) off'));
+    expect(trigger).toHaveAttribute('data-changed', 'false');
+
+    await userEvent.click(trigger);
+
+    const risks = await screen.findByTestId('run-option-risks');
+    expect(risks).not.toBeChecked();
+
+    await userEvent.click(risks);
+    await userEvent.click(screen.getByTestId('run-option-verbosity-detailed'));
+
+    expect(screen.getByTestId('run-options-button')).toHaveAttribute('data-changed', 'true');
+    expect(screen.getByText(en.analysis.parts.popoverBody)).toBeInTheDocument();
+
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(screen.getByRole('button', { name: 'Analyse this change' }));
+
+    await waitFor(() => expect(requests(transport, 'analysis.run')).toHaveLength(1));
+
+    // Every part named, so what the reviewer saw is exactly what is asked for.
+    expect(requests(transport, 'analysis.run')[0]!.params[0]).toEqual({
+      repositoryPath: 'C:/repo',
+      ...defaults({ risks: true, verbosity: 'detailed' }),
+    });
+    expect(requests(transport, 'analysis.saveDefaults')).toHaveLength(0);
+
+    act(() => transport.respondTo('analysis.run', analysedView()));
+
+    // One-off: the next run starts from the defaults again.
+    await waitFor(() =>
+      expect(screen.getByTestId('run-options-button')).toHaveTextContent('Brief · 1 part(s) off'),
+    );
+    expect(screen.getByTestId('run-options-button')).toHaveAttribute('data-changed', 'false');
+  });
+
+  it('puts a changed option back to the default with one click', async () => {
+    const transport = new FakeTransport();
+    renderScreen(transport);
+
+    await waitFor(() => expect(requests(transport, 'analysis.get')).toHaveLength(1));
+    act(() => {
+      transport.respondTo('analysis.getDefaults', defaults());
+      transport.respondTo('analysis.get', emptyView());
+    });
+
+    await userEvent.click(await screen.findByTestId('run-options-button'));
+    await userEvent.click(await screen.findByTestId('run-option-edge-explanations'));
+
+    expect(screen.getByTestId('run-options-button')).toHaveTextContent('Brief · 1 part(s) off');
+
+    await userEvent.click(screen.getByTestId('run-options-reset'));
+
+    expect(screen.getByTestId('run-options-button')).toHaveTextContent('Brief · everything');
+    expect(screen.getByTestId('run-option-edge-explanations')).toBeChecked();
+  });
+
+  it('leaves out what the run was not asked for rather than showing it empty, and says so', async () => {
+    // "No risks were reported" on a run that was never asked for risks is a reassurance nobody
+    // earned. The column goes, and the provenance line says what was skipped.
     const transport = new FakeTransport();
     renderScreen(transport);
 
     await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.get'));
-    transport.respond({ ...emptyView(), produceImplementationGroups: false });
+    transport.respond(
+      analysedView({
+        risksProduced: false,
+        edgeExplanationsProduced: false,
+        overallRisks: [],
+        verbosity: 'brief',
+      }),
+    );
 
-    const box = await screen.findByTestId('toggle-implementation-groups');
-    await waitFor(() => expect(box).not.toBeChecked());
+    expect(await screen.findByTestId('analysis-skipped-parts')).toHaveTextContent(
+      'Not asked for: risks, relationship explanations',
+    );
+    expect(screen.getByTestId('analysis-verbosity')).toHaveTextContent('Brief prose');
 
-    await userEvent.click(box);
-    await userEvent.click(screen.getByRole('button', { name: 'Analyse this change' }));
+    expect(screen.queryByText(en.analysis.risksHeading)).not.toBeInTheDocument();
+    expect(screen.queryByText(en.analysis.noRisks)).not.toBeInTheDocument();
 
-    await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.run'));
-
-    expect(transport.lastRequest().params[0]).toMatchObject({
-      repositoryPath: 'C:/repo',
-      changeClusters: true,
-      implementationGroups: true,
-    });
+    await userEvent.click(screen.getByRole('button', { name: 'Overview' }));
+    expect(screen.queryByTestId('risk-register')).not.toBeInTheDocument();
+    expect(screen.queryByText(en.analysis.overview.registerHeading)).not.toBeInTheDocument();
   });
 
   it('asks the host for the other grouping and replaces the view with what comes back', async () => {

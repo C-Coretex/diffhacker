@@ -1,5 +1,7 @@
 Nice to haves:
-2. an option in (set default in settings and can override per analysis) to disable specific analysis parts
-   like risks, descriptions, grouping modes (get only one), verbosity. If something is disabled - just remove info about it in the prompt 
-   and say clearly that this is not needed (so LLM would have less work)
-5. Add user instructions. Add a button help with information, FAQ and step by step guide (not screenshots, real tour in UI)
+5. Add user instructions. Add a button help with information, FAQ and step by step guide (not screenshots, real tour in UI with mock data, like tutorial)
+6. when opening diff on right side, the panel on the bottom should be resizable (So I could make the place for code bigger)
+7. filtration by projects 
+
+add icon
+build exe

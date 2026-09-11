@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.14/save-editor-settings-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.15/save-editor-settings-request.schema.json",
   "title": "SaveEditorSettingsRequest",
   "description": "Parameters of editor.save. Carries only the two things the user authored; whether VS Code and Visual Studio are installed is the host's to discover and never the renderer's to claim.",
   "type": "object",
