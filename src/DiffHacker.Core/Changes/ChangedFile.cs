@@ -76,4 +76,16 @@ public sealed record ChangedFile
 
     /// <summary>Which project or module this file belongs to.</summary>
     public required ProjectReference Project { get; init; }
+
+    /// <summary>
+    /// Lowercase hex SHA-256 of the working-tree side, when <see cref="ChangesetQuery.HashContent"/>
+    /// asked for it. Identity, not content: it is what lets a stored analysis tell that a file has
+    /// been edited since — and that an edit was reverted, which a modification time cannot.
+    /// <para>
+    /// Null for a deleted file (there is no working-tree side), a nested repository, a file that
+    /// could not be read, and whenever hashing was not asked for. A symbolic link is hashed by the
+    /// path it points at and never followed; a submodule by the commit it is on.
+    /// </para>
+    /// </summary>
+    public string? ContentSha256 { get; init; }
 }

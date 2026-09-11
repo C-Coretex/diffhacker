@@ -79,6 +79,7 @@ public sealed partial class RunEventNotifier(IRpcNotifier notifier, ILogger<RunE
             retryAttempt: value.RetryAttempt,
             retryDelayMs: value.RetryDelay?.TotalMilliseconds,
             sequence: Interlocked.Increment(ref _sequence),
+            toolCallCount: value.ToolCallCount,
             toolName: value.ToolName,
             turn: value.Turn);
 

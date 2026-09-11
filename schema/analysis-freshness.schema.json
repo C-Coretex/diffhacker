@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.14/analysis-freshness.schema.json",
+  "title": "AnalysisFreshness",
+  "description": "Whether the working tree has moved since a stored analysis ran, returned by analysis.checkFreshness. Asked after the analysis is already on screen rather than before, so reopening stays instant; the answer then either confirms the picture or puts a prompt to re-analyse above it. Compared per file: the set of changed paths, their status, and a SHA-256 of each file's working-tree content recorded at run time — so reverting an edit makes the analysis fresh again. HEAD moving is always stale, because the committed side of every diff moved with it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "analysisId",
+    "isStale",
+    "basis",
+    "headMoved",
+    "modifiedCount",
+    "addedCount",
+    "removedCount",
+    "modifiedPaths",
+    "addedPaths",
+    "removedPaths",
+    "checkedAtUtc"
+  ],
+  "properties": {
+    "analysisId": {
+      "type": "string",
+      "description": "The analysis that was compared."
+    },
+    "isStale": {
+      "type": "boolean",
+      "description": "True when anything below differs: HEAD moved, or a file was modified, added to or removed from the changeset."
+    },
+    "basis": {
+      "title": "AnalysisFreshnessBasis",
+      "description": "How closely files could be compared. content: every file present on both sides had a content hash. line_counts: at least one did not — an analysis from an older build, or a file that could not be read — and was compared by its added and removed line counts instead, which misses an edit that keeps both counts. head_only: the analysis predates per-file records and only HEAD could be compared.",
+      "type": "string",
+      "enum": ["content", "line_counts", "head_only"]
+    },
+    "headMoved": {
+      "type": "boolean",
+      "description": "True when HEAD is not the commit the analysis ran against."
+    },
+    "recordedHeadCommit": {
+      "type": "string",
+      "description": "HEAD when the analysis ran. Absent in a repository that had no commits."
+    },
+    "currentHeadCommit": {
+      "type": "string",
+      "description": "HEAD now. Absent in a repository with no commits."
+    },
+    "modifiedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Files in both changesets whose content, status or previous path differs."
+    },
+    "addedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Files changed now that the analysis does not cover."
+    },
+    "removedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Files the analysis covers that are no longer changed."
+    },
+    "modifiedPaths": {
+      "type": "array",
+      "description": "The modified files, sorted, at most fifty; modifiedCount is the whole number.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "addedPaths": {
+      "type": "array",
+      "description": "The added files, sorted, at most fifty; addedCount is the whole number.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "removedPaths": {
+      "type": "array",
+      "description": "The removed files, sorted, at most fifty; removedCount is the whole number.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "checkedAtUtc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC instant the comparison was made."
+    }
+  }
+}

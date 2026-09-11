@@ -518,6 +518,64 @@ export class AnalysisScreen {
     return this.page.getByTestId(`graph-merged-${abstractionNodeId}`);
   }
 
+  // ------------------------------------ Run transparency, the library, and staleness
+
+  /** One figure on the live strip: `phase`, `elapsed`, `tool-calls`, `turn`, `tokens` or `cost`. */
+  runStat(name: 'phase' | 'elapsed' | 'tool-calls' | 'turn' | 'tokens' | 'cost'): Locator {
+    return this.page.getByTestId(`run-${name}`);
+  }
+
+  /** The History button, which only exists once the repository has at least one stored run. */
+  get historyButton(): Locator {
+    return this.page.getByTestId('analysis-history-button');
+  }
+
+  /** The library's rows, most recent first, each carrying its analysis id. */
+  get historyEntries(): Locator {
+    return this.page.getByTestId('analysis-history-entry');
+  }
+
+  get confirmDeleteButton(): Locator {
+    return this.page.getByRole('button', { name: en.analysis.library.deleteConfirm, exact: true });
+  }
+
+  /** Shown while an earlier run than the latest is on screen. */
+  get earlierRunNotice(): Locator {
+    return this.page.getByTestId('earlier-run-notice');
+  }
+
+  get openLatestButton(): Locator {
+    return this.page.getByRole('button', { name: en.analysis.library.openLatest, exact: true });
+  }
+
+  /** The analysis surface, carrying what the last freshness check said: unchecked, fresh or stale. */
+  get freshness(): Locator {
+    return this.page.locator('[data-freshness]');
+  }
+
+  get staleBanner(): Locator {
+    return this.page.getByTestId('stale-analysis-banner');
+  }
+
+  /** The tool-call inspector's section in the overview band. */
+  get inspector(): Locator {
+    return this.page.getByTestId('tool-call-inspector');
+  }
+
+  /** The inspector's rows, in the order the model made the calls. */
+  get inspectorRows(): Locator {
+    return this.inspector.getByTestId('tool-call-row');
+  }
+
+  /**
+   * Tells the page its window came back into focus — what alt-tabbing back from an editor does.
+   * Dispatched rather than performed, because the suite cannot move the operating system's focus
+   * away from a window it is driving.
+   */
+  async refocus(): Promise<void> {
+    await this.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  }
+
   // ------------------------------------------------------- Iteration 9: explanations
 
   /** The band's toggle, which unfolds the rest of the overview. */

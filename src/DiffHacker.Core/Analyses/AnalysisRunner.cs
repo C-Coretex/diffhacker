@@ -95,8 +95,11 @@ public sealed partial class AnalysisRunner(
             };
         }
 
+        // Hashed here, at the start, from the same changeset the answer is validated against: the
+        // fingerprint describes the change the model was shown, which is what a later freshness
+        // check has to compare with.
         var changeset = await git
-            .GetChangesetAsync(new ChangesetQuery(repositoryPath), cancellationToken)
+            .GetChangesetAsync(new ChangesetQuery(repositoryPath, HashContent: true), cancellationToken)
             .ConfigureAwait(false);
 
         if (changeset.IsClean)

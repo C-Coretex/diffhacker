@@ -40,6 +40,8 @@ export function testView(overrides: Partial<AnalysisView> = {}): AnalysisView {
     implementationGroups: [],
     implementationGroupsProduced: true,
     produceImplementationGroups: true,
+    isLatest: true,
+    toolCallCount: 0,
     ...overrides,
   };
 }

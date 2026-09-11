@@ -85,6 +85,9 @@ specs/
                                          the controls on a box, a cluster opened whole, full screen
   10-grouping-modes.spec.ts              two groupings of one analysis, switching for free, marks
                                          that survive it, and the opt-out proved at the wire
+  11-implementation-groups.spec.ts       abstractions drawn with their implementations as one box
+  12-run-library.spec.ts                 the live run strip, the tool-call inspector, earlier runs
+                                         reopened for free, and a stale analysis said to be one
 src/
   appHarness.ts    launches the host, attaches over CDP, screenshots, tears down
   gitFixture.ts    builds real repositories in temp directories

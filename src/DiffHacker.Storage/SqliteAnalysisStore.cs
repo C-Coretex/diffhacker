@@ -18,12 +18,8 @@ namespace DiffHacker.Storage;
 /// </summary>
 public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
 {
-    /// <summary>
-    /// Analyses kept per repository. Generous, because re-running one costs money and the point of
-    /// storing them is not having to; bounded, because a five-hundred-node document is not small
-    /// and an unbounded history of them would grow without anyone deciding it should.
-    /// </summary>
-    private const int HistoryLimit = 20;
+    /// <inheritdoc cref="AnalysisLibraryPolicy.RetentionLimit"/>
+    private const int HistoryLimit = AnalysisLibraryPolicy.RetentionLimit;
 
     private const string SelectColumns =
         """
@@ -172,6 +168,58 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
         return [.. rows.Select(static row => row.ToAnalysis())];
     }
 
+    public async ValueTask<IReadOnlyList<AnalysisSummary>> ListSummariesAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await database.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        // The numbers come out of the JSON columns in SQL rather than by deserialising them, and
+        // document_json is never selected: a library of twenty runs should cost twenty small rows,
+        // not twenty five-hundred-node graphs parsed to count them. The paths are the camelCase
+        // spellings StorageJson writes.
+        var rows = await connection.QueryAsync<SummaryRow>(new CommandDefinition(
+            """
+            SELECT id                                                        AS Id,
+                   repository_path                                           AS RepositoryPath,
+                   created_at_utc                                            AS CreatedAtUtc,
+                   head_commit                                               AS HeadCommit,
+                   provider_name                                             AS ProviderName,
+                   model                                                     AS Model,
+                   input_tokens                                              AS InputTokens,
+                   output_tokens                                             AS OutputTokens,
+                   cost_usd                                                  AS CostUsd,
+                   duration_ms                                               AS DurationMs,
+                   json_extract(statistics_json, '$.changeset.totalFiles')        AS FileCount,
+                   json_extract(statistics_json, '$.changeset.totalLinesAdded')   AS LinesAdded,
+                   json_extract(statistics_json, '$.changeset.totalLinesRemoved') AS LinesRemoved,
+                   json_extract(statistics_json, '$.nodeCount')              AS NodeCount,
+                   json_extract(statistics_json, '$.containerCount')         AS ContainerCount,
+                   json_array_length(trace_json, '$.toolCalls')              AS ToolCallCount
+              FROM analyses
+             WHERE repository_path = @repositoryPath
+             ORDER BY created_at_utc DESC;
+            """,
+            new { repositoryPath },
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. rows.Select(static row => row.ToSummary())];
+    }
+
+    public async ValueTask<bool> DeleteOneAsync(string analysisId, CancellationToken cancellationToken)
+    {
+        await using var connection = await database.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        // The reviewed marks and the chosen grouping are columns on the same row, so they go with it
+        // and nothing is left behind to prune.
+        var deleted = await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM analyses WHERE id = @analysisId;",
+            new { analysisId },
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return deleted > 0;
+    }
+
     public async ValueTask DeleteAsync(string repositoryPath, CancellationToken cancellationToken)
     {
         await using var connection = await database.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -279,6 +327,76 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
         IReadOnlyList<LlmToolCallRecord> ToolCalls,
         IReadOnlyList<string> ProgressMessages);
 
+    private sealed record SummaryRow
+    {
+        public required string Id { get; init; }
+
+        public required string RepositoryPath { get; init; }
+
+        public required string CreatedAtUtc { get; init; }
+
+        public string? HeadCommit { get; init; }
+
+        public required string ProviderName { get; init; }
+
+        public required string Model { get; init; }
+
+        public long InputTokens { get; init; }
+
+        public long OutputTokens { get; init; }
+
+        public string? CostUsd { get; init; }
+
+        public long DurationMs { get; init; }
+
+        // Nullable because json_extract answers NULL for a path the stored JSON does not have, and a
+        // row from an older build is still a row worth listing.
+        public long? FileCount { get; init; }
+
+        public long? LinesAdded { get; init; }
+
+        public long? LinesRemoved { get; init; }
+
+        public long? NodeCount { get; init; }
+
+        public long? ContainerCount { get; init; }
+
+        public long? ToolCallCount { get; init; }
+
+        public AnalysisSummary ToSummary() => new()
+        {
+            Id = Id,
+            RepositoryPath = RepositoryPath,
+            CreatedAtUtc = Timestamps.Parse(CreatedAtUtc),
+            HeadCommit = HeadCommit,
+            ProviderDisplayName = ProviderName,
+            Model = Model,
+            Usage = ReadUsage(InputTokens, OutputTokens, CostUsd),
+            Duration = TimeSpan.FromMilliseconds(DurationMs),
+            FileCount = (int)(FileCount ?? 0),
+            LinesAdded = (int)(LinesAdded ?? 0),
+            LinesRemoved = (int)(LinesRemoved ?? 0),
+            NodeCount = (int)(NodeCount ?? 0),
+            ContainerCount = (int)(ContainerCount ?? 0),
+            ToolCallCount = (int)(ToolCallCount ?? 0),
+        };
+    }
+
+    /// <summary>
+    /// Usage as stored, shared by the full row and the summary so the two cannot disagree about what
+    /// an absent cost means: unknown, never zero.
+    /// </summary>
+    private static LlmUsage ReadUsage(long inputTokens, long outputTokens, string? costUsd) => new()
+    {
+        InputTokens = inputTokens,
+        OutputTokens = outputTokens,
+        IsReported = inputTokens > 0 || outputTokens > 0,
+        EstimatedCostUsd = decimal.TryParse(
+            costUsd, NumberStyles.Number, CultureInfo.InvariantCulture, out var cost)
+            ? cost
+            : null,
+    };
+
     private sealed record AnalysisRow
     {
         public required string Id { get; init; }
@@ -338,16 +456,7 @@ public sealed class SqliteAnalysisStore(AppDatabase database) : IAnalysisStore
                 HeadCommit = HeadCommit,
                 ProviderDisplayName = ProviderName,
                 Model = Model,
-                Usage = new LlmUsage
-                {
-                    InputTokens = InputTokens,
-                    OutputTokens = OutputTokens,
-                    IsReported = InputTokens > 0 || OutputTokens > 0,
-                    EstimatedCostUsd = decimal.TryParse(
-                        CostUsd, NumberStyles.Number, CultureInfo.InvariantCulture, out var cost)
-                        ? cost
-                        : null,
-                },
+                Usage = ReadUsage(InputTokens, OutputTokens, CostUsd),
                 Duration = TimeSpan.FromMilliseconds(DurationMs),
                 RepairRounds = RepairRounds,
                 Document = LegacyAnalysisDocument.Read(DocumentJson),

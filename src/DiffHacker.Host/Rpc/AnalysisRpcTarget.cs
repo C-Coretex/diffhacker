@@ -10,7 +10,14 @@ namespace DiffHacker.Host.Rpc;
 
 /// <summary>
 /// The analysis surface: run one, read the stored one back, switch which grouping it is read in, or
-/// mark part of it reviewed.
+/// mark part of it reviewed — and, around those, the library of earlier runs, the trace of what one
+/// did, and whether the working tree has moved since.
+/// <para>
+/// <b>Which analysis</b> is always the caller's to say. Every read and write takes an optional
+/// <c>analysisId</c> and falls back to the latest only when it is absent, so a run reopened from the
+/// library is regrouped and marked as itself rather than quietly redirected to the newest one. An id
+/// is only honoured for the repository it belongs to.
+/// </para>
 /// <para>
 /// <c>get</c>, <c>run</c> and <c>setGrouping</c> return the whole <see cref="AnalysisView"/> rather
 /// than a delta, so the renderer replaces its state instead of merging — the same arrangement
@@ -28,6 +35,11 @@ namespace DiffHacker.Host.Rpc;
 /// hundred nodes and every explanation on them back across the bridge each time a checkbox moves.
 /// </para>
 /// <para>
+/// <c>list</c>, <c>trace</c>, <c>checkFreshness</c> and <c>delete</c> reach the store and the git
+/// layer and nothing else. None of them has a path to the runner: reopening, inspecting and checking
+/// an analysis spend nothing.
+/// </para>
+/// <para>
 /// There is no cancel method. A run is stopped through <c>$/cancelRequest</c>, which StreamJsonRpc
 /// answers by cancelling the token this method already takes — an explicit RPC would be a second
 /// way to do the same thing, and the second way is the one that gets out of step.
@@ -38,6 +50,7 @@ public sealed partial class AnalysisRpcTarget(
     IAnalysisRunner runner,
     IAppSettingStore settings,
     RunEventNotifier runEvents,
+    AnalysisFreshnessChecker freshness,
     ILogger<AnalysisRpcTarget> logger)
 {
     /// <summary>
@@ -58,22 +71,36 @@ public sealed partial class AnalysisRpcTarget(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var stored = await store
-            .GetLatestAsync(request.RepositoryPath, cancellationToken)
-            .ConfigureAwait(false);
-
         var nextRun = await NextRunAsync(null, cancellationToken).ConfigureAwait(false);
 
         // Reading never runs anything. That is the whole promise of persisting the result: the
-        // conversation happened once and was paid for once.
-        if (stored is null)
+        // conversation happened once and was paid for once — and the reason reopening an earlier
+        // run from the library can be instant.
+        Analysis stored;
+
+        if (request.AnalysisId is null)
         {
-            return AnalysisWire.Empty(request.RepositoryPath, nextRun);
+            var latest = await store
+                .GetLatestAsync(request.RepositoryPath, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (latest is null)
+            {
+                return AnalysisWire.Empty(request.RepositoryPath, nextRun);
+            }
+
+            stored = latest;
+        }
+        else
+        {
+            stored = await ResolveStoredAsync(request.RepositoryPath, request.AnalysisId, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var grouping = await ResolveGroupingAsync(stored, cancellationToken).ConfigureAwait(false);
+        var isLatest = await IsLatestAsync(stored, cancellationToken).ConfigureAwait(false);
 
-        return AnalysisWire.ToWire(stored, grouping, nextRun);
+        return AnalysisWire.ToWire(stored, grouping, nextRun, isLatest);
     }
 
     [JsonRpcMethod("analysis.run")]
@@ -107,10 +134,7 @@ public sealed partial class AnalysisRpcTarget(
         }
         catch (GitClientException ex)
         {
-            throw RpcErrors.Failure(
-                ex.Failure is GitClientFailure.GitUnavailable ? "git_not_found" : "analysis_repository_unreadable",
-                ex.Message,
-                new Dictionary<string, string>(StringComparer.Ordinal) { ["path"] = request.RepositoryPath });
+            throw GitFailure(ex, request.RepositoryPath);
         }
         catch (LlmConfigurationException ex)
         {
@@ -126,7 +150,8 @@ public sealed partial class AnalysisRpcTarget(
         // was last reading — clamped to what this answer actually holds.
         var grouping = await ResolveGroupingAsync(result.Analysis, cancellationToken).ConfigureAwait(false);
 
-        return AnalysisWire.ToWire(result.Analysis, grouping, options);
+        // A run that has just been stored is the latest by construction.
+        return AnalysisWire.ToWire(result.Analysis, grouping, options, isLatest: true);
     }
 
     /// <summary>
@@ -140,17 +165,8 @@ public sealed partial class AnalysisRpcTarget(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var stored = await store
-            .GetLatestAsync(request.RepositoryPath, cancellationToken)
+        var stored = await ResolveStoredAsync(request.RepositoryPath, request.AnalysisId, cancellationToken)
             .ConfigureAwait(false);
-
-        if (stored is null)
-        {
-            throw RpcErrors.Failure(
-                "analysis_not_found",
-                $"No analysis is stored for '{request.RepositoryPath}'.",
-                new Dictionary<string, string>(StringComparer.Ordinal) { ["path"] = request.RepositoryPath });
-        }
 
         var grouping = AnalysisWire.FromWire(request.Grouping);
 
@@ -177,9 +193,154 @@ public sealed partial class AnalysisRpcTarget(
             .ConfigureAwait(false);
 
         var nextRun = await NextRunAsync(null, cancellationToken).ConfigureAwait(false);
+        var isLatest = await IsLatestAsync(stored, cancellationToken).ConfigureAwait(false);
 
-        return AnalysisWire.ToWire(stored with { Grouping = grouping }, grouping, nextRun);
+        return AnalysisWire.ToWire(stored with { Grouping = grouping }, grouping, nextRun, isLatest);
     }
+
+    /// <summary>
+    /// The library: every stored run of the repository, most recent first. Reads no document, so it
+    /// is cheap enough to ask for whenever the screen opens.
+    /// </summary>
+    [JsonRpcMethod("analysis.list")]
+    public async Task<AnalysisLibrary> ListAsync(AnalysisRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return await LibraryAsync(request.RepositoryPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Every tool call one run made, in order, with how large each answer was. Its own call rather
+    /// than part of the view, which travels on every read and every grouping switch.
+    /// </summary>
+    [JsonRpcMethod("analysis.trace")]
+    public async Task<AnalysisTrace> TraceAsync(AnalysisRefRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var stored = await ResolveStoredAsync(request.RepositoryPath, request.AnalysisId, cancellationToken)
+            .ConfigureAwait(false);
+
+        return AnalysisWire.ToTrace(stored);
+    }
+
+    /// <summary>
+    /// Whether the working tree still is the change this analysis describes. Asked by the renderer
+    /// after the analysis is already on screen, so it can take as long as reading the changeset
+    /// takes without making reopening anything but instant.
+    /// </summary>
+    [JsonRpcMethod("analysis.checkFreshness")]
+    public async Task<AnalysisFreshness> CheckFreshnessAsync(
+        AnalysisRefRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var stored = await ResolveStoredAsync(request.RepositoryPath, request.AnalysisId, cancellationToken)
+            .ConfigureAwait(false);
+
+        AnalysisFreshnessReport report;
+
+        try
+        {
+            report = await freshness.CheckAsync(stored, cancellationToken).ConfigureAwait(false);
+        }
+        catch (GitClientException ex)
+        {
+            throw GitFailure(ex, request.RepositoryPath);
+        }
+
+        FreshnessChecked(
+            logger,
+            stored.Id,
+            report.IsStale,
+            report.HeadMoved,
+            report.Modified.Count,
+            report.Added.Count,
+            report.Removed.Count,
+            report.Basis);
+
+        return AnalysisWire.ToWire(report);
+    }
+
+    /// <summary>
+    /// Forgets one stored run, and answers with the library as it now stands. Resolved through the
+    /// repository first, so an id from another repository cannot be deleted through this one.
+    /// </summary>
+    [JsonRpcMethod("analysis.delete")]
+    public async Task<AnalysisLibrary> DeleteAsync(AnalysisRefRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var stored = await ResolveStoredAsync(request.RepositoryPath, request.AnalysisId, cancellationToken)
+            .ConfigureAwait(false);
+
+        await store.DeleteOneAsync(stored.Id, cancellationToken).ConfigureAwait(false);
+        AnalysisDeleted(logger, stored.Id);
+
+        return await LibraryAsync(request.RepositoryPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<AnalysisLibrary> LibraryAsync(string repositoryPath, CancellationToken cancellationToken)
+    {
+        var summaries = await store
+            .ListSummariesAsync(repositoryPath, cancellationToken)
+            .ConfigureAwait(false);
+
+        return AnalysisWire.ToLibrary(repositoryPath, summaries);
+    }
+
+    /// <summary>
+    /// The analysis a call is about: the one named, when it belongs to this repository, or the latest
+    /// when none is named. Anything else is <c>analysis_not_found</c> — an id from another repository
+    /// included, because reading one repository's analysis through another's path is exactly the
+    /// kind of stale selection the path on every request exists to prevent.
+    /// </summary>
+    private async Task<Analysis> ResolveStoredAsync(
+        string repositoryPath,
+        string? analysisId,
+        CancellationToken cancellationToken)
+    {
+        var stored = analysisId is null
+            ? await store.GetLatestAsync(repositoryPath, cancellationToken).ConfigureAwait(false)
+            : await store.FindAsync(analysisId, cancellationToken).ConfigureAwait(false);
+
+        if (stored is null || !RepositoryPaths.PathsEqual(stored.RepositoryPath, repositoryPath))
+        {
+            var args = new Dictionary<string, string>(StringComparer.Ordinal) { ["path"] = repositoryPath };
+
+            if (analysisId is not null)
+            {
+                args["analysisId"] = analysisId;
+            }
+
+            throw RpcErrors.Failure(
+                "analysis_not_found",
+                analysisId is null
+                    ? $"No analysis is stored for '{repositoryPath}'."
+                    : $"No analysis '{analysisId}' is stored for '{repositoryPath}'.",
+                args);
+        }
+
+        return stored;
+    }
+
+    /// <summary>Whether <paramref name="analysis"/> is its repository's most recent run.</summary>
+    private async Task<bool> IsLatestAsync(Analysis analysis, CancellationToken cancellationToken)
+    {
+        var summaries = await store
+            .ListSummariesAsync(analysis.RepositoryPath, cancellationToken)
+            .ConfigureAwait(false);
+
+        return summaries.Count > 0 && string.Equals(summaries[0].Id, analysis.Id, StringComparison.Ordinal);
+    }
+
+    private static LocalRpcException GitFailure(GitClientException ex, string repositoryPath) =>
+        RpcErrors.Failure(
+            ex.Failure is GitClientFailure.GitUnavailable ? "git_not_found" : "analysis_repository_unreadable",
+            ex.Message,
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["path"] = repositoryPath });
 
     /// <summary>
     /// Which grouping to show: the one remembered against this analysis, else the one last chosen
@@ -240,17 +401,8 @@ public sealed partial class AnalysisRpcTarget(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var stored = await store
-            .GetLatestAsync(request.RepositoryPath, cancellationToken)
+        var stored = await ResolveStoredAsync(request.RepositoryPath, request.AnalysisId, cancellationToken)
             .ConfigureAwait(false);
-
-        if (stored is null)
-        {
-            throw RpcErrors.Failure(
-                "analysis_not_found",
-                $"No analysis is stored for '{request.RepositoryPath}'.",
-                new Dictionary<string, string>(StringComparer.Ordinal) { ["path"] = request.RepositoryPath });
-        }
 
         // Checked against the document here rather than inside the store, because whether an id
         // belongs to this analysis is a question about the model's answer, and this is the layer
@@ -319,4 +471,25 @@ public sealed partial class AnalysisRpcTarget(
         string failureCode,
         int diagnosticCount,
         long tokens);
+
+    [LoggerMessage(
+        EventId = 7102,
+        Level = LogLevel.Information,
+        Message = "Checked analysis {AnalysisId} against the working tree: stale={IsStale}, "
+            + "HEAD moved={HeadMoved}, {Modified} modified, {Added} added, {Removed} removed, by {Basis}.")]
+    private static partial void FreshnessChecked(
+        ILogger logger,
+        string analysisId,
+        bool isStale,
+        bool headMoved,
+        int modified,
+        int added,
+        int removed,
+        Core.Analyses.AnalysisFreshnessBasis basis);
+
+    [LoggerMessage(
+        EventId = 7103,
+        Level = LogLevel.Information,
+        Message = "Deleted analysis {AnalysisId} from the library.")]
+    private static partial void AnalysisDeleted(ILogger logger, string analysisId);
 }

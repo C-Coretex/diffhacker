@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.13/analysis-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.14/analysis-request.schema.json",
   "title": "AnalysisRequest",
   "description": "Names the repository an analysis.get or analysis.run call applies to, and what a run should ask the model for. The path travels on every call rather than being held as host state, for the same reason it does on profile requests: the renderer owns which repository is open, and a stale host-side selection would be a way to spend money analysing the wrong one.",
   "type": "object",
@@ -10,6 +10,10 @@
     "repositoryPath": {
       "type": "string",
       "description": "Absolute path of the worktree root, as repository.open returned it."
+    },
+    "analysisId": {
+      "type": "string",
+      "description": "Which stored analysis analysis.get reads, as the library listed it. Absent means the most recent one. An id belonging to a different repository is refused as not found, never silently read. Ignored by analysis.run and analysis.list."
     },
     "changeClusters": {
       "type": "boolean",

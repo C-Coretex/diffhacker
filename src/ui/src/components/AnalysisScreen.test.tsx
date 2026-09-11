@@ -1,7 +1,7 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
-import type { AnalysisView } from '@/contracts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AnalysisFreshness, AnalysisLibrary, AnalysisTrace, AnalysisView } from '@/contracts';
 import { en } from '@/i18n/en';
 import { RpcProvider } from '@/rpc/RpcProvider';
 import { useAppStore } from '@/store/appStore';
@@ -27,6 +27,8 @@ function emptyView(): AnalysisView {
     implementationGroups: [],
     implementationGroupsProduced: false,
     produceImplementationGroups: true,
+    isLatest: false,
+    toolCallCount: 0,
   };
 }
 
@@ -164,6 +166,11 @@ describe('AnalysisScreen', () => {
       analysisRunEvents: [],
       analysisRunProgress: undefined,
       analysisRunLatest: undefined,
+      analysisLibrary: undefined,
+      analysisFreshness: undefined,
+      analysisStaleDismissed: undefined,
+      analysisTrace: undefined,
+      graphOverviewOpen: false,
     });
   });
 
@@ -215,9 +222,11 @@ describe('AnalysisScreen', () => {
 
     await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.setGrouping'));
 
+    // By id: the analysis on screen is the one regrouped, even when it is an earlier run reopened
+    // from the library rather than the latest.
     expect(
       transport.lastRequest<{ params: [{ grouping: string; repositoryPath: string }] }>().params[0],
-    ).toEqual({ grouping: 'change_clusters', repositoryPath: 'C:/repo' });
+    ).toEqual({ grouping: 'change_clusters', repositoryPath: 'C:/repo', analysisId: 'analysis1' });
 
     transport.respond(
       analysedView({
@@ -487,5 +496,353 @@ describe('AnalysisScreen', () => {
     transport.respondWithError('llm_context_overflow');
 
     expect(await screen.findByText(/too large for this model/)).toBeInTheDocument();
+  });
+});
+
+function library(overrides: Partial<AnalysisLibrary> = {}): AnalysisLibrary {
+  return {
+    repositoryPath: 'C:/repo',
+    retentionLimit: 20,
+    entries: [
+      {
+        analysisId: 'analysis1',
+        createdAtUtc: '2026-05-01T00:00:00Z',
+        providerDisplayName: 'Test provider',
+        model: 'test-model',
+        costUsd: '0.25',
+        inputTokens: 1200,
+        outputTokens: 340,
+        durationMs: 42000,
+        fileCount: 2,
+        linesAdded: 16,
+        linesRemoved: 7,
+        nodeCount: 2,
+        containerCount: 1,
+        toolCallCount: 14,
+        isLatest: true,
+      },
+      {
+        analysisId: 'analysis0',
+        createdAtUtc: '2026-04-30T00:00:00Z',
+        providerDisplayName: 'Other provider',
+        model: 'older-model',
+        inputTokens: 900,
+        outputTokens: 200,
+        durationMs: 30000,
+        fileCount: 2,
+        linesAdded: 10,
+        linesRemoved: 1,
+        nodeCount: 2,
+        containerCount: 2,
+        toolCallCount: 9,
+        isLatest: false,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function fresh(overrides: Partial<AnalysisFreshness> = {}): AnalysisFreshness {
+  return {
+    analysisId: 'analysis1',
+    isStale: false,
+    basis: 'content',
+    headMoved: false,
+    recordedHeadCommit: 'abc12345def',
+    currentHeadCommit: 'abc12345def',
+    modifiedCount: 0,
+    addedCount: 0,
+    removedCount: 0,
+    modifiedPaths: [],
+    addedPaths: [],
+    removedPaths: [],
+    checkedAtUtc: '2026-05-02T00:00:00Z',
+    ...overrides,
+  };
+}
+
+/** The screen with the latest analysis on it, and the library and freshness calls it makes answered. */
+async function openAnalysed(transport: FakeTransport, freshness = fresh()) {
+  renderScreen(transport);
+
+  await waitFor(() => expect(transport.lastRequest().method).toBe('analysis.get'));
+  act(() => transport.respondTo('analysis.get', analysedView({ isLatest: true, toolCallCount: 3 })));
+
+  await waitFor(() => expect(requests(transport, 'analysis.list')).toHaveLength(1));
+  await waitFor(() => expect(requests(transport, 'analysis.checkFreshness')).toHaveLength(1));
+
+  // Answered and then settled: the check's in-flight guard is released in a `finally`, which runs a
+  // microtask after the answer lands.
+  await act(async () => {
+    transport.respondTo('analysis.list', library());
+    transport.respondTo('analysis.checkFreshness', freshness);
+    await Promise.resolve();
+  });
+}
+
+async function openOverview() {
+  await userEvent.click(await screen.findByRole('button', { name: en.analysis.overview.toggle }));
+}
+
+function requests(transport: FakeTransport, method: string) {
+  return transport.sent
+    .map((raw) => JSON.parse(raw) as { method: string; params: unknown[] })
+    .filter((request) => request.method === method);
+}
+
+describe('the analysis library', () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      repositoryInfo: { path: 'C:/repo', name: 'repo', hasCommits: true, isLinkedWorktree: false },
+      analysis: 'idle',
+      analysisView: undefined,
+      analysisRun: 'idle',
+      analysisLibrary: undefined,
+      analysisFreshness: undefined,
+      analysisStaleDismissed: undefined,
+      analysisTrace: undefined,
+      graphOverviewOpen: false,
+    });
+  });
+
+  it('lists every earlier run with its model, cost, date and size', async () => {
+    const transport = new FakeTransport();
+    await openAnalysed(transport);
+
+    await userEvent.click(await screen.findByTestId('analysis-history-button'));
+
+    const entries = await screen.findAllByTestId('analysis-history-entry');
+    expect(entries.map((entry) => entry.dataset.analysisId)).toEqual(['analysis1', 'analysis0']);
+
+    const older = entries[1]!;
+    expect(within(older).getByTestId('analysis-history-model')).toHaveTextContent('Other provider · older-model');
+    expect(within(older).getByTestId('analysis-history-size')).toHaveTextContent('2 file(s) +10 −1');
+    expect(within(older).getByTestId('analysis-history-cost')).toHaveTextContent(en.analysis.costUnknown);
+    expect(within(entries[0]!).getByText(en.analysis.library.latest)).toBeInTheDocument();
+    expect(within(entries[0]!).getByText(en.analysis.library.current)).toBeInTheDocument();
+    expect(screen.getByText(/The 20 most recent runs are kept/)).toBeInTheDocument();
+  });
+
+  it('reopens an earlier run by id, runs nothing, and says it is not the latest', async () => {
+    const transport = new FakeTransport();
+    await openAnalysed(transport);
+
+    await userEvent.click(await screen.findByTestId('analysis-history-button'));
+    const older = (await screen.findAllByTestId('analysis-history-entry'))[1]!;
+    await userEvent.click(within(older).getByTestId('analysis-history-open'));
+
+    await waitFor(() => expect(requests(transport, 'analysis.get')).toHaveLength(2));
+    expect(requests(transport, 'analysis.get')[1]!.params[0]).toEqual({
+      repositoryPath: 'C:/repo',
+      analysisId: 'analysis0',
+    });
+
+    act(() => {
+      transport.respondTo(
+        'analysis.get',
+        analysedView({ analysisId: 'analysis0', isLatest: false, createdAtUtc: '2026-04-30T00:00:00Z' }),
+      );
+    });
+
+    expect(await screen.findByTestId('earlier-run-notice')).toBeInTheDocument();
+    expect(requests(transport, 'analysis.run')).toHaveLength(0);
+
+    // And the freshness of the run now on screen is asked about, not the previous one's.
+    await waitFor(() =>
+      expect(requests(transport, 'analysis.checkFreshness').at(-1)!.params[0]).toEqual({
+        repositoryPath: 'C:/repo',
+        analysisId: 'analysis0',
+      }),
+    );
+  });
+
+  it('deletes a run only after it is confirmed', async () => {
+    const transport = new FakeTransport();
+    await openAnalysed(transport);
+
+    await userEvent.click(await screen.findByTestId('analysis-history-button'));
+    const older = (await screen.findAllByTestId('analysis-history-entry'))[1]!;
+    await userEvent.click(within(older).getByTestId('analysis-history-delete'));
+
+    expect(await screen.findByText(en.analysis.library.deleteTitle)).toBeInTheDocument();
+    expect(requests(transport, 'analysis.delete')).toHaveLength(0);
+
+    await userEvent.click(screen.getByTestId('analysis-history-confirm-delete'));
+
+    await waitFor(() => expect(requests(transport, 'analysis.delete')).toHaveLength(1));
+    expect(requests(transport, 'analysis.delete')[0]!.params[0]).toEqual({
+      repositoryPath: 'C:/repo',
+      analysisId: 'analysis0',
+    });
+
+    act(() => {
+      transport.respondTo('analysis.delete', library({ entries: [library().entries[0]!] }));
+    });
+
+    expect(await screen.findByTestId('analysis-history-button')).toHaveAccessibleName('History (1)');
+  });
+});
+
+describe('a stale analysis', () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      repositoryInfo: { path: 'C:/repo', name: 'repo', hasCommits: true, isLinkedWorktree: false },
+      analysis: 'idle',
+      analysisView: undefined,
+      analysisRun: 'idle',
+      analysisLibrary: undefined,
+      analysisFreshness: undefined,
+      analysisStaleDismissed: undefined,
+      analysisTrace: undefined,
+    });
+  });
+
+  it('shows nothing when the working tree is what was analysed', async () => {
+    const transport = new FakeTransport();
+    await openAnalysed(transport);
+
+    expect(screen.queryByTestId('stale-analysis-banner')).not.toBeInTheDocument();
+  });
+
+  it('says what moved and offers to analyse again', async () => {
+    const transport = new FakeTransport();
+    await openAnalysed(
+      transport,
+      fresh({
+        isStale: true,
+        headMoved: true,
+        currentHeadCommit: 'fff00000aaa',
+        modifiedCount: 1,
+        modifiedPaths: ['src/Contract.cs'],
+        addedCount: 1,
+        addedPaths: ['src/New.cs'],
+      }),
+    );
+
+    const banner = await screen.findByTestId('stale-analysis-banner');
+    expect(within(banner).getByText(en.analysis.stale.heading)).toBeInTheDocument();
+    expect(within(banner).getByText('HEAD has moved from abc12345 to fff00000.')).toBeInTheDocument();
+    expect(within(banner).getByText('1 file(s) edited since')).toBeInTheDocument();
+
+    await userEvent.click(within(banner).getByTestId('stale-analysis-reanalyse'));
+
+    await waitFor(() => expect(requests(transport, 'analysis.run')).toHaveLength(1));
+  });
+
+  it('stays dismissed for the same difference and comes back for a new one', async () => {
+    const stale = fresh({ isStale: true, modifiedCount: 1, modifiedPaths: ['src/Contract.cs'] });
+    const transport = new FakeTransport();
+    await openAnalysed(transport, stale);
+
+    await userEvent.click(await screen.findByTestId('stale-analysis-dismiss'));
+    expect(screen.queryByTestId('stale-analysis-banner')).not.toBeInTheDocument();
+
+    act(() => useAppStore.getState().setAnalysisFreshness(stale));
+    expect(screen.queryByTestId('stale-analysis-banner')).not.toBeInTheDocument();
+
+    act(() =>
+      useAppStore.getState().setAnalysisFreshness({
+        ...stale,
+        modifiedCount: 2,
+        modifiedPaths: ['src/Caller.cs', 'src/Contract.cs'],
+      }),
+    );
+    expect(await screen.findByTestId('stale-analysis-banner')).toBeInTheDocument();
+  });
+
+  it('checks again when the window comes back into focus', async () => {
+    const transport = new FakeTransport();
+    await openAnalysed(transport);
+
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now + 60_000);
+
+    try {
+      act(() => {
+        window.dispatchEvent(new Event('focus'));
+      });
+
+      await waitFor(() => expect(requests(transport, 'analysis.checkFreshness')).toHaveLength(2));
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('ignores a verdict about an analysis that is no longer on screen', () => {
+    useAppStore.setState({ analysisView: analysedView({ analysisId: 'analysis2' }) });
+
+    useAppStore.getState().setAnalysisFreshness(fresh({ analysisId: 'analysis1', isStale: true }));
+
+    expect(useAppStore.getState().analysisFreshness).toBeUndefined();
+  });
+});
+
+describe('the tool-call inspector', () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      repositoryInfo: { path: 'C:/repo', name: 'repo', hasCommits: true, isLinkedWorktree: false },
+      analysis: 'idle',
+      analysisView: undefined,
+      analysisRun: 'idle',
+      analysisLibrary: undefined,
+      analysisFreshness: undefined,
+      analysisTrace: undefined,
+      graphOverviewOpen: false,
+    });
+  });
+
+  const trace: AnalysisTrace = {
+    analysisId: 'analysis1',
+    progressMessages: ['Reading the contract', 'Grouping the change'],
+    toolCalls: [
+      { ordinal: 1, turn: 1, toolName: 'get_project_profile', argumentsPreview: '{}', resultPreview: '# repo', resultBytes: 512, durationMs: 3, isError: false },
+      { ordinal: 2, turn: 1, toolName: 'read_file', argumentsPreview: '{"path":"a"}', resultPreview: 'aaa', resultBytes: 2048, durationMs: 12, isError: false },
+      { ordinal: 3, turn: 2, toolName: 'read_file', argumentsPreview: '{"path":"b"}', resultPreview: 'No such file.', resultBytes: 40, durationMs: 1, isError: true },
+    ],
+  };
+
+  it('fetches the trace only when opened, and shows every call in order with its size', async () => {
+    const transport = new FakeTransport();
+    await openAnalysed(transport);
+    await openOverview();
+
+    const inspector = await screen.findByTestId('tool-call-inspector');
+    expect(requests(transport, 'analysis.trace')).toHaveLength(0);
+
+    await userEvent.click(within(inspector).getByRole('button', { name: 'Tool calls (3)' }));
+
+    await waitFor(() => expect(requests(transport, 'analysis.trace')).toHaveLength(1));
+    expect(requests(transport, 'analysis.trace')[0]!.params[0]).toEqual({
+      repositoryPath: 'C:/repo',
+      analysisId: 'analysis1',
+    });
+
+    act(() => transport.respondTo('analysis.trace', trace));
+
+    const rows = await within(inspector).findAllByTestId('tool-call-row');
+    expect(rows.map((row) => row.dataset.ordinal)).toEqual(['1', '2', '3']);
+    expect(rows.map((row) => within(row).getByTestId('tool-call-size').textContent)).toEqual([
+      '512 B',
+      '2.0 KB',
+      '40 B',
+    ]);
+    expect(within(inspector).getByTestId('tool-call-totals')).toHaveTextContent('3 calls · 2.5 KB returned');
+    expect(within(inspector).getByTestId('trace-progress')).toHaveTextContent('Grouping the change');
+  });
+
+  it('narrows to one tool without losing the order', async () => {
+    const transport = new FakeTransport();
+    await openAnalysed(transport);
+    await openOverview();
+
+    const inspector = await screen.findByTestId('tool-call-inspector');
+    await userEvent.click(within(inspector).getByRole('button', { name: 'Tool calls (3)' }));
+    await waitFor(() => expect(requests(transport, 'analysis.trace')).toHaveLength(1));
+    act(() => transport.respondTo('analysis.trace', trace));
+
+    await userEvent.click(await within(inspector).findByRole('button', { name: /^read_file · 2/ }));
+
+    const rows = within(inspector).getAllByTestId('tool-call-row');
+    expect(rows.map((row) => row.dataset.ordinal)).toEqual(['2', '3']);
   });
 });

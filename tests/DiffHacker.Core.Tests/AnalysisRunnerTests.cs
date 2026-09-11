@@ -71,6 +71,32 @@ public sealed class AnalysisRunnerTests
     }
 
     [Fact]
+    public async Task A_stored_run_records_a_content_hash_for_every_file_it_was_shown()
+    {
+        // The other half of the freshness check: without these, a later comparison could only say
+        // whether line counts moved, and an edit that keeps them would go unseen.
+        var harness = new Harness();
+
+        await harness.RunAsync(TestContext.Current.CancellationToken);
+
+        harness.Git.LastQuery.ShouldNotBeNull().HashContent.ShouldBeTrue();
+
+        var analysis = harness.Store.Saved.ShouldHaveSingleItem();
+
+        foreach (var file in analysis.ChangedFiles)
+        {
+            if (file.Status is ChangeStatus.Deleted)
+            {
+                file.ContentSha256.ShouldBeNull();
+            }
+            else
+            {
+                file.ContentSha256.ShouldBe("sha:" + file.Path);
+            }
+        }
+    }
+
+    [Fact]
     public async Task Every_changed_file_is_covered_by_the_stored_result()
     {
         // §0.2.5 asserted as set equality against the changeset the run was actually given, which
@@ -774,11 +800,19 @@ public sealed class AnalysisRunnerTests
             CancellationToken cancellationToken) =>
             ValueTask.FromResult<IReadOnlyList<Analysis>>(Saved);
 
+        public ValueTask<IReadOnlyList<AnalysisSummary>> ListSummariesAsync(
+            string repositoryPath,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("A run does not read the library.");
+
         public ValueTask DeleteAsync(string repositoryPath, CancellationToken cancellationToken)
         {
             Saved.Clear();
             return ValueTask.CompletedTask;
         }
+
+        public ValueTask<bool> DeleteOneAsync(string analysisId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("A run does not delete an analysis.");
 
         public ValueTask<IReadOnlyList<string>> SetNodesReviewedAsync(
             string analysisId,
@@ -798,17 +832,32 @@ public sealed class AnalysisRunnerTests
     {
         public IReadOnlyList<ChangedFile> Files { get; set; } = AnalysisFixtures.Changeset();
 
-        public Task<Changeset> GetChangesetAsync(ChangesetQuery query, CancellationToken cancellationToken) =>
-            Task.FromResult(new Changeset
+        public ChangesetQuery? LastQuery { get; private set; }
+
+        public Task<Changeset> GetChangesetAsync(ChangesetQuery query, CancellationToken cancellationToken)
+        {
+            LastQuery = query;
+
+            // Stands in for the real hashing: what matters here is that the runner asked for it and
+            // kept what came back, not what SHA-256 of a fixture is.
+            IReadOnlyList<ChangedFile> files = query.HashContent
+                ? [.. Files.Select(static file => file with
+                {
+                    ContentSha256 = file.Status is ChangeStatus.Deleted ? null : "sha:" + file.Path,
+                })]
+                : Files;
+
+            return Task.FromResult(new Changeset
             {
                 RepositoryPath = query.RepositoryPath,
-                IsClean = Files.Count == 0,
+                IsClean = files.Count == 0,
                 HasCommits = true,
                 UntrackedIncluded = true,
-                Files = Files,
-                Statistics = ChangesetStatistics.From(Files),
+                Files = files,
+                Statistics = ChangesetStatistics.From(files),
                 HunkCountsAvailable = true,
             });
+        }
 
         public Task<string?> GetHeadCommitAsync(string repositoryPath, CancellationToken cancellationToken) =>
             Task.FromResult<string?>("head0001");

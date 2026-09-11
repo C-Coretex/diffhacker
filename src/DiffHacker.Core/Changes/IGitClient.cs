@@ -199,7 +199,15 @@ public sealed record GrepResult
 /// brand-new files and dropping them would silently violate §0.2.5. Gitignored files are never
 /// included either way.
 /// </param>
-public readonly record struct ChangesetQuery(string RepositoryPath, bool IncludeUntracked = true);
+/// <param name="HashContent">
+/// Whether to record <see cref="ChangedFile.ContentSha256"/> for every file. Off by default: it
+/// reads each changed file end to end, which the changeset panel has no use for. An analysis asks
+/// for it, and so does the check of whether one has gone stale — the two sides of one comparison.
+/// </param>
+public readonly record struct ChangesetQuery(
+    string RepositoryPath,
+    bool IncludeUntracked = true,
+    bool HashContent = false);
 
 /// <param name="RepositoryPath">Absolute path of the worktree root.</param>
 /// <param name="Path">Repository-relative path of the file to diff.</param>

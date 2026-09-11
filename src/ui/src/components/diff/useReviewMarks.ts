@@ -45,12 +45,20 @@ export function useReviewMarks(repositoryPath: string | undefined): ReviewMarks 
     (nodeIds: readonly string[], next: boolean) => {
       if (nodeIds.length === 0) return;
 
-      const before = useAppStore.getState().reviewedNodeIds;
+      const { reviewedNodeIds: before, analysisView } = useAppStore.getState();
       setReviewed(nodeIds, next);
 
       if (!client || !repositoryPath) return;
 
-      setNodesReviewed(client, { repositoryPath, nodeIds: [...nodeIds], reviewed: next })
+      // The analysis on screen, by id: an earlier run reopened from the library keeps its own marks
+      // rather than having them written onto the latest one. Read at the moment of the click, like
+      // `before`, so no box re-renders when the id changes.
+      setNodesReviewed(client, {
+        repositoryPath,
+        analysisId: analysisView?.analysisId,
+        nodeIds: [...nodeIds],
+        reviewed: next,
+      })
         .then((state) => applyReviewedState(state.reviewedNodeIds))
         .catch((caught: unknown) => {
           // Back to exactly what it was, not to "unmarked": the reviewer may have been unmarking.

@@ -352,9 +352,26 @@ Run from the repository root.
   schema 7's nullable `grouping_mode` sits beside them. `SetNodesReviewedAsync` and
   `SetGroupingAsync` are the only two methods on `IAnalysisStore` that change a stored analysis, and
   **neither can touch the document** — both write the reviewer's own state, never the model's answer.
-  A re-run writes a new row and so starts with nothing marked and no grouping chosen; that is
-  deliberate and pinned by `SqliteAnalysisStoreTests`. See
-  [docs/decisions.md](docs/decisions.md#reading-the-code).
+  `DeleteOneAsync` removes a run whole, row and all, and cannot touch one either. A re-run writes a
+  new row and so starts with nothing marked and no grouping chosen; that is deliberate and pinned by
+  `SqliteAnalysisStoreTests`. See [docs/decisions.md](docs/decisions.md#reading-the-code).
+- **Which analysis is the caller's to say.** `analysis.get`, `setGrouping` and `setReviewed` take an
+  optional `analysisId` — absent means the latest — and `trace`, `checkFreshness` and `delete` take it
+  required (`AnalysisRefRequest`). The renderer always sends `view.analysisId`, so an earlier run
+  reopened from the library is regrouped and marked as itself. An id is honoured only for its own
+  repository; nothing about which run is open is held host-side. The library
+  (`ListSummariesAsync`) never reads `document_json`, and the trace is its own call rather than a
+  field on `AnalysisView`, which travels on every read. Retention is
+  `AnalysisLibraryPolicy.RetentionLimit`. See
+  [docs/decisions.md](docs/decisions.md#run-transparency-and-the-analysis-library).
+- **Stale means the working tree differs, measured by content.** A run records a SHA-256 of each
+  changed file's working-tree bytes (`ChangesetQuery.HashContent` → `ChangedFileFacts.ContentSha256`,
+  in `files_json`, so no migration); `AnalysisFreshnessCalculator` compares HEAD, the path set and
+  those hashes, and any difference is stale — so a reverted edit is fresh again, which an mtime could
+  not say. Hashing is .NET file reading in the git layer, never `git hash-object` (it can write the
+  object database). Older analyses fall back to line counts, or HEAD only, and the banner says so.
+  The renderer checks **after** an analysis is drawn and on window focus, never before, so reopening
+  stays instant.
 - **The result holds two groupings of one node set; a view holds one of them.**
   `dependencyContainers`/`dependencyReadingOrder` keep a complete change path intact even across
   concerns; `clusterContainers`/`clusterReadingOrder` regroup the same nodes by theme. Four flat root
@@ -468,6 +485,13 @@ fixture rather than about the stub. **Implementation groups add
 a merged box reaches the right row is a question about React Flow's real DOM, and that the toggle
 spends nothing is only provable by counting provider requests. `stubAnalysisResult` answers
 `implementationGroups: []` by default; a spec that turns the request off sets it to `undefined`.
+**The run library adds [12-run-library.spec.ts](tests/e2e/specs/12-run-library.spec.ts)**: the live
+strip read during a run that is genuinely in flight (a `hangs()` turn, so the clock is seen to move
+through a silence), the inspector's rows checked against the calls the stub scripted, three runs
+listed after a restart and an earlier one reopened with the provider's request count unchanged, and
+a real file edited on disk — same line counts, so only the content hash can see it — then put back.
+Freshness is waited on through the analysis surface's `data-freshness` attribute, because "fresh" is
+otherwise the absence of a banner, and an absence cannot be waited for.
 
 > The stub answers `stream: true` with server-sent events, because `LlmSession` streams every
 > request. A stub that only sent one JSON body read as a provider returning an empty message, and
@@ -516,6 +540,11 @@ navigation is built from `AnalysisView.edges` the renderer already holds.
 `aria-pressed` buttons — rather than `@radix-ui/react-toggle-group`; the schema variant is thirty
 lines of `System.Text.Json.Nodes` over the one schema in `/schema`; and the legacy-document upgrade
 is the same, rather than a migration framework.
+
+**The run library and staleness added none.** The content hash is `System.Security.Cryptography`,
+the library's numbers are SQLite's own `json_extract`, the History list reuses
+`@radix-ui/react-popover` and its delete confirmation the existing alert dialog, and the elapsed clock
+is a ten-line hook.
 
 No resilience package (retry is ~60 lines in `RetryPolicy`). No package for the folder picker
 or secret store (PhotinoX's `ShowOpenFolder`; `[LibraryImport]` credential bindings — why

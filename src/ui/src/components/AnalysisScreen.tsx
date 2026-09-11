@@ -1,11 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2Icon, NetworkIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
+import { HistoryIcon, Loader2Icon, NetworkIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
 import type { AnalysisGroupingMode, AnalysisView } from '@/contracts';
 import { describeError } from '@/i18n/errors';
 import { formatCount } from '@/i18n/format';
 import { useT } from '@/i18n/useT';
 import {
   getAnalysis,
+  listAnalyses,
   onAnalysisProgress,
   onToolCallEvent,
   runAnalysis,
@@ -18,7 +19,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { AnalysisLibraryButton } from './analysis/AnalysisLibrary';
 import { MarkdownReferences } from './analysis/Markdown';
+import { StaleAnalysisBanner } from './analysis/StaleAnalysisBanner';
+import { useFreshnessCheck } from './analysis/useFreshnessCheck';
 import { AnalysisOverviewBand } from './AnalysisOverviewBand';
 import { useReviewShortcuts } from './diff/useReviewShortcuts';
 import { useSplitter } from './diff/useSplitter';
@@ -70,6 +74,7 @@ export function AnalysisScreen() {
   const view = useAppStore((state) => state.analysisView);
   const error = useAppStore((state) => state.analysisError);
   const run = useAppStore((state) => state.analysisRun);
+  const freshness = useAppStore((state) => state.analysisFreshness);
 
   const startLoading = useAppStore((store) => store.startLoadingAnalysis);
   const setAnalysis = useAppStore((store) => store.setAnalysis);
@@ -78,6 +83,7 @@ export function AnalysisScreen() {
   const endRun = useAppStore((store) => store.endAnalysisRun);
   const recordProgress = useAppStore((store) => store.recordAnalysisProgress);
   const recordEvent = useAppStore((store) => store.recordAnalysisRunEvent);
+  const setLibrary = useAppStore((store) => store.setAnalysisLibrary);
 
   const [runError, setRunError] = useState<string>();
   const [switching, setSwitching] = useState(false);
@@ -102,6 +108,26 @@ export function AnalysisScreen() {
       .then(setAnalysis)
       .catch((caught: unknown) => failAnalysis(describeError(caught)));
   }, [client, path, status, startLoading, setAnalysis, failAnalysis]);
+
+  // The library, for the History button. Asked again whenever a different analysis reaches the
+  // screen — which covers the first read, every finished run and every delete of the one on screen
+  // — because each of those is a moment the list may have changed. It reads no document host-side,
+  // so asking is cheap.
+  const analysisId = view?.analysisId;
+
+  useEffect(() => {
+    if (!client || !path || status !== 'ready') return;
+
+    listAnalyses(client, { repositoryPath: path })
+      .then(setLibrary)
+      .catch((caught: unknown) => {
+        // The button simply does not appear; the analysis on screen is unaffected.
+        console.warn('[library] The list of previous runs could not be read.', caught);
+      });
+  }, [client, path, status, analysisId, setLibrary]);
+
+  // Requirement 9. After the analysis is drawn, never before it.
+  useFreshnessCheck(path, view?.hasAnalysis ? analysisId : undefined, run === 'running');
 
   // Subscribed for the life of the screen rather than for the life of a run: a notification that
   // arrives a moment after the call resolves still belongs to the log.
@@ -160,14 +186,16 @@ export function AnalysisScreen() {
       setSwitching(true);
 
       try {
-        setAnalysis(await setGrouping(client, { repositoryPath: path, grouping }));
+        setAnalysis(
+          await setGrouping(client, { repositoryPath: path, analysisId: view?.analysisId, grouping }),
+        );
       } catch (caught) {
         failAnalysis(describeError(caught));
       } finally {
         setSwitching(false);
       }
     },
-    [client, path, switching, setAnalysis, failAnalysis],
+    [client, path, switching, setAnalysis, failAnalysis, view?.analysisId],
   );
 
   if (!repository) return null;
@@ -232,6 +260,7 @@ export function AnalysisScreen() {
         <Button
           disabled={run === 'running'}
           onClick={() => void analyse()}
+          data-testid="analysis-run-button"
         >
           {run === 'running' ? (
             <Loader2Icon className="size-4 animate-spin" aria-hidden />
@@ -244,7 +273,11 @@ export function AnalysisScreen() {
               ? t('analysis.rerun')
               : t('analysis.run')}
         </Button>
+
+        <AnalysisLibraryButton disabled={run === 'running'} />
       </header>
+
+      {analysed && !view.isLatest && <EarlierRunNotice view={view} />}
 
       {(runError || (error && status === 'error')) && (
         <div className="shrink-0 px-6 py-3">
@@ -277,7 +310,22 @@ export function AnalysisScreen() {
       )}
 
       {analysed && view && (
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          // What the last freshness check said about this analysis, for anything that needs to
+          // know whether one has answered — "fresh" is otherwise the absence of a banner, and an
+          // absence cannot be waited for.
+          data-freshness={
+            !freshness || freshness.analysisId !== view.analysisId
+              ? 'unchecked'
+              : freshness.isStale
+                ? 'stale'
+                : 'fresh'
+          }
+        >
+          {/* Only ever drawn here, where no run is going: a run replaces this whole block. */}
+          <StaleAnalysisBanner view={view} onReanalyse={() => void analyse()} />
+
           {/* Every file the model's prose names, wherever it is drawn, opens from the text. */}
           <MarkdownReferences view={view}>
             <AnalysisOverviewBand view={view} />
@@ -445,6 +493,46 @@ function EditorFailure() {
       >
         <XIcon className="size-3.5" aria-hidden />
       </button>
+    </div>
+  );
+}
+
+/**
+ * Says so when the analysis on screen is not the latest — reopened from the library — and offers
+ * the way back. Without it, a reviewer who reopened last week's run and came back after lunch would
+ * have no way to tell from the screen which one they were reading.
+ */
+function EarlierRunNotice({ view }: { view: AnalysisView }) {
+  const t = useT();
+  const client = useRpc();
+  const setAnalysis = useAppStore((store) => store.setAnalysis);
+  const failAnalysis = useAppStore((store) => store.failAnalysis);
+
+  const openLatest = async () => {
+    if (!client) return;
+
+    try {
+      setAnalysis(await getAnalysis(client, { repositoryPath: view.repositoryPath }));
+    } catch (caught) {
+      failAnalysis(describeError(caught));
+    }
+  };
+
+  return (
+    <div
+      role="status"
+      data-testid="earlier-run-notice"
+      className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-muted/50 px-6 py-2 text-xs"
+    >
+      <HistoryIcon className="size-4 text-muted-foreground" aria-hidden />
+      <span>
+        {t('analysis.library.earlier', {
+          date: view.createdAtUtc ? new Date(view.createdAtUtc).toLocaleString() : '',
+        })}
+      </span>
+      <Button size="sm" variant="outline" onClick={() => void openLatest()}>
+        {t('analysis.library.openLatest')}
+      </Button>
     </div>
   );
 }

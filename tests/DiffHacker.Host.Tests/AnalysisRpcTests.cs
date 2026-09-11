@@ -1,6 +1,8 @@
 using DiffHacker.Contracts;
 using DiffHacker.Core.Analyses;
+using DiffHacker.Core.Changes;
 using DiffHacker.Core.Llm;
+using DiffHacker.Git;
 using DiffHacker.Host.Rpc;
 using DiffHacker.Storage;
 using Microsoft.Data.Sqlite;
@@ -28,6 +30,9 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
     private SqliteAppSettingStore _settings = null!;
     private StubAnalysisRunner _runner = null!;
     private AnalysisRpcTarget _target = null!;
+
+    // A real git client: the freshness check is only worth testing against a real working tree.
+    private static readonly GitClient Git = CreateGit();
 
     public ValueTask InitializeAsync()
     {
@@ -230,6 +235,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
             runner,
             _settings,
             new RunEventNotifier(new SilentNotifier(), NullLogger<RunEventNotifier>.Instance),
+            new AnalysisFreshnessChecker(Git, TimeProvider.System),
             NullLogger<AnalysisRpcTarget>.Instance);
 
         var view = await restarted.GetAsync(Request(), TestContext.Current.CancellationToken);
@@ -260,7 +266,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         var runsAfterAnalysing = _runner.Runs;
 
         var clusters = await _target.SetGroupingAsync(
-            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            new SetGroupingRequest(analysisId: null, grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
             TestContext.Current.CancellationToken);
 
         clusters.Grouping.ShouldBe(AnalysisGroupingMode.Change_clusters);
@@ -275,11 +281,11 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
 
         // Switching back, and switching again, still runs nothing.
         await _target.SetGroupingAsync(
-            new SetGroupingRequest(grouping: SetGroupingMode.Dependency_flow, repositoryPath: "/repo"),
+            new SetGroupingRequest(analysisId: null, grouping: SetGroupingMode.Dependency_flow, repositoryPath: "/repo"),
             TestContext.Current.CancellationToken);
 
         await _target.SetGroupingAsync(
-            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            new SetGroupingRequest(analysisId: null, grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
             TestContext.Current.CancellationToken);
 
         _runner.Runs.ShouldBe(runsAfterAnalysing);
@@ -294,7 +300,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         var flow = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
 
         var clusters = await _target.SetGroupingAsync(
-            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            new SetGroupingRequest(analysisId: null, grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
             TestContext.Current.CancellationToken);
 
         foreach (var view in new[] { flow, clusters })
@@ -320,7 +326,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         flow.Edges.ShouldHaveSingleItem().CrossesContainers.ShouldBeFalse();
 
         var clusters = await _target.SetGroupingAsync(
-            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            new SetGroupingRequest(analysisId: null, grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
             TestContext.Current.CancellationToken);
 
         clusters.Edges.ShouldHaveSingleItem().CrossesContainers.ShouldBeTrue();
@@ -342,7 +348,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
             .ShouldNotContain(AnalysisNodeInfoState.Entry_point);
 
         var clusters = await _target.SetGroupingAsync(
-            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            new SetGroupingRequest(analysisId: null, grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
             TestContext.Current.CancellationToken);
 
         clusters.ReadingOrder.ShouldBe(["src/Caller.cs", "src/Contract.cs"]);
@@ -358,7 +364,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         var flow = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
 
         var clusters = await _target.SetGroupingAsync(
-            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            new SetGroupingRequest(analysisId: null, grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
             TestContext.Current.CancellationToken);
 
         flow.Statistics.ShouldNotBeNull().ContainerCount.ShouldBe(1);
@@ -379,7 +385,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         flow.Diagnostics.Select(static d => d.Code).ShouldBe([AnalysisDiagnosticCodes.Cycle]);
 
         var clusters = await _target.SetGroupingAsync(
-            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            new SetGroupingRequest(analysisId: null, grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
             TestContext.Current.CancellationToken);
 
         clusters.Diagnostics.Select(static d => d.Code).ShouldBe(
@@ -395,11 +401,11 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
 
         await _target.SetReviewedAsync(
-            new SetNodesReviewedRequest(nodeIds: ["src/Caller.cs"], repositoryPath: "/repo", reviewed: true),
+            new SetNodesReviewedRequest(analysisId: null, nodeIds: ["src/Caller.cs"], repositoryPath: "/repo", reviewed: true),
             TestContext.Current.CancellationToken);
 
         var clusters = await _target.SetGroupingAsync(
-            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            new SetGroupingRequest(analysisId: null, grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
             TestContext.Current.CancellationToken);
 
         clusters.ReviewedNodeIds.ShouldBe(["src/Caller.cs"]);
@@ -414,7 +420,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
 
         await _target.SetGroupingAsync(
-            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            new SetGroupingRequest(analysisId: null, grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
             TestContext.Current.CancellationToken);
 
         var restarted = await Restart();
@@ -437,7 +443,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         view.AvailableGroupings.ShouldBe([AnalysisGroupingMode.Dependency_flow]);
 
         var failure = await Should.ThrowAsync<LocalRpcException>(async () => await _target.SetGroupingAsync(
-            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            new SetGroupingRequest(analysisId: null, grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
             TestContext.Current.CancellationToken));
 
         var data = failure.ErrorData.ShouldBeOfType<RpcErrorData>();
@@ -450,7 +456,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
     public async Task Switching_a_repository_that_has_never_been_analysed_says_so()
     {
         var failure = await Should.ThrowAsync<LocalRpcException>(async () => await _target.SetGroupingAsync(
-            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            new SetGroupingRequest(analysisId: null, grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
             TestContext.Current.CancellationToken));
 
         failure.ErrorData.ShouldBeOfType<RpcErrorData>().Code.ShouldBe("analysis_not_found");
@@ -516,7 +522,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         group.ContainerId.ShouldBe("core");
 
         var clusters = await _target.SetGroupingAsync(
-            new SetGroupingRequest(grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
+            new SetGroupingRequest(analysisId: null, grouping: SetGroupingMode.Change_clusters, repositoryPath: "/repo"),
             TestContext.Current.CancellationToken);
 
         clusters.ImplementationGroups.ShouldBeEmpty();
@@ -552,7 +558,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         var view = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
 
         var state = await _target.SetReviewedAsync(
-            new SetNodesReviewedRequest(nodeIds: ["src/Caller.cs"], repositoryPath: "/repo", reviewed: true),
+            new SetNodesReviewedRequest(analysisId: null, nodeIds: ["src/Caller.cs"], repositoryPath: "/repo", reviewed: true),
             TestContext.Current.CancellationToken);
 
         state.AnalysisId.ShouldBe(view.AnalysisId);
@@ -571,6 +577,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
 
         var failure = await Should.ThrowAsync<LocalRpcException>(async () => await _target.SetReviewedAsync(
             new SetNodesReviewedRequest(
+                analysisId: null,
                 // One good id and one invented one. The whole call is refused rather than half
                 // applied: a partly-applied mark is a state the reviewer would have to find by
                 // counting.
@@ -592,10 +599,268 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
     public async Task Marking_a_repository_that_has_never_been_analysed_says_so()
     {
         var failure = await Should.ThrowAsync<LocalRpcException>(async () => await _target.SetReviewedAsync(
-            new SetNodesReviewedRequest(nodeIds: ["src/Caller.cs"], repositoryPath: "/repo", reviewed: true),
+            new SetNodesReviewedRequest(analysisId: null, nodeIds: ["src/Caller.cs"], repositoryPath: "/repo", reviewed: true),
             TestContext.Current.CancellationToken));
 
         failure.ErrorData.ShouldBeOfType<RpcErrorData>().Code.ShouldBe("analysis_not_found");
+    }
+
+    [Fact]
+    public async Task The_library_lists_every_run_most_recent_first_with_what_a_reviewer_chooses_by()
+    {
+        await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+        await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+        await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        var library = await _target.ListAsync(Request(), TestContext.Current.CancellationToken);
+
+        library.RetentionLimit.ShouldBe(AnalysisLibraryPolicy.RetentionLimit);
+        library.Entries.Select(static entry => entry.AnalysisId).ShouldBe(["analysis3", "analysis2", "analysis1"]);
+        library.Entries.Select(static entry => entry.IsLatest).ShouldBe([true, false, false]);
+
+        var entry = library.Entries[0];
+
+        entry.Model.ShouldBe("gpt-4o");
+        entry.ProviderDisplayName.ShouldBe("Test");
+        entry.CostUsd.ShouldBe("0.25");
+        entry.CreatedAtUtc.ShouldBe(DateTimeOffset.UnixEpoch.AddMinutes(3));
+        entry.DurationMs.ShouldBe(42_000);
+        entry.InputTokens.ShouldBe(1000);
+        entry.OutputTokens.ShouldBe(200);
+        entry.FileCount.ShouldBe(3);
+        entry.LinesAdded.ShouldBe(16);
+        entry.LinesRemoved.ShouldBe(4);
+        entry.NodeCount.ShouldBe(2);
+        entry.ContainerCount.ShouldBe(1);
+        entry.ToolCallCount.ShouldBe(3);
+        entry.HeadCommit.ShouldBe("head0001");
+    }
+
+    [Fact]
+    public async Task An_earlier_run_reopens_by_id_as_itself_and_costs_nothing()
+    {
+        // Requirement 8: reopen any run instantly without re-running. Asserted from the one count that
+        // could prove it — how many times the runner was asked.
+        var first = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+        await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+        var runs = _runner.Runs;
+
+        var reopened = await _target.GetAsync(
+            Request(analysisId: first.AnalysisId),
+            TestContext.Current.CancellationToken);
+
+        reopened.AnalysisId.ShouldBe(first.AnalysisId);
+        reopened.IsLatest.ShouldBeFalse();
+        reopened.CreatedAtUtc.ShouldBe(first.CreatedAtUtc);
+        _runner.Runs.ShouldBe(runs);
+
+        (await _target.GetAsync(Request(), TestContext.Current.CancellationToken)).IsLatest.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Grouping_and_reviewed_marks_land_on_the_run_that_was_reopened_not_the_latest()
+    {
+        var first = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+        var second = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        var regrouped = await _target.SetGroupingAsync(
+            new SetGroupingRequest(
+                analysisId: first.AnalysisId,
+                grouping: SetGroupingMode.Change_clusters,
+                repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken);
+
+        regrouped.AnalysisId.ShouldBe(first.AnalysisId);
+        regrouped.IsLatest.ShouldBeFalse();
+
+        var marks = await _target.SetReviewedAsync(
+            new SetNodesReviewedRequest(
+                analysisId: first.AnalysisId,
+                nodeIds: ["src/Caller.cs"],
+                repositoryPath: "/repo",
+                reviewed: true),
+            TestContext.Current.CancellationToken);
+
+        marks.AnalysisId.ShouldBe(first.AnalysisId);
+
+        var latest = await _target.GetAsync(Request(), TestContext.Current.CancellationToken);
+
+        latest.AnalysisId.ShouldBe(second.AnalysisId);
+        latest.ReviewedNodeIds.ShouldBeEmpty();
+
+        var earlier = await _target.GetAsync(
+            Request(analysisId: first.AnalysisId),
+            TestContext.Current.CancellationToken);
+
+        earlier.ReviewedNodeIds.ShouldBe(["src/Caller.cs"]);
+        earlier.Grouping.ShouldBe(AnalysisGroupingMode.Change_clusters);
+    }
+
+    [Fact]
+    public async Task An_id_from_another_repository_is_not_found_rather_than_read()
+    {
+        var elsewhere = AnalysisSamples.Completed("/other") with { Id = "elsewhere" };
+        await _store.SaveAsync(elsewhere, TestContext.Current.CancellationToken);
+
+        var failure = await Should.ThrowAsync<LocalRpcException>(async () => await _target.GetAsync(
+            Request(analysisId: "elsewhere"),
+            TestContext.Current.CancellationToken));
+
+        var data = failure.ErrorData.ShouldBeOfType<RpcErrorData>();
+
+        data.Code.ShouldBe("analysis_not_found");
+        data.Args.ShouldNotBeNull()["analysisId"].ShouldBe("elsewhere");
+
+        await Should.ThrowAsync<LocalRpcException>(async () => await _target.DeleteAsync(
+            new AnalysisRefRequest(analysisId: "elsewhere", repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken));
+
+        (await _store.FindAsync("elsewhere", TestContext.Current.CancellationToken)).ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task The_trace_is_every_tool_call_in_the_order_the_model_made_them()
+    {
+        // Requirement 7. The sample stores its calls out of order, so this proves the trace is sorted
+        // by ordinal rather than read back in whatever order the array was written.
+        var view = await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        view.ToolCallCount.ShouldBe(3);
+
+        var trace = await _target.TraceAsync(
+            new AnalysisRefRequest(analysisId: view.AnalysisId!, repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken);
+
+        trace.AnalysisId.ShouldBe(view.AnalysisId);
+        trace.ToolCalls.Select(static call => call.Ordinal).ShouldBe([1, 2, 3]);
+        trace.ToolCalls.Select(static call => call.ToolName)
+            .ShouldBe(["get_project_profile", "get_file_diff", "read_file"]);
+        trace.ToolCalls.Select(static call => call.ResultBytes).ShouldBe([512, 2048, 40]);
+        trace.ToolCalls[2].IsError.ShouldBeTrue();
+        trace.ToolCalls[2].Turn.ShouldBe(2);
+        trace.ToolCalls[1].DurationMs.ShouldBe(12);
+        trace.ProgressMessages.ShouldBe(["Reading the contract"]);
+        _runner.Runs.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Deleting_a_run_removes_it_alone_and_answers_with_the_library_as_it_stands()
+    {
+        await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+        await _target.RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        var library = await _target.DeleteAsync(
+            new AnalysisRefRequest(analysisId: "analysis2", repositoryPath: "/repo"),
+            TestContext.Current.CancellationToken);
+
+        library.Entries.ShouldHaveSingleItem().AnalysisId.ShouldBe("analysis1");
+        library.Entries[0].IsLatest.ShouldBeTrue();
+
+        // And the screen's default read now opens the one that is left.
+        (await _target.GetAsync(Request(), TestContext.Current.CancellationToken))
+            .AnalysisId.ShouldBe("analysis1");
+    }
+
+    [Fact]
+    public async Task A_stored_analysis_is_fresh_until_the_working_tree_moves_and_fresh_again_once_reverted()
+    {
+        // Requirement 9's verification step 6, against a real repository: change a file after the
+        // run and the analysis is stale; revert the change and it is not.
+        using var repository = TemporaryRepository.CreateWithCommit();
+        repository.Write("src/Contract.cs", "class Contract {}\n");
+        repository.Write("src/Caller.cs", "class Caller {}\n");
+        repository.Commit("initial");
+
+        repository.Write("src/Contract.cs", "class Contract { int Tenant; }\n");
+        repository.Write("src/Caller.cs", "class Caller { void Call() {} }\n");
+
+        var analysis = await StoreAnalysisOfAsync(repository);
+        var request = new AnalysisRefRequest(analysisId: analysis.Id, repositoryPath: repository.Root);
+
+        var fresh = await _target.CheckFreshnessAsync(request, TestContext.Current.CancellationToken);
+
+        fresh.IsStale.ShouldBeFalse();
+        fresh.Basis.ShouldBe(Contracts.AnalysisFreshnessBasis.Content);
+
+        // Same line counts, different content: only a content hash can see this edit.
+        repository.Write("src/Contract.cs", "class Contract { int Tenent; }\n");
+
+        var edited = await _target.CheckFreshnessAsync(request, TestContext.Current.CancellationToken);
+
+        edited.IsStale.ShouldBeTrue();
+        edited.HeadMoved.ShouldBeFalse();
+        edited.ModifiedPaths.ShouldBe(["src/Contract.cs"]);
+        edited.ModifiedCount.ShouldBe(1);
+
+        repository.Write("src/Contract.cs", "class Contract { int Tenant; }\n");
+
+        (await _target.CheckFreshnessAsync(request, TestContext.Current.CancellationToken))
+            .IsStale.ShouldBeFalse("reverting the edit makes the analysis describe the tree again.");
+
+        repository.Write("src/New.cs", "class New {}\n");
+
+        var added = await _target.CheckFreshnessAsync(request, TestContext.Current.CancellationToken);
+
+        added.AddedPaths.ShouldBe(["src/New.cs"]);
+        added.IsStale.ShouldBeTrue();
+
+        _runner.Runs.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Committing_the_change_moves_head_and_empties_the_changeset_so_the_analysis_is_stale()
+    {
+        using var repository = TemporaryRepository.CreateWithCommit();
+        repository.Write("src/Contract.cs", "class Contract {}\n");
+        repository.Commit("initial");
+        repository.Write("src/Contract.cs", "class Contract { int Tenant; }\n");
+
+        var analysis = await StoreAnalysisOfAsync(repository);
+
+        repository.Commit("the change itself");
+
+        var report = await _target.CheckFreshnessAsync(
+            new AnalysisRefRequest(analysisId: analysis.Id, repositoryPath: repository.Root),
+            TestContext.Current.CancellationToken);
+
+        report.IsStale.ShouldBeTrue();
+        report.HeadMoved.ShouldBeTrue();
+        report.RemovedPaths.ShouldBe(["src/Contract.cs"]);
+        report.CurrentHeadCommit.ShouldBe(repository.HeadSha());
+        report.RecordedHeadCommit.ShouldBe(analysis.HeadCommit);
+    }
+
+    /// <summary>
+    /// Stores an analysis of the repository's current change the way the runner would: the changeset
+    /// read with content hashes, and HEAD as it stands. The document is the sample's — freshness is a
+    /// question about the changeset, not about what the model said.
+    /// </summary>
+    private async Task<Analysis> StoreAnalysisOfAsync(TemporaryRepository repository)
+    {
+        var changeset = await Git.GetChangesetAsync(
+            new ChangesetQuery(repository.Root, HashContent: true),
+            TestContext.Current.CancellationToken);
+
+        var analysis = AnalysisSamples.Completed(repository.Root) with
+        {
+            Id = "fresh" + Guid.NewGuid().ToString("N"),
+            HeadCommit = repository.HeadSha(),
+            ChangedFiles = [.. changeset.Files.Select(ChangedFileFacts.From)],
+        };
+
+        await _store.SaveAsync(analysis, TestContext.Current.CancellationToken);
+
+        return analysis;
+    }
+
+    private static GitClient CreateGit()
+    {
+        var runner = new GitProcessRunner(NullLogger<GitProcessRunner>.Instance);
+
+        return new GitClient(
+            runner,
+            new GitEnvironment(runner, NullLogger<GitEnvironment>.Instance),
+            NullLogger<GitClient>.Instance);
     }
 
     private AnalysisRpcTarget Target() => new(
@@ -603,10 +868,18 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
         _runner,
         _settings,
         new RunEventNotifier(new SilentNotifier(), NullLogger<RunEventNotifier>.Instance),
+        new AnalysisFreshnessChecker(Git, TimeProvider.System),
         NullLogger<AnalysisRpcTarget>.Instance);
 
-    private static AnalysisRequest Request(bool? changeClusters = null, bool? implementationGroups = null) =>
-        new(changeClusters: changeClusters, implementationGroups: implementationGroups, repositoryPath: "/repo");
+    private static AnalysisRequest Request(
+        bool? changeClusters = null,
+        bool? implementationGroups = null,
+        string? analysisId = null) =>
+        new(
+            analysisId: analysisId,
+            changeClusters: changeClusters,
+            implementationGroups: implementationGroups,
+            repositoryPath: "/repo");
 
     private static HashSet<string> Ids(AnalysisView view) =>
         [.. view.Nodes.Select(static node => node.Id)];
@@ -636,6 +909,7 @@ public sealed class AnalysisRpcTests : IAsyncLifetime
                 runner,
                 _settings,
                 new RunEventNotifier(new SilentNotifier(), NullLogger<RunEventNotifier>.Instance),
+                new AnalysisFreshnessChecker(Git, TimeProvider.System),
                 NullLogger<AnalysisRpcTarget>.Instance),
             runner);
     }

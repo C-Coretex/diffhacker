@@ -411,6 +411,35 @@ public sealed class LlmSessionTests
     }
 
     [Fact]
+    public async Task Every_event_carries_how_many_tool_calls_have_finished_so_far()
+    {
+        // The live view keeps only its latest rows, so it cannot count them. Three calls at once in
+        // the first turn, one in the second: the count rises as each finishes, concurrent ones
+        // included, and every later event carries the total.
+        var harness = new SessionHarness();
+        harness.Provider
+            .Calls(("echo", new { text = "a" }), ("echo", new { text = "b" }), ("echo", new { text = "c" }))
+            .Calls(("echo", new { text = "d" }))
+            .Says("done");
+
+        await using var session = harness.Build();
+        await session.RunAsync(
+            SessionHarness.Conversation([SessionHarness.EchoTool()]),
+            harness.Progress,
+            TestContext.Current.CancellationToken);
+
+        harness.Events
+            .Where(static e => e.Kind == LlmRunEventKind.ToolCallFinished)
+            .Select(static e => e.ToolCallCount)
+            .Order()
+            .ShouldBe([1, 2, 3, 4]);
+
+        harness.Events.First(static e => e.Kind == LlmRunEventKind.TurnStarted).ToolCallCount.ShouldBe(0);
+        harness.Events[^1].ToolCallCount.ShouldBe(4);
+        session.ToolCalls.Count.ShouldBe(4);
+    }
+
+    [Fact]
     public async Task A_session_runs_once()
     {
         var harness = new SessionHarness();

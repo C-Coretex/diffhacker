@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.14/analysis-ref-request.schema.json",
+  "title": "AnalysisRefRequest",
+  "description": "Names one stored analysis of one repository: the parameters of analysis.trace, analysis.checkFreshness and analysis.delete. Both fields are required, because each of those calls is about a specific run the reviewer is looking at, and 'the latest' is a guess the renderer never needs to make — it always holds the id. The repository travels too, so an id from another repository is refused rather than read.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repositoryPath", "analysisId"],
+  "properties": {
+    "repositoryPath": {
+      "type": "string",
+      "description": "Absolute path of the worktree root, as repository.open returned it."
+    },
+    "analysisId": {
+      "type": "string",
+      "description": "The stored analysis, as AnalysisView.analysisId or the library named it."
+    }
+  }
+}

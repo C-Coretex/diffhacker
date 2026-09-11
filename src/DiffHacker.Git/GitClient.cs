@@ -102,6 +102,11 @@ public sealed partial class GitClient(
             }
         }
 
+        if (query.HashContent)
+        {
+            files = await HashContentAsync(root, files, cancellationToken).ConfigureAwait(false);
+        }
+
         LoadedChangeset(logger, files.Count, root, query.IncludeUntracked);
 
         return new Changeset

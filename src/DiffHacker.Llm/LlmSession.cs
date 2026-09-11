@@ -56,6 +56,13 @@ internal sealed partial class LlmSession : ILlmSession
     private bool _reasoningReported;
 
     private LlmUsage _cumulative;
+
+    /// <summary>
+    /// Tool calls finished so far. Counted as each one finishes rather than read from
+    /// <see cref="_toolCalls"/>, which is filled only once a whole turn's concurrent calls are done —
+    /// the live view would otherwise sit still through a turn of six reads and then jump.
+    /// </summary>
+    private int _toolCallsFinished;
     private bool _hasRun;
 
     // On the session rather than threaded through the loop, for the same reason the usage and
@@ -142,6 +149,7 @@ internal sealed partial class LlmSession : ILlmSession
                 Kind = LlmRunEventKind.TurnStarted,
                 Turn = turn,
                 CumulativeUsage = _cumulative,
+                ToolCallCount = Volatile.Read(ref _toolCallsFinished),
 
                 // Carried on the two events a live view actually redraws on: the start of a turn,
                 // which is when the transcript has just grown or been pruned, and the arrival of
@@ -178,6 +186,7 @@ internal sealed partial class LlmSession : ILlmSession
                     IsError = true,
                     ReasonCode = failure.FailureCode,
                     CumulativeUsage = _cumulative,
+                    ToolCallCount = Volatile.Read(ref _toolCallsFinished),
                 });
 
                 return Failed(failure, turn);
@@ -217,6 +226,7 @@ internal sealed partial class LlmSession : ILlmSession
                     ResponseText = responseText,
                     ReasoningText = reasoningText,
                     CumulativeUsage = _cumulative,
+                    ToolCallCount = Volatile.Read(ref _toolCallsFinished),
                 });
             }
 
@@ -234,6 +244,7 @@ internal sealed partial class LlmSession : ILlmSession
                     Kind = LlmRunEventKind.TurnFinished,
                     Turn = turn,
                     CumulativeUsage = _cumulative,
+                    ToolCallCount = Volatile.Read(ref _toolCallsFinished),
 
                     // Measured again at the end of the turn, not only at its start. The model's
                     // own reply has been added to the transcript since then, and on a turn that
@@ -342,6 +353,7 @@ internal sealed partial class LlmSession : ILlmSession
                 Kind = LlmRunEventKind.TurnFinished,
                 Turn = turn,
                 CumulativeUsage = _cumulative,
+                ToolCallCount = Volatile.Read(ref _toolCallsFinished),
                 ContextTokens = ContextTokens(),
                 ContextWindowTokens = ContextWindow(),
                 Context = ContextSnapshot(),
@@ -405,6 +417,7 @@ internal sealed partial class LlmSession : ILlmSession
                     Kind = LlmRunEventKind.UsageUpdated,
                     Turn = turn,
                     CumulativeUsage = _cumulative,
+                    ToolCallCount = Volatile.Read(ref _toolCallsFinished),
                     ContextTokens = ContextTokens(),
                     ContextWindowTokens = ContextWindow(),
                     Context = ContextSnapshot(),
@@ -451,6 +464,7 @@ internal sealed partial class LlmSession : ILlmSession
                     RetryDelay = delay,
                     ReasonCode = failure.FailureCode,
                     CumulativeUsage = _cumulative,
+                    ToolCallCount = Volatile.Read(ref _toolCallsFinished),
                 });
 
                 await _delay(delay.Value, cancellationToken).ConfigureAwait(false);
@@ -503,6 +517,7 @@ internal sealed partial class LlmSession : ILlmSession
             ToolName = call.Name,
             ArgumentsPreview = preview,
             CumulativeUsage = _cumulative,
+            ToolCallCount = Volatile.Read(ref _toolCallsFinished),
         });
 
         var stopwatch = Stopwatch.StartNew();
@@ -548,6 +563,7 @@ internal sealed partial class LlmSession : ILlmSession
             Duration = stopwatch.Elapsed,
             IsError = result.IsError,
             CumulativeUsage = _cumulative,
+            ToolCallCount = Interlocked.Increment(ref _toolCallsFinished),
         });
 
         ToolCalled(_logger, call.Name, bytes, stopwatch.ElapsedMilliseconds);

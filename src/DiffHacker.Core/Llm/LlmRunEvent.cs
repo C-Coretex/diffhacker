@@ -59,6 +59,13 @@ public sealed record LlmRunEvent
     public LlmUsage CumulativeUsage { get; init; }
 
     /// <summary>
+    /// Tool calls completed so far in this run, carried on every event for the same reason as
+    /// <see cref="CumulativeUsage"/>: a live view that keeps only its latest rows cannot count them.
+    /// On a <see cref="LlmRunEventKind.ToolCallFinished"/> it already includes that call.
+    /// </summary>
+    public int ToolCallCount { get; init; }
+
+    /// <summary>
     /// How much of the context window the last request occupied, in the provider's own input-token
     /// count.
     /// <para>

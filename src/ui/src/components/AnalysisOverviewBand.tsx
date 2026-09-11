@@ -8,6 +8,7 @@ import { Separator } from '@/components/ui/separator';
 import { Markdown } from '@/components/analysis/Markdown';
 import { RiskList } from '@/components/analysis/RiskList';
 import { collectRisks, RiskRegister } from '@/components/analysis/RiskRegister';
+import { ToolCallInspector } from '@/components/analysis/ToolCallInspector';
 import { ReviewProgress } from '@/components/diff/ReviewProgress';
 import { useAppStore } from '@/store/appStore';
 
@@ -173,6 +174,14 @@ function Expanded({ view }: { view: AnalysisView }) {
 
       <Separator className="my-6" />
 
+      {/*
+        Full width, below the numbers: it is a table, and the one place in the band that can be five
+        hundred rows long. Folded and unfetched until opened.
+      */}
+      <ToolCallInspector view={view} />
+
+      <Separator className="my-6" />
+
       <DetailsDisclosure view={view} />
     </div>
   );
@@ -317,6 +326,10 @@ function RunMetadata({ view }: { view: AnalysisView }) {
         <Entry
           label={t('analysis.overview.runRepairs')}
           value={formatCount(view.repairRounds ?? 0)}
+        />
+        <Entry
+          label={t('analysis.overview.runToolCalls')}
+          value={formatCount(view.toolCallCount)}
         />
         <Entry label={t('analysis.overview.runSchema')} value={view.schemaVersion ?? unknown} />
       </dl>

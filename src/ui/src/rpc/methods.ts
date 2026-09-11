@@ -1,6 +1,10 @@
 import type {
+  AnalysisFreshness,
+  AnalysisLibrary,
   AnalysisProgress,
+  AnalysisRefRequest,
   AnalysisRequest,
+  AnalysisTrace,
   AnalysisView,
   BrowseFolderRequest,
   BrowseFolderResult,
@@ -100,6 +104,10 @@ export const RpcMethods = {
   runAnalysis: 'analysis.run',
   setNodesReviewed: 'analysis.setReviewed',
   setGrouping: 'analysis.setGrouping',
+  listAnalyses: 'analysis.list',
+  getAnalysisTrace: 'analysis.trace',
+  checkAnalysisFreshness: 'analysis.checkFreshness',
+  deleteAnalysis: 'analysis.delete',
 
   describeEditors: 'editor.describe',
   saveEditorSettings: 'editor.save',
@@ -365,6 +373,43 @@ export function setNodesReviewed(
   request: SetNodesReviewedRequest,
 ): Promise<ReviewedState> {
   return client.call<ReviewedState>(RpcMethods.setNodesReviewed, request);
+}
+
+/**
+ * Every stored run of a repository, most recent first. Reads no document on the host, so it is
+ * cheap enough to ask for whenever the analysis screen opens.
+ */
+export function listAnalyses(client: RpcClient, request: AnalysisRequest): Promise<AnalysisLibrary> {
+  return client.call<AnalysisLibrary>(RpcMethods.listAnalyses, request);
+}
+
+/**
+ * The full ordered trace of one stored run: every tool call and how large each answer was. Asked
+ * for when the inspector is opened rather than carried on the view, which travels on every read.
+ */
+export function getAnalysisTrace(client: RpcClient, request: AnalysisRefRequest): Promise<AnalysisTrace> {
+  return client.call<AnalysisTrace>(RpcMethods.getAnalysisTrace, request);
+}
+
+/**
+ * Whether the working tree has moved since a run. Reads and hashes the changeset host-side, so it
+ * gets the changeset's deadline rather than the default — and it is asked after the analysis is
+ * already on screen, so however long it takes never delays opening one.
+ */
+export function checkAnalysisFreshness(
+  client: RpcClient,
+  request: AnalysisRefRequest,
+): Promise<AnalysisFreshness> {
+  return client.callWithTimeout<AnalysisFreshness>(
+    RpcMethods.checkAnalysisFreshness,
+    CHANGESET_TIMEOUT_MS,
+    request,
+  );
+}
+
+/** Forgets one stored run, and answers with the library as it now stands. */
+export function deleteAnalysis(client: RpcClient, request: AnalysisRefRequest): Promise<AnalysisLibrary> {
+  return client.call<AnalysisLibrary>(RpcMethods.deleteAnalysis, request);
 }
 
 /** Which external editors this machine has, and the command configured for one it does not. */

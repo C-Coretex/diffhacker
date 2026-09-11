@@ -14,8 +14,10 @@ namespace DiffHacker.Core.Settings;
 /// <see cref="SetNodesReviewedAsync"/> and <see cref="SetGroupingAsync"/> are the two methods here
 /// that change a stored analysis, and neither is an exception to the paragraph above: both write the
 /// reviewer's own state — which nodes they have read, and which grouping they are reading it in —
-/// and both live beside the model's answer rather than inside it. <b>Nothing here can edit the
-/// document</b>, and that is the invariant to keep if a third one is ever added.
+/// and both live beside the model's answer rather than inside it. <see cref="DeleteOneAsync"/>
+/// removes a run whole, row and all, which changes what is stored without changing any analysis.
+/// <b>Nothing here can edit the document</b>, and that is the invariant to keep if another is ever
+/// added.
 /// </para>
 /// </summary>
 public interface IAnalysisStore
@@ -32,8 +34,19 @@ public interface IAnalysisStore
     /// <summary>Analyses of one repository, most recent first.</summary>
     ValueTask<IReadOnlyList<Analysis>> ListAsync(string repositoryPath, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// The library: every analysis of one repository, most recent first, as the facts a reviewer
+    /// chooses between. Reads no document, which is what keeps listing twenty runs instant.
+    /// </summary>
+    ValueTask<IReadOnlyList<AnalysisSummary>> ListSummariesAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken);
+
     /// <summary>Forgets every analysis of a repository.</summary>
     ValueTask DeleteAsync(string repositoryPath, CancellationToken cancellationToken);
+
+    /// <summary>Forgets one analysis. False when there was no such analysis to forget.</summary>
+    ValueTask<bool> DeleteOneAsync(string analysisId, CancellationToken cancellationToken);
 
     /// <summary>
     /// Marks or unmarks nodes of one analysis as reviewed, and returns every id now marked — not

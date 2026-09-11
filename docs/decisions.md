@@ -1207,3 +1207,97 @@ reviewed tick, controls, card and diff — and the surface resolves a click on t
 landed on. Edges attach to the box: one inside it is dropped (the box already says the two belong
 together), and several landing on the same neighbour become one line labelled with a count whose
 card lists each. A collapsed container still wins over a merged box inside it.
+
+## Run transparency and the analysis library
+
+Four follow-ups from the original Iteration 13 — the live run view, the tool-call inspector, the
+library of earlier runs, and stale detection — landed together, because three of them rest on one
+change: every analysis call can name *which* stored run it means.
+
+### Which analysis is the caller's to say
+
+Until now every `analysis.*` read and write went through `GetLatestAsync`, which was right while
+"the analysis" meant the latest one. Reopening an earlier run broke that: a reviewer who regrouped or
+marked a file in last week's run would have written it onto today's. So `analysis.get`,
+`analysis.setGrouping` and `analysis.setReviewed` take an optional `analysisId` — absent means the
+latest, so an older renderer changes nothing — and the three new calls that are always about one run
+(`trace`, `checkFreshness`, `delete`) take it required, in `AnalysisRefRequest`. The renderer always
+sends `view.analysisId`. An id is honoured only for the repository it belongs to; one from another
+repository is `analysis_not_found`, not a cross-repository read. Nothing about which run is open is
+held host-side, for the reason the repository path travels on every request.
+
+`AnalysisView.isLatest` is what lets the screen say "you are looking at an earlier run". It is
+computed against the library rather than stored, so deleting or pruning changes it without a write.
+
+### The live strip counts on the host, not in the renderer
+
+The tool log keeps its most recent 200 rows, so counting rows would undercount any long run. The
+count rides on every `analysis.toolCall` event as `toolCallCount`, like the token totals: `LlmSession`
+increments it with `Interlocked` as each call *finishes* — calls in one turn run concurrently, and
+`_toolCalls` is only filled once the whole turn is done, which would have made the figure sit still
+through a turn of six reads and then jump. Elapsed time is the renderer's own clock from the moment
+it asked for the run, ticking once a second, because the moment a reviewer most wants to see it move
+is a long silence in which no event arrives.
+
+### The trace is its own call
+
+`LlmToolCallRecord`s were already stored in `trace_json`; what was missing was a way to read them.
+They are not on `AnalysisView`: five hundred calls at a few hundred characters each would travel with
+every read and every grouping switch. `analysis.trace` returns them sorted by ordinal — sorted there
+rather than trusted to the array's order, because "in order" is the requirement — and the inspector
+fetches them the first time it is unfolded. Arguments and results stay previews (200 and 500
+characters, the limits `LlmToolCallRecord` already had); the size is of the whole answer.
+
+### The library reads no documents
+
+`IAnalysisStore.ListSummariesAsync` selects the scalar columns and lifts the numbers out of the JSON
+in SQL — `json_extract(statistics_json, …)` for files, lines, nodes and containers,
+`json_array_length(trace_json, '$.toolCalls')` for calls — and never selects `document_json`. Twenty
+five-hundred-node graphs parsed to show twenty dates would make the list anything but instant. A
+row whose statistics predate a field lists with a zero rather than failing, and
+`SqliteAnalysisStoreTests` proves the document is never read by corrupting it.
+
+Retention stays at 20 per repository, pruned on save as before, now named
+`AnalysisLibraryPolicy.RetentionLimit` so the store that prunes and the library that tells the
+reviewer it does share one number. Deleting a run is `DeleteOneAsync`, behind a confirmation in the
+UI. It is the third method on `IAnalysisStore` that changes what is stored, and like the other two it
+cannot edit a document — it removes a row whole, and the reviewed marks and chosen grouping, being
+columns on it, go with it.
+
+### Stale means the working tree differs, measured by content
+
+What an analysis describes is one exact changeset, so there is no threshold: any difference is
+stale. The comparison is per path:
+
+- **HEAD moved** is always stale, because the committed side of every diff moved with it.
+- **A file added to or removed from the changeset** is stale.
+- **A file in both** is modified when its status or previous path changed, or when its content
+  changed. Content means a **SHA-256 of the working-tree bytes**, recorded when the run started, in
+  `ChangedFileFacts.ContentSha256`.
+
+Modification times were the obvious alternative and cannot do the one thing verification step 6
+asks: an edit reverted byte for byte bumps the mtime twice and is the same file. Line counts alone
+miss an edit that keeps them. A hash does neither.
+
+The hash is taken by the git layer (`ChangesetQuery.HashContent`) rather than asked of git:
+`git hash-object` can write to the object database, which is why it is not on the allowlist, and the
+working-tree side of an unstaged file is all zeros in `--raw`. It reads only the files the changeset
+already names, under the root. A symlink is hashed by where it points and never followed, a
+submodule by the commit it is on, and a deleted file has no working-tree side and so no hash. A file
+that cannot be read gets null, and compares by line counts instead of failing the run.
+
+It lives in `files_json`, so there was no database migration. An analysis from before 1.14 has no
+hashes and is compared by line counts; one from before 1.8 has no per-file record at all and can only
+compare HEAD. The report says which (`basis`), and the banner says the check was weaker when it was.
+
+### Checked after the analysis is drawn, never before
+
+Reading and hashing a large changeset takes a moment, and requirement 8 wants reopening to be
+instant. So the renderer asks `analysis.checkFreshness` once the analysis is on screen — when it is
+opened, reopened or produced — and again when the window regains focus, the moment a reviewer comes
+back from their editor. At most one check is in flight per analysis, focus checks are at least two
+seconds apart, and a verdict that arrives for an analysis no longer on screen is dropped. A check
+that fails is logged and shows nothing: it must never take the analysis away or call it stale when
+nobody knows. The banner sits above the analysis rather than replacing it, because what is on screen
+is still a faithful account of the change as it was. Dismissing it lasts for the session and only for
+the difference it described, so a later check that finds something else shows it again.

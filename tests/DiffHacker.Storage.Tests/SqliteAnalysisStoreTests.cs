@@ -245,6 +245,103 @@ public sealed class SqliteAnalysisStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_library_lists_each_run_s_facts_most_recent_first()
+    {
+        for (var i = 0; i < 3; i++)
+        {
+            await _store.SaveAsync(
+                Sample() with { Id = $"run{i}", CreatedAtUtc = DateTimeOffset.UnixEpoch.AddHours(i) },
+                TestContext.Current.CancellationToken);
+        }
+
+        var library = await _store.ListSummariesAsync("/repo", TestContext.Current.CancellationToken);
+
+        library.Select(static summary => summary.Id).ShouldBe(["run2", "run1", "run0"]);
+
+        var latest = library[0];
+        var sample = Sample();
+
+        latest.RepositoryPath.ShouldBe("/repo");
+        latest.CreatedAtUtc.ShouldBe(DateTimeOffset.UnixEpoch.AddHours(2));
+        latest.Model.ShouldBe("gpt-4o");
+        latest.HeadCommit.ShouldBe("head0001");
+        latest.Usage.InputTokens.ShouldBe(1000);
+        latest.Usage.EstimatedCostUsd.ShouldBe(0.25m);
+        latest.Duration.ShouldBe(TimeSpan.FromSeconds(42));
+        latest.FileCount.ShouldBe(2);
+        latest.LinesAdded.ShouldBe(12);
+        latest.LinesRemoved.ShouldBe(3);
+        latest.NodeCount.ShouldBe(sample.Statistics.NodeCount);
+        latest.ContainerCount.ShouldBe(sample.Statistics.ContainerCount);
+        latest.ToolCallCount.ShouldBe(1);
+
+        (await _store.ListSummariesAsync("/elsewhere", TestContext.Current.CancellationToken)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Listing_the_library_never_reads_a_document()
+    {
+        // Proven the blunt way: a row whose document cannot be parsed, and whose statistics predate
+        // every field, still lists — reading either would have thrown. That is what keeps listing
+        // twenty five-hundred-node runs instant.
+        await _store.SaveAsync(Sample(), TestContext.Current.CancellationToken);
+
+        await using (var connection = await _database.OpenAsync(TestContext.Current.CancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText =
+                "UPDATE analyses SET document_json = 'not json', statistics_json = '{}' WHERE id = 'analysis1';";
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        var summary = (await _store.ListSummariesAsync("/repo", TestContext.Current.CancellationToken))
+            .ShouldHaveSingleItem();
+
+        summary.Id.ShouldBe("analysis1");
+        summary.FileCount.ShouldBe(0);
+        summary.NodeCount.ShouldBe(0);
+        summary.ToolCallCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Deleting_one_run_forgets_it_alone()
+    {
+        await _store.SaveAsync(Sample() with { Id = "keep" }, TestContext.Current.CancellationToken);
+        await _store.SaveAsync(
+            Sample() with { Id = "drop", CreatedAtUtc = DateTimeOffset.UnixEpoch.AddHours(1) },
+            TestContext.Current.CancellationToken);
+
+        (await _store.DeleteOneAsync("drop", TestContext.Current.CancellationToken)).ShouldBeTrue();
+        (await _store.DeleteOneAsync("drop", TestContext.Current.CancellationToken)).ShouldBeFalse();
+
+        (await _store.ListSummariesAsync("/repo", TestContext.Current.CancellationToken))
+            .ShouldHaveSingleItem().Id.ShouldBe("keep");
+        (await _store.GetLatestAsync("/repo", TestContext.Current.CancellationToken))
+            .ShouldNotBeNull().Id.ShouldBe("keep");
+    }
+
+    [Fact]
+    public async Task A_content_hash_is_kept_with_the_changeset_and_an_older_row_reads_back_without_one()
+    {
+        var hashed = Sample() with
+        {
+            Id = "hashed",
+            ChangedFiles = [.. Sample().ChangedFiles.Select(static file => file with { ContentSha256 = "sha:" + file.Path })],
+        };
+
+        await _store.SaveAsync(Sample(), TestContext.Current.CancellationToken);
+        await _store.SaveAsync(hashed, TestContext.Current.CancellationToken);
+
+        (await _store.FindAsync("hashed", TestContext.Current.CancellationToken)).ShouldNotBeNull()
+            .ChangedFiles.Select(static file => file.ContentSha256)
+            .ShouldBe(["sha:src/Contract.cs", "sha:assets/icon.png"]);
+
+        // A run that recorded none reads back as none, as a row written before the field existed does.
+        (await _store.FindAsync("analysis1", TestContext.Current.CancellationToken)).ShouldNotBeNull()
+            .ChangedFiles.ShouldAllBe(static file => file.ContentSha256 == null);
+    }
+
+    [Fact]
     public async Task A_stored_analysis_reopens_after_a_restart()
     {
         // Requirement 5: reopening never re-runs the LLM, which is only true if the whole result

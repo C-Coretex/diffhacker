@@ -56,6 +56,27 @@ public sealed class RunEventNotifierTests
     }
 
     [Fact]
+    public async Task Every_event_carries_the_running_tool_call_count_including_zero()
+    {
+        // Required on the wire and sent even when zero: a turn that has made no calls yet is a count
+        // the live view shows, not an absence it has to guess at.
+        var (notifier, sink) = Build();
+
+        sink.Report(new LlmRunEvent { Kind = LlmRunEventKind.TurnStarted, Turn = 1 });
+        sink.Report(new LlmRunEvent
+        {
+            Kind = LlmRunEventKind.ToolCallFinished,
+            Turn = 1,
+            ToolName = "read_file",
+            ToolCallCount = 7,
+        });
+        await WaitForDelivery(notifier, 2);
+
+        Serialise(notifier.Sent[0].Payload).GetProperty("toolCallCount").GetInt32().ShouldBe(0);
+        Serialise(notifier.Sent[1].Payload).GetProperty("toolCallCount").GetInt32().ShouldBe(7);
+    }
+
+    [Fact]
     public async Task An_assistant_message_carries_its_reasoning_and_response_text()
     {
         var (notifier, sink) = Build();
@@ -97,9 +118,9 @@ public sealed class RunEventNotifierTests
     /// <see cref="RunEventNotifier.Report"/> fires the notification without awaiting it, so a test
     /// observing the result has to give the fire-and-forget task a turn to run.
     /// </summary>
-    private static async Task WaitForDelivery(CapturingNotifier notifier)
+    private static async Task WaitForDelivery(CapturingNotifier notifier, int count = 1)
     {
-        for (var i = 0; i < 100 && notifier.Sent.Count == 0; i++)
+        for (var i = 0; i < 100 && notifier.Sent.Count < count; i++)
         {
             await Task.Delay(1, TestContext.Current.CancellationToken);
         }

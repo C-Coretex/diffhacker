@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.14/analysis-trace.schema.json",
+  "title": "AnalysisTrace",
+  "description": "The recorded trace of one stored analysis: every tool call the model made, in the order it asked for them, and everything it said through report_progress. Returned by analysis.trace on demand rather than carried on AnalysisView, because a run may make five hundred calls and the view is re-sent on every read and every grouping switch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["analysisId", "toolCalls", "progressMessages"],
+  "properties": {
+    "analysisId": {
+      "type": "string",
+      "description": "The analysis this trace belongs to."
+    },
+    "toolCalls": {
+      "type": "array",
+      "description": "Every tool call, ordered by ordinal. Complete, unlike the live log, which keeps only its most recent rows.",
+      "items": {
+        "$ref": "#/$defs/analysisToolCallInfo"
+      }
+    },
+    "progressMessages": {
+      "type": "array",
+      "description": "What the model said about what it was doing, in its own words and in order. Run data, not UI copy.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "analysisToolCallInfo": {
+      "title": "AnalysisToolCallInfo",
+      "description": "One recorded tool call.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal",
+        "turn",
+        "toolName",
+        "argumentsPreview",
+        "resultPreview",
+        "resultBytes",
+        "durationMs",
+        "isError"
+      ],
+      "properties": {
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Position in the run, from 1. Calls made concurrently in one turn are numbered in the order the model asked for them."
+        },
+        "turn": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Which round trip to the provider asked for it."
+        },
+        "toolName": {
+          "type": "string",
+          "description": "The tool called."
+        },
+        "argumentsPreview": {
+          "type": "string",
+          "description": "The arguments the model passed, truncated to 200 characters. Enough to tell two calls apart."
+        },
+        "resultPreview": {
+          "type": "string",
+          "description": "The beginning of what the tool returned, truncated to 500 characters. The full result is not retained."
+        },
+        "resultBytes": {
+          "type": "integer",
+          "description": "Size of the full result in UTF-8 bytes — what was handed back to the model, not the preview."
+        },
+        "durationMs": {
+          "type": "number",
+          "description": "How long the call took, in milliseconds."
+        },
+        "isError": {
+          "type": "boolean",
+          "description": "True when the tool refused or failed. Information, not an alarm: the model corrects a failed call."
+        }
+      }
+    }
+  }
+}

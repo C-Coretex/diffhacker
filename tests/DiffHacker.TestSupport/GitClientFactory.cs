@@ -21,8 +21,9 @@ public static class GitClientFactory
         this GitClient client,
         FixtureRepository fixture,
         CancellationToken cancellationToken,
-        bool includeUntracked = true) =>
-        client.GetChangesetAsync(new ChangesetQuery(fixture.Root, includeUntracked), cancellationToken);
+        bool includeUntracked = true,
+        bool hashContent = false) =>
+        client.GetChangesetAsync(new ChangesetQuery(fixture.Root, includeUntracked, hashContent), cancellationToken);
 
     public static ChangedFile File(this Changeset changeset, string path) =>
         changeset.Files.SingleOrDefault(file => string.Equals(file.Path, path, StringComparison.Ordinal))

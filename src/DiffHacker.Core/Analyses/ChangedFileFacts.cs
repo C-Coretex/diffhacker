@@ -61,6 +61,15 @@ public sealed record ChangedFileFacts
     /// </summary>
     public required string Project { get; init; }
 
+    /// <summary>
+    /// SHA-256 of the file's working-tree side when the run started — see
+    /// <see cref="ChangedFile.ContentSha256"/>. Not drawn anywhere: it is kept so that
+    /// <see cref="AnalysisFreshnessCalculator"/> can later tell whether this file is still the file
+    /// that was analysed. Null for a deleted file, for one that could not be read, and on every
+    /// analysis written before schema 1.14, which are then compared by line counts.
+    /// </summary>
+    public string? ContentSha256 { get; init; }
+
     /// <summary>The facts worth keeping from one file of the changeset that was analysed.</summary>
     public static ChangedFileFacts From(ChangedFile file)
     {
@@ -76,6 +85,7 @@ public sealed record ChangedFileFacts
             IsBinary = file.IsBinary,
             Language = file.Language,
             Project = file.Project.Name,
+            ContentSha256 = file.ContentSha256,
         };
     }
 }

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.13/analysis-view.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.14/analysis-view.schema.json",
   "title": "AnalysisView",
   "description": "Everything the renderer is given about the stored analysis of one repository, projected in one grouping: the model's graph, the provenance of the run that produced it, the statistics the application computed alongside it, and the diagnostics validation raised. Returned by every analysis.* method, so the renderer replaces its state wholesale rather than merging. The stored document holds two groupings of one node set; this is one of them, chosen by grouping, and switching is another call rather than a second copy on the wire. The document's fields are hoisted to the root rather than nested under an analysis object, because the contract generator cannot render a definition that references another definition and the container list needs one — the same flattening profile-state.schema.json applies. The container, node and edge shapes duplicate the ones in analysis-result.schema.json, because a schema here cannot reference one there; AnalysisAgreementTests holds the two copies together.",
   "type": "object",
@@ -22,7 +22,9 @@
     "produceChangeClusters",
     "implementationGroups",
     "implementationGroupsProduced",
-    "produceImplementationGroups"
+    "produceImplementationGroups",
+    "isLatest",
+    "toolCallCount"
   ],
   "properties": {
     "repositoryPath": {
@@ -77,6 +79,15 @@
     "repairRounds": {
       "type": "integer",
       "description": "How many times the result came back failing validation and was handed back to be repaired. Zero on a clean run. Worth showing: a run that needed repairs cost more than one that did not."
+    },
+    "toolCallCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many tool calls the run made. The calls themselves are read through analysis.trace, on demand, rather than carried here: five hundred of them would travel with every read and every grouping switch. Zero when there is no analysis."
+    },
+    "isLatest": {
+      "type": "boolean",
+      "description": "Whether this is the repository's most recent analysis. False for an earlier run reopened from the library, which the screen then says it is, and false when there is no analysis."
     },
     "summary": {
       "type": "string",

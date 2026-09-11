@@ -13,6 +13,7 @@ function event(overrides: Partial<ToolCallEvent> = {}): ToolCallEvent {
     isError: false,
     inputTokens: 300_000,
     outputTokens: 4_000,
+    toolCallCount: 0,
     contextTokens: 84_312,
     contextWindowTokens: 200_000,
     contextInstructionsCharacters: 7_000,

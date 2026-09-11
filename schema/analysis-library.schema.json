@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.14/analysis-library.schema.json",
+  "title": "AnalysisLibrary",
+  "description": "Every stored analysis of one repository, most recent first, as the facts a reviewer chooses between: when, which model, what it cost, how large the change was. Returned by analysis.list and analysis.delete. Listing never reads a document, and reopening one is analysis.get with its id — neither starts a conversation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repositoryPath", "retentionLimit", "entries"],
+  "properties": {
+    "repositoryPath": {
+      "type": "string",
+      "description": "Absolute path of the worktree root these analyses belong to."
+    },
+    "retentionLimit": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "How many analyses are kept per repository. Storing another beyond this removes the oldest; the library says so rather than letting runs disappear unexplained."
+    },
+    "entries": {
+      "type": "array",
+      "description": "The stored analyses, most recent first. Empty when the repository has never been analysed.",
+      "items": {
+        "$ref": "#/$defs/analysisLibraryEntry"
+      }
+    }
+  },
+  "$defs": {
+    "analysisLibraryEntry": {
+      "title": "AnalysisLibraryEntry",
+      "description": "One stored run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "analysisId",
+        "createdAtUtc",
+        "providerDisplayName",
+        "model",
+        "inputTokens",
+        "outputTokens",
+        "durationMs",
+        "fileCount",
+        "linesAdded",
+        "linesRemoved",
+        "nodeCount",
+        "containerCount",
+        "toolCallCount",
+        "isLatest"
+      ],
+      "properties": {
+        "analysisId": {
+          "type": "string",
+          "description": "Identifier to reopen, inspect or delete it by."
+        },
+        "createdAtUtc": {
+          "type": "string",
+          "format": "date-time",
+          "description": "UTC instant the run finished."
+        },
+        "providerDisplayName": {
+          "type": "string",
+          "description": "Display name of the provider profile that produced it."
+        },
+        "model": {
+          "type": "string",
+          "description": "Model that produced it."
+        },
+        "costUsd": {
+          "type": "string",
+          "description": "What the run cost in US dollars, as a decimal string. Absent when the model is not in the price table — unknown, never zero."
+        },
+        "inputTokens": {
+          "type": "integer",
+          "description": "Input tokens the run consumed."
+        },
+        "outputTokens": {
+          "type": "integer",
+          "description": "Output tokens the run produced."
+        },
+        "durationMs": {
+          "type": "integer",
+          "description": "Wall-clock milliseconds the run took."
+        },
+        "headCommit": {
+          "type": "string",
+          "description": "The commit HEAD pointed at when it ran. Absent in a repository with no commits."
+        },
+        "fileCount": {
+          "type": "integer",
+          "description": "Changed files in the changeset it analysed."
+        },
+        "linesAdded": {
+          "type": "integer",
+          "description": "Lines added across that changeset."
+        },
+        "linesRemoved": {
+          "type": "integer",
+          "description": "Lines removed across that changeset."
+        },
+        "nodeCount": {
+          "type": "integer",
+          "description": "Nodes in the model's graph."
+        },
+        "containerCount": {
+          "type": "integer",
+          "description": "Containers in the dependency-flow grouping."
+        },
+        "toolCallCount": {
+          "type": "integer",
+          "description": "Tool calls the run made."
+        },
+        "isLatest": {
+          "type": "boolean",
+          "description": "True for the most recent analysis, which is the one the screen opens by default."
+        }
+      }
+    }
+  }
+}

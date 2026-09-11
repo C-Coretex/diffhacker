@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.13/set-nodes-reviewed-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.14/set-nodes-reviewed-request.schema.json",
   "title": "SetNodesReviewedRequest",
-  "description": "Parameters of analysis.setReviewed. Marks or unmarks nodes of the repository's most recent analysis. Takes a list rather than one id so that marking a whole container is one round trip rather than thirty.",
+  "description": "Parameters of analysis.setReviewed. Marks or unmarks nodes of one stored analysis: the one analysisId names, or the repository's most recent. Takes a list rather than one id so that marking a whole container is one round trip rather than thirty.",
   "type": "object",
   "additionalProperties": false,
   "required": ["repositoryPath", "nodeIds", "reviewed"],
@@ -10,6 +10,10 @@
     "repositoryPath": {
       "type": "string",
       "description": "Absolute path to the worktree root."
+    },
+    "analysisId": {
+      "type": "string",
+      "description": "Which stored analysis the marks belong to, so an earlier run reopened from the library keeps its own. Absent means the most recent one."
     },
     "nodeIds": {
       "type": "array",

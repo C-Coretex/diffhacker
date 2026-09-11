@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCount, formatTime } from './format';
+import { formatBytes, formatCount, formatElapsed, formatTime } from './format';
 
 describe('formatCount', () => {
   it('groups thousands the same way whatever ICU data the runtime carries', () => {
@@ -41,5 +41,30 @@ describe('formatTime', () => {
 
   it('renders nothing for a value that is not a valid instant', () => {
     expect(formatTime('not a date')).toBe('');
+  });
+});
+
+describe('formatBytes', () => {
+  it('is exact below a kilobyte and one decimal above, in binary units', () => {
+    expect(formatBytes(0)).toBe('0 B');
+    expect(formatBytes(512)).toBe('512 B');
+    expect(formatBytes(1023)).toBe('1,023 B');
+    expect(formatBytes(1024)).toBe('1.0 KB');
+    expect(formatBytes(48 * 1024)).toBe('48.0 KB');
+    expect(formatBytes(3 * 1024 * 1024 + 512 * 1024)).toBe('3.5 MB');
+  });
+});
+
+describe('formatElapsed', () => {
+  it('counts whole seconds as m:ss, and hours only once there are any', () => {
+    expect(formatElapsed(0)).toBe('0:00');
+    expect(formatElapsed(999)).toBe('0:00');
+    expect(formatElapsed(61_000)).toBe('1:01');
+    expect(formatElapsed(10 * 60_000 + 5_000)).toBe('10:05');
+    expect(formatElapsed(3_600_000 + 2 * 60_000 + 3_000)).toBe('1:02:03');
+  });
+
+  it('never goes negative when two clocks disagree by a moment', () => {
+    expect(formatElapsed(-500)).toBe('0:00');
   });
 });

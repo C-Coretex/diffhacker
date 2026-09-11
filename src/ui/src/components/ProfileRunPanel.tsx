@@ -1,7 +1,9 @@
 import { Loader2Icon } from 'lucide-react';
 import type { AnalysisProgress, AnalysisProgressPhase, ToolCallEvent } from '@/contracts';
-import { formatCount, formatTime } from '@/i18n/format';
+import type { ReactNode } from 'react';
+import { formatCount, formatElapsed, formatTime } from '@/i18n/format';
 import { useT } from '@/i18n/useT';
+import { useElapsed } from '@/lib/useElapsed';
 import { useAppStore } from '@/store/appStore';
 import { ContextMeter } from './ContextMeter';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +27,8 @@ interface RunPanelProps {
    * the turn-start and usage events carry a measurement.
    */
   context?: ToolCallEvent;
+  /** When the run was started, by the renderer's clock. Drives the elapsed time. */
+  startedAt?: number;
   onCancel(): void;
 }
 
@@ -40,8 +44,9 @@ interface RunPanelProps {
  * application that look exactly like this — profiling a repository and analysing a change — and
  * they keep their own slices so that neither can show the other's log.
  */
-export function RunPanel({ progress, events, latest, context, onCancel }: RunPanelProps) {
+export function RunPanel({ progress, events, latest, context, startedAt, onCancel }: RunPanelProps) {
   const t = useT();
+  const elapsed = useElapsed(startedAt);
 
   return (
     <Card>
@@ -62,36 +67,72 @@ export function RunPanel({ progress, events, latest, context, onCancel }: RunPan
             out of the host; this is run data, not copy, and translating it would be nonsense.
           */}
           <p className="text-sm">{progress?.message ?? t('toolLog.waiting')}</p>
-          {progress?.phase && (
-            <p className="text-muted-foreground text-xs">{t(phaseLabels[progress.phase])}</p>
-          )}
         </div>
 
-        {latest && (
-          <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-xs">
-            <span>{t('toolLog.turn', { turn: latest.turn })}</span>
-            <span>
+        {/*
+          The live strip. Always drawn, from the first frame of the run: the clock and a zero are
+          what tell a reviewer the run has started, and the first event can take a while. Every
+          number but the clock is carried on the latest event as a running total, because the log
+          below keeps only its most recent rows and could not be counted.
+        */}
+        <div className="text-muted-foreground flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+          <dl
+            aria-label={t('toolLog.statsLabel')}
+            data-testid="run-stats"
+            className="flex flex-wrap items-start gap-x-6 gap-y-2"
+          >
+            {/* The phase is the model's, from report_progress; it is optional there, so a report
+                that names none leaves the stage unstated rather than guessed. */}
+            <Stat label={t('toolLog.phase')} testId="run-phase">
+              {progress?.phase
+                ? t(phaseLabels[progress.phase])
+                : progress
+                  ? t('toolLog.phaseUnstated')
+                  : t('toolLog.phaseNone')}
+            </Stat>
+            <Stat label={t('toolLog.elapsed')} testId="run-elapsed">
+              {formatElapsed(elapsed)}
+            </Stat>
+            <Stat label={t('toolLog.toolCalls')} testId="run-tool-calls">
+              {formatCount(latest?.toolCallCount ?? 0)}
+            </Stat>
+            <Stat label={t('toolLog.turnLabel')} testId="run-turn">
+              {formatCount(latest?.turn ?? 0)}
+            </Stat>
+            <Stat label={t('toolLog.tokensLabel')} testId="run-tokens">
               {t('toolLog.tokens', {
-                input: formatCount(latest.inputTokens),
-                output: formatCount(latest.outputTokens),
+                input: formatCount(latest?.inputTokens ?? 0),
+                output: formatCount(latest?.outputTokens ?? 0),
               })}
-            </span>
-            <span>
-              {latest.costUsd === undefined
+            </Stat>
+            <Stat label={t('toolLog.costLabel')} testId="run-cost">
+              {latest?.costUsd === undefined
                 ? t('toolLog.costUnknown')
                 : t('toolLog.cost', { cost: latest.costUsd.toFixed(4) })}
-            </span>
+            </Stat>
+          </dl>
 
-            {/* Requirements 14 and 16. Mounted here rather than on the analysis screen so that
-                profiling a repository gets the same meter for free — it is the same tool loop,
-                filling the same context. */}
-            <ContextMeter event={context} />
-          </div>
-        )}
+          {/* Requirements 14 and 16. Mounted here rather than on the analysis screen so that
+              profiling a repository gets the same meter for free — it is the same tool loop,
+              filling the same context. */}
+          {latest && <ContextMeter event={context} />}
+        </div>
 
         <ToolLog events={events} />
       </CardContent>
     </Card>
+  );
+}
+
+/** One figure on the live strip: a label above, the moving value below. */
+function Stat({ label, testId, children }: { label: string; testId: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col">
+      <dt>{label}</dt>
+      <dd data-testid={testId} className="text-foreground font-mono tabular-nums">
+        {children}
+      </dd>
+    </div>
   );
 }
 
@@ -103,6 +144,7 @@ export function ProfileRunPanel({ onCancel }: { onCancel(): void }) {
       events={useAppStore((state) => state.profileRunEvents)}
       latest={useAppStore((state) => state.profileRunLatest)}
       context={useAppStore((state) => state.profileRunContext)}
+      startedAt={useAppStore((state) => state.profileRunStartedAt)}
       onCancel={onCancel}
     />
   );
@@ -116,6 +158,7 @@ export function AnalysisRunPanel({ onCancel }: { onCancel(): void }) {
       events={useAppStore((state) => state.analysisRunEvents)}
       latest={useAppStore((state) => state.analysisRunLatest)}
       context={useAppStore((state) => state.analysisRunContext)}
+      startedAt={useAppStore((state) => state.analysisRunStartedAt)}
       onCancel={onCancel}
     />
   );

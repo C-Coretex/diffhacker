@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import type {
+  AnalysisFreshness,
+  AnalysisLibrary,
   AnalysisProgress,
+  AnalysisTrace,
   AnalysisView,
   ChangesetResult,
   EditorSettings,
@@ -116,6 +119,13 @@ interface AppState {
   profileRunLatest?: ToolCallEvent;
 
   /**
+   * When the run was started, by this renderer's clock, for the elapsed time on the live view. The
+   * renderer's own clock rather than an event's timestamp: the first event can take a while to
+   * arrive, and a clock that starts then under-reports the wait the reviewer is sitting through.
+   */
+  profileRunStartedAt?: number;
+
+  /**
    * The last event that carried a context measurement, kept apart from `profileRunLatest`.
    *
    * Only the turn-start and usage events measure the context; a tool_started arriving after one
@@ -139,6 +149,32 @@ interface AppState {
 
   /** @see profileRunContext */
   analysisRunContext?: ToolCallEvent;
+
+  /** @see profileRunStartedAt */
+  analysisRunStartedAt?: number;
+
+  /**
+   * Every stored run of the open repository, most recent first, from `analysis.list`. Undefined
+   * until first asked for; refreshed after each run and each delete.
+   */
+  analysisLibrary?: AnalysisLibrary;
+
+  /**
+   * Whether the working tree has moved since the analysis on screen ran. Undefined until a check has
+   * answered for *this* analysis — cleared whenever a different one is shown, so a verdict about one
+   * run can never sit above another.
+   */
+  analysisFreshness?: AnalysisFreshness;
+
+  /**
+   * The stale prompt the reviewer dismissed, as the analysis id and what differed. A later check that
+   * finds something *else* different shows the prompt again: dismissing "one file changed" is not
+   * dismissing "now three have".
+   */
+  analysisStaleDismissed?: string;
+
+  /** The recorded trace of the analysis on screen, fetched when the inspector is first opened. */
+  analysisTrace?: AnalysisTrace;
 
   /**
    * How the graph is being looked at. UI state and nothing else: §0.6 rules out a persisted hand
@@ -302,6 +338,10 @@ interface AppState {
   recordAnalysisProgress(progress: AnalysisProgress): void;
   recordAnalysisRunEvent(event: ToolCallEvent): void;
   endAnalysisRun(): void;
+  setAnalysisLibrary(library: AnalysisLibrary): void;
+  setAnalysisFreshness(freshness: AnalysisFreshness): void;
+  dismissStaleAnalysis(signature: string): void;
+  setAnalysisTrace(trace: AnalysisTrace): void;
 
   toggleContainerCollapsed(containerId: string): void;
   setAllContainersCollapsed(collapsed: boolean, containerIds: readonly string[]): void;
@@ -463,6 +503,10 @@ export const useAppStore = create<AppState>((set) => ({
       analysisRunEvents: [],
       analysisRunLatest: undefined,
       analysisRunContext: undefined,
+      analysisLibrary: undefined,
+      analysisFreshness: undefined,
+      analysisStaleDismissed: undefined,
+      analysisTrace: undefined,
       ...graphDefaults,
     }),
 
@@ -497,6 +541,7 @@ export const useAppStore = create<AppState>((set) => ({
       profileRunEvents: [],
       profileRunLatest: undefined,
       profileRunContext: undefined,
+      profileRunStartedAt: Date.now(),
     }),
 
   recordProfileProgress: (profileRunProgress) => set({ profileRunProgress }),
@@ -526,6 +571,12 @@ export const useAppStore = create<AppState>((set) => ({
       // across would highlight a file that is no longer in the change.
       ...(state.analysisView?.analysisId === analysisView.analysisId ? {} : graphDefaults),
 
+      // And what was learned about the old one — whether it was stale, what its trace was — is not
+      // true of the new one, so it goes until the new one is asked about.
+      ...(state.analysisView?.analysisId === analysisView.analysisId
+        ? {}
+        : { analysisFreshness: undefined, analysisTrace: undefined }),
+
       // The same analysis in the other grouping is the same nodes in different clusters, so only
       // the container-keyed part of the view is stale. See groupingDefaults.
       ...(state.analysisView?.analysisId === analysisView.analysisId &&
@@ -547,6 +598,7 @@ export const useAppStore = create<AppState>((set) => ({
       analysisRunEvents: [],
       analysisRunLatest: undefined,
       analysisRunContext: undefined,
+      analysisRunStartedAt: Date.now(),
     }),
 
   recordAnalysisProgress: (analysisRunProgress) => set({ analysisRunProgress }),
@@ -563,6 +615,22 @@ export const useAppStore = create<AppState>((set) => ({
     }),
 
   endAnalysisRun: () => set({ analysisRun: 'idle' }),
+
+  setAnalysisLibrary: (analysisLibrary) => set({ analysisLibrary }),
+
+  // Dropped rather than stored when it answers for an analysis no longer on screen: a check started
+  // before the reviewer reopened another run finishes after it, and its verdict is about the old one.
+  setAnalysisFreshness: (analysisFreshness) =>
+    set((state) =>
+      state.analysisView?.analysisId === analysisFreshness.analysisId ? { analysisFreshness } : {},
+    ),
+
+  dismissStaleAnalysis: (analysisStaleDismissed) => set({ analysisStaleDismissed }),
+
+  setAnalysisTrace: (analysisTrace) =>
+    set((state) =>
+      state.analysisView?.analysisId === analysisTrace.analysisId ? { analysisTrace } : {},
+    ),
 
   toggleContainerCollapsed: (containerId) =>
     set((state) => {

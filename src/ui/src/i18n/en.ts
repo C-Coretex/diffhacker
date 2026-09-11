@@ -344,6 +344,18 @@ export const en = {
     empty: 'No tool calls yet.',
     reasoning: 'Reasoning',
 
+    // The live strip: one label and one moving value each, so a reviewer glancing at a long run can
+    // see that it is still going and what it has cost so far.
+    statsLabel: 'This run so far',
+    phase: 'Phase',
+    phaseNone: 'not reported yet',
+    phaseUnstated: 'not stated',
+    elapsed: 'Elapsed',
+    toolCalls: 'Tool calls',
+    turnLabel: 'Turn',
+    tokensLabel: 'Tokens',
+    costLabel: 'Cost',
+
     context: 'Context',
     contextLabel: 'How full the model’s context is',
     contextOf: '{used} / {window} ({percent}%)',
@@ -404,7 +416,80 @@ export const en = {
     cost: '${cost}',
     costUnknown: 'cost unknown',
     repairs: 'Repaired {count} time(s) before it validated',
-    stale: 'The working tree has changed since this analysis. Analyse again to catch up.',
+
+    /**
+     * Requirement 8: every earlier run of this repository, reopened without running again.
+     */
+    library: {
+      button: 'History ({count})',
+      heading: 'Previous runs',
+      body: 'Every analysis of this repository is kept, so any of them reopens instantly without running again.',
+      retention: 'The {limit} most recent runs are kept. Saving another removes the oldest.',
+      empty: 'No runs yet.',
+      latest: 'Latest',
+      current: 'Open now',
+      open: 'Open',
+      files: '{count} file(s)',
+      lines: '+{added} −{removed}',
+      toolCalls: '{count} tool calls',
+      duration: '{seconds}s',
+      deleteLabel: 'Delete the run from {date}',
+      deleteTitle: 'Delete this run?',
+      deleteBody:
+        'The analysis from {date} by {model}, and the files you marked reviewed in it, will be removed. Getting it back means running the analysis again, which costs money.',
+      deleteConfirm: 'Delete run',
+      deleteCancel: 'Keep it',
+      earlier: 'You are looking at an earlier run, from {date}.',
+      openLatest: 'Open the latest',
+    },
+
+    /**
+     * Requirement 9: the working tree moved after the run, and the reviewer is told rather than
+     * shown an explanation of a change that no longer exists.
+     */
+    stale: {
+      heading: 'The working tree has changed since this analysis ran',
+      body: 'What you see describes the change as it was then. Analyse again to bring it up to date.',
+      headMoved: 'HEAD has moved from {from} to {to}.',
+      headMovedUnknown: 'HEAD has moved since the run.',
+      modified: '{count} file(s) edited since',
+      added: '{count} file(s) now changed that the analysis does not cover',
+      removed: '{count} file(s) the analysis covers are no longer changed',
+      more: '…and {count} more',
+      showFiles: 'Show files',
+      hideFiles: 'Hide files',
+      weakerLineCounts:
+        'Some files could only be compared by their line counts — this analysis predates content fingerprints, or a file could not be read — so an edit that keeps a file’s counts would not show here.',
+      weakerHeadOnly:
+        'This analysis predates per-file records, so only HEAD could be compared. Edits to the working tree cannot be detected for it.',
+      reanalyse: 'Analyse again',
+      dismiss: 'Dismiss',
+    },
+
+    /**
+     * Requirement 7: the whole ordered trace of what the model asked for, after the run.
+     */
+    inspector: {
+      toggle: 'Tool calls ({count})',
+      body: 'Every tool call the model made, in the order it asked for them, with how large each answer was. Arguments and results are previews of at most {arguments} and {result} characters; sizes are of the whole answer the model received.',
+      loading: 'Reading the trace…',
+      loadFailed: 'The trace could not be read.',
+      empty: 'This run made no tool calls.',
+      byTool: 'By tool',
+      all: 'All · {count}',
+      toolChip: '{tool} · {count} · {size}',
+      totals: '{count} calls · {size} returned',
+      ordinal: '#',
+      turn: 'Turn',
+      tool: 'Tool',
+      arguments: 'Arguments',
+      size: 'Response',
+      duration: 'Took',
+      failed: 'failed',
+      showResult: 'Show what {tool} returned',
+      progressHeading: 'What the model said it was doing',
+      progressEmpty: 'The model reported no progress.',
+    },
 
     summaryHeading: 'What this change does',
     risksHeading: 'Risks',
@@ -490,6 +575,7 @@ export const en = {
       runCost: 'Cost',
       runDuration: 'Took',
       runRepairs: 'Repair rounds',
+      runToolCalls: 'Tool calls',
       runSchema: 'Contract',
       runUnknown: 'unknown',
       runSeconds: '{count}s',
@@ -820,7 +906,7 @@ export const en = {
       'The model could not produce a result that covered the whole change, even after being asked to fix it. See the detail below, or try a more capable model.',
     analysis_run_failed: 'The change could not be analysed. See log.txt for details.',
     analysis_not_found:
-      'There is no stored analysis for this repository, so there is nothing to mark. Analyse the change first.',
+      'That analysis is not stored for this repository. It may have been deleted, or removed to make room for newer runs. Open another from the history, or analyse the change.',
     analysis_node_not_found:
       '{nodeId} is not part of this analysis. It may have been produced by an earlier run — reopen the analysis and try again.',
 

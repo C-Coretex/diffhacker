@@ -3,14 +3,6 @@ Nice to haves:
    like risks, descriptions, grouping modes (get only one), verbosity. If something is disabled - just remove info about it in the prompt 
    and say clearly that this is not needed (so LLM would have less work)
 5. Add user instructions. Add a button help with information, FAQ and step by step guide (not screenshots, real tour in UI)
-6. **Live run view**: phase from `report_progress`, elapsed time, tool calls executed, tokens
-   consumed, running cost.
-7. **Tool-call inspector** — the full ordered trace of what the LLM requested and how large
-   each response was.
-8. **Analysis library per repository**: previous runs listed with model, cost, date and
-   changeset size. Reopen any **instantly** without re-running.
-9. **Detect stale analyses** — the working tree has moved since the run — and prompt for
-   re-analysis rather than silently showing outdated data.
 10. **Configurable limits**: max tool calls per run, max tokens per run, hard stop with a clear
    **partial-result explanation** when exceeded.
 11. **Export and import** an analysis result as a file, so a reviewer can hand their analysis to

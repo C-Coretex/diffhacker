@@ -6,8 +6,10 @@ using DiffHacker.Core.Changes;
 // The domain and the wire genuinely have types of the same name here — the model's answer and the
 // renderer's view of it describe the same things — so the three the signatures below name are
 // aliased rather than left to whichever using directive wins.
+using AnalysisFreshnessBasis = DiffHacker.Contracts.AnalysisFreshnessBasis;
 using DomainEdge = DiffHacker.Core.Analyses.AnalysisEdge;
 using DomainEdgeKind = DiffHacker.Core.Analyses.AnalysisEdgeKind;
+using DomainFreshnessBasis = DiffHacker.Core.Analyses.AnalysisFreshnessBasis;
 using DomainNode = DiffHacker.Core.Analyses.AnalysisNode;
 using DomainNodeState = DiffHacker.Core.Analyses.AnalysisNodeState;
 using DomainResult = DiffHacker.Core.Analyses.AnalysisResult;
@@ -60,6 +62,7 @@ internal static class AnalysisWire
         implementationGroups: [],
         implementationGroupsProduced: false,
         inputTokens: null,
+        isLatest: false,
         model: null,
         nodes: [],
         outputTokens: null,
@@ -73,15 +76,18 @@ internal static class AnalysisWire
         reviewedNodeIds: [],
         schemaVersion: null,
         statistics: null,
-        summary: string.Empty);
+        summary: string.Empty,
+        toolCallCount: 0);
 
     /// <param name="analysis">The stored analysis.</param>
     /// <param name="grouping">Which of its groupings to project.</param>
     /// <param name="nextRun">What the next run will ask for — the remembered choices, not this analysis's.</param>
+    /// <param name="isLatest">Whether this is the repository's most recent analysis.</param>
     public static AnalysisView ToWire(
         Analysis analysis,
         AnalysisGrouping grouping,
-        AnalysisRunOptions nextRun)
+        AnalysisRunOptions nextRun,
+        bool isLatest)
     {
         ArgumentNullException.ThrowIfNull(nextRun);
         ArgumentNullException.ThrowIfNull(analysis);
@@ -171,6 +177,7 @@ internal static class AnalysisWire
             implementationGroups: [.. ImplementationGroupsIn(document, containerOf, ranks)],
             implementationGroupsProduced: document.ImplementationGroups is not null,
             inputTokens: Saturate(analysis.Usage.InputTokens),
+            isLatest: isLatest,
             model: analysis.Model,
             nodes:
             [
@@ -211,7 +218,101 @@ internal static class AnalysisWire
             reviewedNodeIds: analysis.ReviewedNodeIds,
             schemaVersion: analysis.SchemaVersion,
             statistics: ToWire(analysis.StatisticsFor(grouping)),
-            summary: document.Summary);
+            summary: document.Summary,
+            toolCallCount: analysis.ToolCalls.Count);
+    }
+
+    /// <summary>
+    /// The library. Summaries arrive most recent first, so the first one is the latest — the same
+    /// rule <c>GetLatestAsync</c> applies, stated once more rather than asked of the store again.
+    /// </summary>
+    public static AnalysisLibrary ToLibrary(string repositoryPath, IReadOnlyList<AnalysisSummary> summaries)
+    {
+        ArgumentNullException.ThrowIfNull(summaries);
+
+        return new AnalysisLibrary(
+            entries:
+            [
+                .. summaries.Select((summary, index) => new AnalysisLibraryEntry(
+                    analysisId: summary.Id,
+                    containerCount: summary.ContainerCount,
+                    costUsd: summary.Usage.EstimatedCostUsd?.ToString(CultureInfo.InvariantCulture),
+                    createdAtUtc: summary.CreatedAtUtc,
+                    durationMs: (int)Math.Min(summary.Duration.TotalMilliseconds, int.MaxValue),
+                    fileCount: summary.FileCount,
+                    headCommit: summary.HeadCommit,
+                    inputTokens: Saturate(summary.Usage.InputTokens),
+                    isLatest: index == 0,
+                    linesAdded: summary.LinesAdded,
+                    linesRemoved: summary.LinesRemoved,
+                    model: summary.Model,
+                    nodeCount: summary.NodeCount,
+                    outputTokens: Saturate(summary.Usage.OutputTokens),
+                    providerDisplayName: summary.ProviderDisplayName,
+                    toolCallCount: summary.ToolCallCount)),
+            ],
+            repositoryPath: repositoryPath,
+            retentionLimit: AnalysisLibraryPolicy.RetentionLimit);
+    }
+
+    /// <summary>
+    /// The recorded trace, in the order the model asked for the calls. Sorted by ordinal here even
+    /// though the store keeps them in that order already: "in order" is the requirement, and it
+    /// should not rest on how a JSON array happened to be written.
+    /// </summary>
+    public static AnalysisTrace ToTrace(Analysis analysis)
+    {
+        ArgumentNullException.ThrowIfNull(analysis);
+
+        return new AnalysisTrace(
+            analysisId: analysis.Id,
+            progressMessages: analysis.ProgressMessages,
+            toolCalls:
+            [
+                .. analysis.ToolCalls
+                    .OrderBy(static call => call.Ordinal)
+                    .Select(static call => new AnalysisToolCallInfo(
+                        argumentsPreview: call.ArgumentsPreview,
+                        durationMs: call.Duration.TotalMilliseconds,
+                        isError: call.IsError,
+                        ordinal: call.Ordinal,
+                        resultBytes: call.ResultBytes,
+                        resultPreview: call.ResultPreview,
+                        toolName: call.ToolName,
+                        turn: call.Turn)),
+            ]);
+    }
+
+    /// <summary>
+    /// How many paths of each kind travel. The counts are always whole; the lists are for a banner
+    /// a person reads, and a thousand paths in one is not something anyone reads.
+    /// </summary>
+    public const int FreshnessPathLimit = 50;
+
+    public static AnalysisFreshness ToWire(AnalysisFreshnessReport report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        return new AnalysisFreshness(
+            addedCount: report.Added.Count,
+            addedPaths: [.. report.Added.Take(FreshnessPathLimit)],
+            analysisId: report.AnalysisId,
+            basis: report.Basis switch
+            {
+                DomainFreshnessBasis.Content => AnalysisFreshnessBasis.Content,
+                DomainFreshnessBasis.LineCounts => AnalysisFreshnessBasis.Line_counts,
+                DomainFreshnessBasis.HeadOnly => AnalysisFreshnessBasis.Head_only,
+                _ => throw new ArgumentOutOfRangeException(nameof(report), report.Basis, "Unmapped basis."),
+            },
+            checkedAtUtc: report.CheckedAtUtc,
+            currentHeadCommit: report.CurrentHeadCommit,
+            headMoved: report.HeadMoved,
+            isStale: report.IsStale,
+            modifiedCount: report.Modified.Count,
+            modifiedPaths: [.. report.Modified.Take(FreshnessPathLimit)],
+            recordedHeadCommit: report.RecordedHeadCommit,
+            removedCount: report.Removed.Count,
+            removedPaths: [.. report.Removed.Take(FreshnessPathLimit)]);
     }
 
     /// <summary>

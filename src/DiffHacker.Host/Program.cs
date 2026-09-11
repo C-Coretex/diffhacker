@@ -168,6 +168,10 @@ internal static class Program
         services.AddSingleton<RepositoryDocumentationWriter>();
         services.AddSingleton<IAnalysisRunner, AnalysisRunner>();
 
+        // Whether a stored analysis still describes the working tree. Git and the clock, nothing
+        // else: checking an analysis must never be able to start a run.
+        services.AddSingleton<AnalysisFreshnessChecker>();
+
         // Iteration 10's external editors. The locator caches what it found for the life of the
         // process, so it is a singleton on purpose rather than by habit; the extractor is the one
         // thing in the application besides the documentation export that writes a file, and it writes

@@ -188,7 +188,42 @@ internal static class AnalysisSamples
                     AnalysisGrouping.ChangeClusters),
             ],
             ChangedFiles = [.. changed.Select(ChangedFileFacts.From)],
-            ToolCalls = [],
+            // Stored out of order on purpose: the trace is read back sorted by ordinal, and a sample
+            // already in order could not tell a sort from a lucky array.
+            ToolCalls =
+            [
+                new LlmToolCallRecord
+                {
+                    Ordinal = 2,
+                    Turn = 1,
+                    ToolName = "get_file_diff",
+                    ArgumentsPreview = """{"path":"src/Contract.cs"}""",
+                    ResultBytes = 2048,
+                    ResultPreview = "@@ -1,3 +1,12 @@",
+                    Duration = TimeSpan.FromMilliseconds(12),
+                },
+                new LlmToolCallRecord
+                {
+                    Ordinal = 1,
+                    Turn = 1,
+                    ToolName = "get_project_profile",
+                    ArgumentsPreview = "{}",
+                    ResultBytes = 512,
+                    ResultPreview = "# DiffHacker",
+                    Duration = TimeSpan.FromMilliseconds(3),
+                },
+                new LlmToolCallRecord
+                {
+                    Ordinal = 3,
+                    Turn = 2,
+                    ToolName = "read_file",
+                    ArgumentsPreview = """{"path":"src/Missing.cs"}""",
+                    ResultBytes = 40,
+                    ResultPreview = "No such file.",
+                    Duration = TimeSpan.FromMilliseconds(1),
+                    IsError = true,
+                },
+            ],
             ProgressMessages = ["Reading the contract"],
         };
     }

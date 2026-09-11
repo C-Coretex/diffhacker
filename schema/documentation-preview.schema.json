@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.13/documentation-preview.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.14/documentation-preview.schema.json",
   "title": "DocumentationPreview",
   "description": "Every file the documentation generator would write, with its full content, before anything is written. Generated documentation lives inside DiffHacker; exporting it into the user's repository is a separate, deliberate step, and this is the gate in front of it. The preview token is what makes that gate structural rather than a matter of interface discipline: profile.exportDocumentation refuses any token that does not match the exact files it is being asked to write, so an export that was never previewed cannot happen even if the renderer were wrong.",
   "type": "object",
