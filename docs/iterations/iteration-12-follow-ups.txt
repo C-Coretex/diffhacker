@@ -3,7 +3,6 @@ Nice to haves:
    like risks, descriptions, grouping modes (get only one), verbosity. If something is disabled - just remove info about it in the prompt 
    and say clearly that this is not needed (so LLM would have less work)
 3. Add an option to merge interface + it's implementations in change diagram (like 2 nodes in one)
-4. Add test LLM connection inside the form where we input the LLM API data
 5. Add user instructions. Add a button help with information, FAQ and step by step guide (not screenshots, real tour in UI)
 6. **Live run view**: phase from `report_progress`, elapsed time, tool calls executed, tokens
    consumed, running cost.

@@ -207,7 +207,34 @@ public sealed class SettingsRpcTests : IAsyncLifetime
             """{"providerType":"openai","displayName":"Work","model":"gpt-4o"}""");
         var id = saved.GetProperty("profiles")[0].GetProperty("id").GetString();
 
-        var error = await CallForErrorAsync("providers.testConnection", $$"""{"id":"{{id}}"}""");
+        var error = await CallForErrorAsync(
+            "providers.testConnection",
+            $$"""{"id":"{{id}}","providerType":"openai","model":"gpt-4o"}""");
+
+        error.GetProperty("data").GetProperty("code").GetString().ShouldBe("provider_key_missing");
+    }
+
+    [Fact]
+    public async Task Testing_an_unsaved_provider_with_an_inline_key_works()
+    {
+        // No providers.save first: this is the form's own "Test connection" button, checking
+        // credentials that have not been submitted yet.
+        _tester.Result = ProviderConnectionResult.Success(["gpt-4o"]);
+
+        var result = await CallAsync(
+            "providers.testConnection",
+            $$"""{"providerType":"openai","model":"gpt-4o","apiKey":"{{ApiKey}}"}""");
+
+        result.GetProperty("succeeded").GetBoolean().ShouldBeTrue();
+        result.GetProperty("modelVerified").GetBoolean().ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Testing_an_unsaved_provider_without_a_key_is_an_actionable_error()
+    {
+        var error = await CallForErrorAsync(
+            "providers.testConnection",
+            """{"providerType":"openai","model":"gpt-4o"}""");
 
         error.GetProperty("data").GetProperty("code").GetString().ShouldBe("provider_key_missing");
     }
@@ -220,7 +247,9 @@ public sealed class SettingsRpcTests : IAsyncLifetime
         var saved = await SaveProviderAsync();
         var id = saved.GetProperty("profiles")[0].GetProperty("id").GetString();
 
-        var result = await CallAsync("providers.testConnection", $$"""{"id":"{{id}}"}""");
+        var result = await CallAsync(
+            "providers.testConnection",
+            $$"""{"id":"{{id}}","providerType":"openai","model":"gpt-4o"}""");
 
         result.GetProperty("succeeded").GetBoolean().ShouldBeTrue();
         result.GetProperty("modelVerified").GetBoolean().ShouldBeTrue();
@@ -239,7 +268,9 @@ public sealed class SettingsRpcTests : IAsyncLifetime
         var saved = await SaveProviderAsync();
         var id = saved.GetProperty("profiles")[0].GetProperty("id").GetString();
 
-        var result = await CallAsync("providers.testConnection", $$"""{"id":"{{id}}"}""");
+        var result = await CallAsync(
+            "providers.testConnection",
+            $$"""{"id":"{{id}}","providerType":"openai","model":"gpt-4o"}""");
 
         result.GetProperty("succeeded").GetBoolean().ShouldBeTrue();
         result.GetProperty("modelVerified").GetBoolean().ShouldBeFalse(
@@ -259,7 +290,9 @@ public sealed class SettingsRpcTests : IAsyncLifetime
         var saved = await SaveProviderAsync();
         var id = saved.GetProperty("profiles")[0].GetProperty("id").GetString();
 
-        var raw = await CallRawAsync("providers.testConnection", $$"""{"id":"{{id}}"}""");
+        var raw = await CallRawAsync(
+            "providers.testConnection",
+            $$"""{"id":"{{id}}","providerType":"openai","model":"gpt-4o"}""");
 
         raw.ShouldNotContain(ApiKey);
         raw.ShouldContain("Incorrect API key provided");

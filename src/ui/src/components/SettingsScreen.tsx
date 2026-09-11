@@ -66,6 +66,15 @@ export function SettingsScreen() {
     void refresh();
   }, [refresh]);
 
+  // Re-reads the list after a successful test without the loading flash `refresh` would cause —
+  // the panel already showed its own outcome, so this only needs to pick up the cached model
+  // suggestions a successful test just wrote to the profile.
+  const refreshQuietly = useCallback(async () => {
+    if (!client) return;
+    const result = await listProviders(client);
+    setProviders([...result.profiles], result.activeProfileId);
+  }, [client, setProviders]);
+
   const remove = useCallback(
     async (id: string) => {
       if (!client) return;
@@ -131,6 +140,7 @@ export function SettingsScreen() {
                     onEdit={() => setEditing(profile)}
                     onRemove={() => void remove(profile.id)}
                     onActivate={() => void activate(profile.id)}
+                    onTested={refreshQuietly}
                   />
                 </li>
               ))}
@@ -163,9 +173,10 @@ interface ProviderRowProps {
   onEdit(): void;
   onRemove(): void;
   onActivate(): void;
+  onTested(): void | Promise<void>;
 }
 
-function ProviderRow({ profile, onEdit, onRemove, onActivate }: ProviderRowProps) {
+function ProviderRow({ profile, onEdit, onRemove, onActivate, onTested }: ProviderRowProps) {
   const t = useT();
 
   return (
@@ -194,7 +205,17 @@ function ProviderRow({ profile, onEdit, onRemove, onActivate }: ProviderRowProps
 
       <Separator />
 
-      <TestConnectionPanel profile={profile} />
+      <TestConnectionPanel
+        request={{
+          id: profile.id,
+          providerType: profile.providerType,
+          model: profile.model,
+          ...(profile.baseUrl ? { baseUrl: profile.baseUrl } : {}),
+        }}
+        canTest={profile.hasApiKey}
+        model={profile.model}
+        onSucceeded={onTested}
+      />
 
       <div className="flex flex-wrap gap-2">
         {!profile.isActive && (

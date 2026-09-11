@@ -192,6 +192,14 @@ export class SettingsScreen {
     return this.page.getByRole('button', { name: en.providers.save, exact: true });
   }
 
+  /**
+   * Tests whatever is currently typed, saved or not. Ambiguous once a saved row's own test
+   * button is also on screen — scope with `.first()`/a container when both are visible.
+   */
+  get testButton(): Locator {
+    return this.page.getByRole('button', { name: en.providers.test });
+  }
+
   get error(): Locator {
     return this.page.getByRole('alert');
   }

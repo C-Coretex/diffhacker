@@ -1,6 +1,7 @@
 import { expect, test } from '../src/fixtures.ts';
 import { screens } from '../src/screens.ts';
-import { en } from '../src/strings.ts';
+import { StubProvider } from '../src/stubProvider.ts';
+import { en, fill } from '../src/strings.ts';
 
 /**
  * Provider configuration, the promises made about API keys, and whether any of it survives a
@@ -216,6 +217,86 @@ test('the interface names the secret backend actually protecting the keys', asyn
   await expect(app.page.getByText(en.environment.backend.windows_dpapi, { exact: false })).toBeVisible();
   await expect(app.page.getByText(en.environment.fallbackWarning)).toHaveCount(0);
   await app.shot('the secret backend, stated');
+});
+
+/**
+ * A reviewer who has never configured a provider should not find out only when a run fails.
+ *
+ * The prompt is dismissible rather than blocking — Iteration 2's screen is still usable without a
+ * provider, and the reactive `error.analysis_no_provider` / `error.profile_no_provider` messages
+ * still catch anyone who runs something anyway — but it has to show up on its own, lead to
+ * Settings, and stay dismissed for the rest of the session once dismissed.
+ */
+test('opening the app with no provider configured prompts to add one', async ({ diffhacker }) => {
+  const app = await diffhacker.launch();
+  const { welcome, settings } = screens(app.page);
+
+  await expect(welcome.heading).toBeVisible();
+  await expect(app.page.getByText(en.providers.noProviderHeading)).toBeVisible();
+  await app.shot('the welcome screen prompts for a provider');
+
+  // The banner leads straight to Settings, where the reviewer lands on the same empty state
+  // they would have found on their own.
+  await app.page.getByRole('button', { name: en.providers.noProviderAction }).click();
+  await expect(settings.heading).toBeVisible();
+  await expect(settings.emptyState).toBeVisible();
+
+  // Hidden on the Settings screen itself, which already says the same thing its own way.
+  await expect(app.page.getByText(en.providers.noProviderHeading)).toHaveCount(0);
+
+  // Back on the welcome screen nothing has been configured, so the banner is still there.
+  await settings.backButton.click();
+  await expect(welcome.heading).toBeVisible();
+  await expect(app.page.getByText(en.providers.noProviderHeading)).toBeVisible();
+
+  // Dismissing it holds for the rest of the session, across a trip to another screen and back.
+  await app.page.getByRole('button', { name: en.providers.noProviderDismiss }).click();
+  await expect(app.page.getByText(en.providers.noProviderHeading)).toHaveCount(0);
+
+  await settings.openButton.click();
+  await settings.backButton.click();
+  await expect(welcome.heading).toBeVisible();
+  await expect(app.page.getByText(en.providers.noProviderHeading)).toHaveCount(0);
+});
+
+/**
+ * The point of testing from inside the form rather than only from a saved row: a reviewer can
+ * prove a key works before committing to it.
+ */
+test('a connection can be tested from the form before the provider is saved', async ({ diffhacker }) => {
+  const provider = await StubProvider.start();
+
+  try {
+    const app = await diffhacker.launch();
+    const { settings } = screens(app.page);
+
+    await settings.openButton.click();
+    await expect(settings.heading).toBeVisible();
+
+    await settings.addButton.click();
+    await settings.typeField.selectOption('openai_compatible');
+    await settings.nameField.fill('Stub provider');
+    await settings.modelField.fill('stub-model');
+    await settings.baseUrlField.fill(provider.baseUrl);
+    await settings.apiKeyField.fill('sk-e2e-test-before-save');
+
+    // Nothing has been saved yet: this is the whole point of the button living in the form.
+    await expect(settings.profile('Stub provider')).toHaveCount(0);
+
+    await settings.testButton.click();
+    await expect(
+      app.page.getByText(fill(en.providers.testSucceeded, { count: '1' })),
+    ).toBeVisible();
+    await app.shot('a connection tested before the provider is saved');
+
+    // Still nothing saved — the test checked the key without submitting the form.
+    await expect(settings.profile('Stub provider')).toHaveCount(0);
+
+    await settings.saveButton.click();
+    await expect(settings.profile('Stub provider')).toBeVisible();
+  } finally {
+    await provider.stop();
+  }
 });
 
 function nameOf(path: string): string {

@@ -26,6 +26,17 @@ internal static class ProviderTypeWire
         _ => throw new ArgumentOutOfRangeException(nameof(wire), wire, "Unknown provider type."),
     };
 
+    public static LlmProviderType ToDomain(TestConnectionRequestProviderType wire) => wire switch
+    {
+        TestConnectionRequestProviderType.Openai => LlmProviderType.OpenAi,
+        TestConnectionRequestProviderType.Anthropic => LlmProviderType.Anthropic,
+        TestConnectionRequestProviderType.Gemini => LlmProviderType.Gemini,
+        TestConnectionRequestProviderType.Grok => LlmProviderType.Grok,
+        TestConnectionRequestProviderType.Deepseek => LlmProviderType.DeepSeek,
+        TestConnectionRequestProviderType.Openai_compatible => LlmProviderType.OpenAiCompatible,
+        _ => throw new ArgumentOutOfRangeException(nameof(wire), wire, "Unknown provider type."),
+    };
+
     public static ProviderProfileProviderType ToWire(LlmProviderType domain) => domain switch
     {
         LlmProviderType.OpenAi => ProviderProfileProviderType.Openai,

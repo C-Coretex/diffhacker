@@ -30,11 +30,19 @@ public sealed class ProviderTypeAgreementTests
     }
 
     [Fact]
-    public void The_two_generated_enums_agree_with_each_other()
+    public void The_connection_test_enum_carries_exactly_the_declared_provider_types()
     {
-        // Adding a provider to one schema and forgetting the other would otherwise be a
+        WireValues<TestConnectionRequestProviderType>().ShouldBe(Expected, ignoreOrder: true);
+    }
+
+    [Fact]
+    public void The_generated_enums_agree_with_each_other()
+    {
+        // Adding a provider to one schema and forgetting the others would otherwise be a
         // run-time surprise at the RPC boundary rather than a build failure.
         WireValues<SaveProviderRequestProviderType>()
+            .ShouldBe(WireValues<ProviderProfileProviderType>(), ignoreOrder: true);
+        WireValues<TestConnectionRequestProviderType>()
             .ShouldBe(WireValues<ProviderProfileProviderType>(), ignoreOrder: true);
     }
 

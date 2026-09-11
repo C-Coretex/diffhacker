@@ -176,6 +176,11 @@ export const en = {
     testFailed: 'The connection failed.',
     providerSaid: 'The provider said:',
     httpStatus: 'HTTP {status}',
+    noProviderHeading: 'No LLM provider configured',
+    noProviderBody:
+      'DiffHacker needs your own API key to analyze changes or generate a repository profile.',
+    noProviderAction: 'Add a provider',
+    noProviderDismiss: 'Dismiss',
     type: {
       openai: 'OpenAI',
       anthropic: 'Anthropic',

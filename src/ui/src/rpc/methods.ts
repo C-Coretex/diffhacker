@@ -33,6 +33,7 @@ import type {
   SaveProviderRequest,
   SetGroupingRequest,
   SetNodesReviewedRequest,
+  TestConnectionRequest,
   TestConnectionResult,
   ToolCallEvent,
 } from '@/contracts';
@@ -209,9 +210,13 @@ export function setActiveProvider(
   return client.call<ProviderProfileList>(RpcMethods.setActiveProvider, request);
 }
 
+/**
+ * Tests whatever is currently in the provider form, saved or not — not necessarily the last
+ * saved values, which is why this takes the full shape rather than an id alone.
+ */
 export function testProviderConnection(
   client: RpcClient,
-  request: ProviderIdRequest,
+  request: TestConnectionRequest,
 ): Promise<TestConnectionResult> {
   return client.call<TestConnectionResult>(RpcMethods.testProviderConnection, request);
 }

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.11/save-profile-request.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.12/save-profile-request.schema.json",
   "title": "SaveProfileRequest",
   "description": "Parameters for profile.saveDocument: the generated sections after the user has edited them. These are the sections regeneration replaces, and the screen says so before the user types into them. The user's own notes and custom instructions are not here — they are saved through profile.saveNotes, separately, precisely because they have a different lifetime.",
   "type": "object",

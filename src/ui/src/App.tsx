@@ -3,12 +3,12 @@ import { BookOpenIcon, NetworkIcon, SettingsIcon } from 'lucide-react';
 import { describeError } from '@/i18n/errors';
 import { useT } from '@/i18n/useT';
 import { useRpc } from '@/rpc/RpcProvider';
-import { describeEnvironment, ping } from '@/rpc/methods';
+import { describeEnvironment, listProviders, ping } from '@/rpc/methods';
 import { useAppStore } from '@/store/appStore';
 import { useTheme } from '@/theme/useTheme';
 import { Button } from '@/components/ui/button';
 import { ThemePicker } from '@/components/ThemePicker';
-import { GitMissingBanner } from '@/components/EnvironmentBanner';
+import { GitMissingBanner, NoProviderBanner } from '@/components/EnvironmentBanner';
 import { WelcomeScreen } from '@/components/WelcomeScreen';
 import { RepositoryScreen } from '@/components/RepositoryScreen';
 import { SettingsScreen } from '@/components/SettingsScreen';
@@ -29,6 +29,8 @@ export function App() {
   const setConnectionError = useAppStore((state) => state.setConnectionError);
   const setEnvironment = useAppStore((state) => state.setEnvironment);
   const failEnvironment = useAppStore((state) => state.failEnvironment);
+  const setProviders = useAppStore((state) => state.setProviders);
+  const failProviders = useAppStore((state) => state.failProviders);
 
   useEffect(() => {
     if (!client) {
@@ -59,6 +61,21 @@ export function App() {
             failEnvironment(describeError(error));
           }
         }
+
+        // Also probed up front, for the same reason: every run needs a provider, and
+        // `NoProviderBanner` says so immediately rather than the reviewer finding out at their
+        // first analysis. `SettingsScreen` re-reads this itself on mount, so this only has to
+        // cover the screens before the reviewer ever opens Settings.
+        try {
+          const providerList = await listProviders(client);
+          if (!cancelled) {
+            setProviders([...providerList.profiles], providerList.activeProfileId);
+          }
+        } catch (error) {
+          if (!cancelled) {
+            failProviders(describeError(error));
+          }
+        }
       } catch (error) {
         if (!cancelled) {
           setConnectionError(describeError(error));
@@ -69,7 +86,16 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [client, setConnected, setDetached, setConnectionError, setEnvironment, failEnvironment]);
+  }, [
+    client,
+    setConnected,
+    setDetached,
+    setConnectionError,
+    setEnvironment,
+    failEnvironment,
+    setProviders,
+    failProviders,
+  ]);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -142,6 +168,7 @@ export function App() {
             }
           >
             <GitMissingBanner />
+            <NoProviderBanner />
 
             {connection !== 'connected' && <HostPanel />}
 

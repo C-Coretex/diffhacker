@@ -79,6 +79,14 @@ interface AppState {
   activeProviderId?: string;
   providersError?: string;
 
+  /**
+   * Whether the reviewer dismissed the "no provider configured" prompt this session.
+   *
+   * Not persisted: a fresh launch with no provider still configured should say so again, the
+   * same way `GitMissingBanner` does not remember being dismissed either.
+   */
+  providersPromptDismissed: boolean;
+
   changeset: ChangesetStatus;
   changesetResult?: ChangesetResult;
   changesetError?: string;
@@ -261,6 +269,7 @@ interface AppState {
   startLoadingProviders(): void;
   setProviders(profiles: ProviderProfile[], activeId?: string): void;
   failProviders(message: string): void;
+  dismissProvidersPrompt(): void;
 
   startLoadingChangeset(): void;
   setChangeset(result: ChangesetResult): void;
@@ -372,6 +381,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   providers: 'loading',
   providerProfiles: [],
+  providersPromptDismissed: false,
 
   changeset: 'idle',
   includeUntracked: true,
@@ -457,6 +467,7 @@ export const useAppStore = create<AppState>((set) => ({
   setProviders: (providerProfiles, activeProviderId) =>
     set({ providers: 'ready', providerProfiles, activeProviderId, providersError: undefined }),
   failProviders: (message) => set({ providers: 'error', providersError: message }),
+  dismissProvidersPrompt: () => set({ providersPromptDismissed: true }),
 
   startLoadingChangeset: () => set({ changeset: 'loading', changesetError: undefined }),
   setChangeset: (changesetResult) =>

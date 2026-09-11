@@ -38,11 +38,28 @@ public sealed class ProviderTypeWireTests
         ProviderTypeWire.ToDomain(wire).ShouldBe(expected);
     }
 
+    [Theory]
+    [InlineData(TestConnectionRequestProviderType.Openai, LlmProviderType.OpenAi)]
+    [InlineData(TestConnectionRequestProviderType.Anthropic, LlmProviderType.Anthropic)]
+    [InlineData(TestConnectionRequestProviderType.Gemini, LlmProviderType.Gemini)]
+    [InlineData(TestConnectionRequestProviderType.Grok, LlmProviderType.Grok)]
+    [InlineData(TestConnectionRequestProviderType.Deepseek, LlmProviderType.DeepSeek)]
+    [InlineData(TestConnectionRequestProviderType.Openai_compatible, LlmProviderType.OpenAiCompatible)]
+    public void Every_test_connection_value_maps_to_the_matching_domain_value(
+        TestConnectionRequestProviderType wire,
+        LlmProviderType expected)
+    {
+        ProviderTypeWire.ToDomain(wire).ShouldBe(expected);
+    }
+
     [Fact]
     public void The_domain_enum_has_no_value_the_wire_cannot_express()
     {
         Enum.GetValues<LlmProviderType>().Length.ShouldBe(
             Enum.GetValues<SaveProviderRequestProviderType>().Length,
+            "A provider added to the domain but not to the schemas would fail at the boundary.");
+        Enum.GetValues<LlmProviderType>().Length.ShouldBe(
+            Enum.GetValues<TestConnectionRequestProviderType>().Length,
             "A provider added to the domain but not to the schemas would fail at the boundary.");
     }
 

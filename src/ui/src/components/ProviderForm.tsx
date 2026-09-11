@@ -1,6 +1,6 @@
 import { useCallback, useId, useState, type FormEvent } from 'react';
 import { Loader2Icon } from 'lucide-react';
-import type { ProviderProfile, SaveProviderRequestProviderType } from '@/contracts';
+import type { ProviderProfile, SaveProviderRequestProviderType, TestConnectionRequest } from '@/contracts';
 import { describeError } from '@/i18n/errors';
 import { useT } from '@/i18n/useT';
 import { saveProvider } from '@/rpc/methods';
@@ -11,6 +11,8 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { TestConnectionPanel } from './TestConnectionPanel';
 
 const providerTypes = [
   'openai',
@@ -90,10 +92,28 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
 
+  // Models a test just reported for these unsaved values. Kept apart from
+  // `profile.modelSuggestions`, which is the last successful test's list *as stored* — this one
+  // is live and, when adding a new provider, is the only source there is.
+  const [testedModels, setTestedModels] = useState<readonly string[]>([]);
+
   const baseUrlRequired = providerType === 'openai_compatible';
   const suggestionsId = `${fieldId}-models`;
   const rate = parseRate(inputCost, outputCost);
   const contextWindowTokens = parseWindow(contextWindow);
+  const modelSuggestions = [...new Set([...(profile?.modelSuggestions ?? []), ...testedModels])];
+
+  // Exactly what is on screen right now, tested whether or not it has been saved yet — the same
+  // omission pattern `submit` below uses, so a blank field never sends an empty string where
+  // "absent" is what the host expects.
+  const testRequest: TestConnectionRequest = {
+    ...(profile ? { id: profile.id } : {}),
+    providerType,
+    ...(model.trim() ? { model: model.trim() } : {}),
+    ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
+    ...(apiKey ? { apiKey } : {}),
+  };
+  const canTest = apiKey.trim().length > 0 || Boolean(profile?.hasApiKey);
 
   const submit = useCallback(
     async (event: FormEvent) => {
@@ -199,7 +219,7 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
               reach — so there is no hardcoded list anywhere to go stale.
             */}
             <datalist id={suggestionsId}>
-              {profile?.modelSuggestions.map((suggestion) => (
+              {modelSuggestions.map((suggestion) => (
                 <option key={suggestion} value={suggestion} />
               ))}
             </datalist>
@@ -239,6 +259,21 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
             />
             {profile && <p className="text-muted-foreground text-xs">{t('providers.apiKeyUnchanged')}</p>}
           </div>
+
+          <Separator />
+
+          {/*
+            Tests exactly what is above, saved or not — the point of putting it in the form
+            rather than only on the saved row is checking a key before committing to it.
+          */}
+          <TestConnectionPanel
+            request={testRequest}
+            canTest={canTest}
+            model={model}
+            onSucceeded={(models) => setTestedModels(models)}
+          />
+
+          <Separator />
 
           <fieldset className="flex flex-col gap-2">
             <legend className="text-sm font-medium">{t('providers.pricingLegend')}</legend>

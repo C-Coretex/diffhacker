@@ -164,35 +164,86 @@ public sealed class ProviderRpcTarget(
         return await ListAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Tests exactly what is currently in the provider form, saved or not.
+    /// <para>
+    /// A profile named by <see cref="TestConnectionRequest.Id"/> supplies the stored key when
+    /// <see cref="TestConnectionRequest.ApiKey"/> is blank — the same "blank means unchanged"
+    /// convention <c>providers.save</c> follows — but every other field comes from the request,
+    /// because an edited-but-unsaved type, model or base URL is what the reviewer is asking
+    /// about, not what was last saved.
+    /// </para>
+    /// </summary>
     [JsonRpcMethod("providers.testConnection")]
-    public async Task<TestConnectionResult> TestConnectionAsync(ProviderIdRequest request, CancellationToken cancellationToken)
+    public async Task<TestConnectionResult> TestConnectionAsync(TestConnectionRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var profile = await profiles.FindAsync(request.Id, cancellationToken).ConfigureAwait(false)
-            ?? throw RpcErrors.Failure("provider_not_found", $"No provider profile with id '{request.Id}'.");
+        var providerType = ProviderTypeWire.ToDomain(request.ProviderType);
+        var baseUrl = Normalise(request.BaseUrl);
 
-        var apiKey = await secrets
-            .GetAsync(LlmProviderProfile.SecretName(profile.Id), cancellationToken)
-            .ConfigureAwait(false);
-
-        if (string.IsNullOrEmpty(apiKey))
+        if (providerType is LlmProviderType.OpenAiCompatible && baseUrl is null)
         {
-            throw RpcErrors.Failure("provider_key_missing", $"No API key is stored for profile '{profile.Id}'.");
+            throw RpcErrors.Failure(
+                "provider_base_url_required",
+                "An OpenAI-compatible endpoint needs a base URL; there is nothing to infer it from.");
         }
 
-        var result = await tester.TestAsync(profile, apiKey, cancellationToken).ConfigureAwait(false);
+        if (baseUrl is not null && !Uri.TryCreate(baseUrl, UriKind.Absolute, out _))
+        {
+            throw RpcErrors.Failure("provider_invalid_base_url", $"'{baseUrl}' is not an absolute URL.");
+        }
+
+        var existing = string.IsNullOrEmpty(request.Id)
+            ? null
+            : await profiles.FindAsync(request.Id, cancellationToken).ConfigureAwait(false);
+
+        if (!string.IsNullOrEmpty(request.Id) && existing is null)
+        {
+            throw RpcErrors.Failure("provider_not_found", $"No provider profile with id '{request.Id}'.");
+        }
+
+        var apiKey = request.ApiKey;
+        if (string.IsNullOrWhiteSpace(apiKey) && existing is not null)
+        {
+            apiKey = await secrets
+                .GetAsync(LlmProviderProfile.SecretName(existing.Id), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw RpcErrors.Failure("provider_key_missing", "No API key was entered to test.");
+        }
+
+        var model = request.Model?.Trim() ?? string.Empty;
+        var now = DateTimeOffset.UtcNow;
+        var candidate = new LlmProviderProfile
+        {
+            Id = existing?.Id ?? "unsaved",
+            ProviderType = providerType,
+            DisplayName = existing?.DisplayName ?? string.Empty,
+            Model = model,
+            BaseUrl = baseUrl,
+            CreatedAtUtc = existing?.CreatedAtUtc ?? now,
+            UpdatedAtUtc = now,
+        };
+
+        var result = await tester.TestAsync(candidate, apiKey, cancellationToken).ConfigureAwait(false);
 
         var models = result.AvailableModels;
-        var verified = models.Count > 0
-            && models.Contains(profile.Model, StringComparer.OrdinalIgnoreCase);
+        var verified = model.Length > 0
+            && models.Count > 0
+            && models.Contains(model, StringComparer.OrdinalIgnoreCase);
 
-        if (result.Succeeded && models.Count > 0)
+        if (result.Succeeded && models.Count > 0 && existing is not null)
         {
             // The provider's own list is the only model catalogue in the product. Requirement 4
             // rules out a hardcoded one, and this is where the suggestions come from instead.
+            // Nothing to cache onto when the profile has not been saved yet — the response's own
+            // availableModels is what the form uses for suggestions until then.
             await profiles
-                .SaveAsync(profile with { ModelSuggestions = models, UpdatedAtUtc = DateTimeOffset.UtcNow }, cancellationToken)
+                .SaveAsync(existing with { ModelSuggestions = models, UpdatedAtUtc = now }, cancellationToken)
                 .ConfigureAwait(false);
         }
 

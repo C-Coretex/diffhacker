@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.12/test-connection-request.schema.json",
+  "title": "TestConnectionRequest",
+  "description": "Parameters for providers.testConnection. Tests whatever is currently in the provider form, saved or not: providerType is the only required field, so the key and endpoint can be checked before a model name is settled on. id names an existing profile, so a blank apiKey falls back to its stored key and a successful test can cache the model suggestions on it; absent, apiKey is required, exactly as an unsaved provider has no stored key to fall back to.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["providerType"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Identifier of an existing profile. Absent when testing a provider that has not been saved yet."
+    },
+    "providerType": {
+      "type": "string",
+      "description": "Which provider family to test against. The values match ProviderType on the outbound side.",
+      "enum": ["openai", "anthropic", "gemini", "grok", "deepseek", "openai_compatible"]
+    },
+    "model": {
+      "type": "string",
+      "description": "Model identifier to verify against the models the key can reach. Absent skips verification; the key and endpoint are still tested."
+    },
+    "baseUrl": {
+      "type": "string",
+      "description": "Endpoint override, exactly as providers.save accepts it. Required for an OpenAI-compatible endpoint, optional elsewhere."
+    },
+    "apiKey": {
+      "type": "string",
+      "description": "The credential to test. Required unless id names a profile with a key already stored, in which case an absent value tests that stored key."
+    }
+  }
+}

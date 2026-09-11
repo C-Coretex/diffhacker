@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://diffhacker.dev/schema/1.11/reviewed-state.schema.json",
+  "$id": "https://diffhacker.dev/schema/1.12/reviewed-state.schema.json",
   "title": "ReviewedState",
   "description": "What is marked reviewed after a change to it, returned by analysis.setReviewed. Every other analysis.* method returns the whole AnalysisView so the renderer replaces its state wholesale; this one returns only the marks. It carries the whole of the thing that changed, which is what that convention is for, and a three-hundred-node document with every explanation in it would otherwise cross the bridge on each of three hundred toggles.",
   "type": "object",

@@ -1,24 +1,32 @@
 import { useCallback, useState } from 'react';
 import { CheckCircle2Icon, Loader2Icon, PlugZapIcon, TriangleAlertIcon } from 'lucide-react';
-import type { ProviderProfile, TestConnectionResult } from '@/contracts';
+import type { TestConnectionRequest, TestConnectionResult } from '@/contracts';
 import { en } from '@/i18n/en';
 import { describeError } from '@/i18n/errors';
 import { useT } from '@/i18n/useT';
-import { listProviders, testProviderConnection } from '@/rpc/methods';
+import { testProviderConnection } from '@/rpc/methods';
 import { useRpc } from '@/rpc/RpcProvider';
-import { useAppStore } from '@/store/appStore';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { translate, type ResourceKey } from '@/i18n/translate';
 
 interface TestConnectionPanelProps {
-  profile: ProviderProfile;
+  /**
+   * Exactly what to test. The caller recomputes this from its own live state on every render, so
+   * a test always checks what is on screen right now rather than what was last saved.
+   */
+  request: TestConnectionRequest;
+  /** False disables the button — typically because there is nothing to authenticate with yet. */
+  canTest: boolean;
+  /** The model the outcome is checked against, for the "found but not this one" message. */
+  model: string;
+  /** Called with the provider's model list after a test that succeeded and returned one. */
+  onSucceeded?(models: readonly string[]): void | Promise<void>;
 }
 
-export function TestConnectionPanel({ profile }: TestConnectionPanelProps) {
+export function TestConnectionPanel({ request, canTest, model, onSucceeded }: TestConnectionPanelProps) {
   const t = useT();
   const client = useRpc();
-  const setProviders = useAppStore((state) => state.setProviders);
 
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<TestConnectionResult>();
@@ -31,29 +39,27 @@ export function TestConnectionPanel({ profile }: TestConnectionPanelProps) {
     setError(undefined);
     setResult(undefined);
     try {
-      const outcome = await testProviderConnection(client, { id: profile.id });
+      const outcome = await testProviderConnection(client, request);
       setResult(outcome);
 
-      // A successful test caches the model list on the profile, which is where the model
-      // field's suggestions come from. Re-read so the form picks them up.
       if (outcome.succeeded && outcome.availableModels.length > 0) {
-        const refreshed = await listProviders(client);
-        setProviders([...refreshed.profiles], refreshed.activeProfileId);
+        await onSucceeded?.(outcome.availableModels);
       }
     } catch (caught) {
       setError(describeError(caught));
     } finally {
       setTesting(false);
     }
-  }, [client, profile.id, setProviders]);
+  }, [client, request, onSucceeded]);
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-3">
         <Button
+          type="button"
           size="sm"
           variant="outline"
-          disabled={testing || !client || !profile.hasApiKey}
+          disabled={testing || !client || !canTest}
           onClick={() => void run()}
         >
           {testing ? (
@@ -78,7 +84,7 @@ export function TestConnectionPanel({ profile }: TestConnectionPanelProps) {
             {error}
           </p>
         )}
-        {result && <TestOutcome result={result} model={profile.model} />}
+        {result && <TestOutcome result={result} model={model} />}
       </div>
     </div>
   );
