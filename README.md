@@ -89,9 +89,6 @@ and the analysis is current again.
 - **To build it:** the [.NET SDK 10](https://dotnet.microsoft.com/download) and
   [Node.js 24](https://nodejs.org/).
 
-It is built on a cross-platform shell, but so far it has only been tested on **Windows**. macOS and
-Linux should work but are unverified.
-
 ## Getting started
 
 ```bash
