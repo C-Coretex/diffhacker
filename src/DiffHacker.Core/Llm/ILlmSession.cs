@@ -39,6 +39,11 @@ public interface ILlmSession : IAsyncDisposable
     /// <see cref="ToolCalls"/> remain readable afterwards, which is how a cancelled run still
     /// reports what it spent.
     /// </param>
+    /// <param name="onBudgetExceeded">
+    /// Asked when a <see cref="LlmBudget"/> limit is hit, instead of stopping outright. Null — the
+    /// default, and what every caller that predates this had — keeps the old behaviour: the run
+    /// stops immediately with <see cref="LlmRunOutcome.BudgetExceeded"/>.
+    /// </param>
     /// <returns>
     /// How the run ended. Only cancellation throws; every other terminal condition, including
     /// a revoked key and a context overflow, comes back as an <see cref="LlmRunResult"/>.
@@ -46,5 +51,6 @@ public interface ILlmSession : IAsyncDisposable
     Task<LlmRunResult> RunAsync(
         LlmConversation conversation,
         IProgress<LlmRunEvent>? progress,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        BudgetDecisionCallback? onBudgetExceeded = null);
 }

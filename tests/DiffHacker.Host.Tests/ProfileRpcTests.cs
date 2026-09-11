@@ -97,13 +97,13 @@ public sealed class ProfileRpcTests : IAsyncLifetime
     [Fact]
     public async Task A_failed_run_becomes_a_translatable_code_rather_than_prose()
     {
-        _builder.FailureCode = ProfileFailures.OverBudget;
+        _builder.FailureCode = ProfileFailures.UnreadableAnswer;
 
         var failure = await Should.ThrowAsync<LocalRpcException>(
             async () => await _target.GenerateAsync(Request(), TestContext.Current.CancellationToken));
 
         var data = failure.ErrorData.ShouldBeOfType<RpcErrorData>();
-        data.Code.ShouldBe(ProfileFailures.OverBudget);
+        data.Code.ShouldBe(ProfileFailures.UnreadableAnswer);
     }
 
     [Fact]

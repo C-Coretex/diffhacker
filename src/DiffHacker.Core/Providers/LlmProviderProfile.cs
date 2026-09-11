@@ -79,6 +79,33 @@ public sealed record LlmProviderProfile
     /// </summary>
     public int? ContextWindowOverride => ContextWindowTokens is > 0 ? ContextWindowTokens : null;
 
+    /// <summary>
+    /// Overrides <see cref="Llm.LlmBudget.Default"/>'s tool-call ceiling for runs on this profile.
+    /// <para>
+    /// The same escape hatch <see cref="InputCostPerMillion"/> is: a runaway guard sized for one
+    /// profile is not sized for all of them, and a user who knows their model needs more room
+    /// before a run is genuinely stuck — or wants a tighter one — sets it here instead of living
+    /// with one number across every provider. Null or non-positive keeps the default.
+    /// </para>
+    /// </summary>
+    public int? MaxToolCallsOverride { get; init; }
+
+    /// <summary>Overrides <see cref="Llm.LlmBudget.Default"/>'s token ceiling. See <see cref="MaxToolCallsOverride"/>.</summary>
+    public long? MaxTotalTokensOverride { get; init; }
+
+    /// <summary>
+    /// The budget a run on this profile starts with: <see cref="Llm.LlmBudget.Default"/> with
+    /// whichever of <see cref="MaxToolCallsOverride"/> and <see cref="MaxTotalTokensOverride"/> are
+    /// actually set.
+    /// </summary>
+    public Llm.LlmBudget EffectiveBudget => Llm.LlmBudget.Default with
+    {
+        MaxToolCalls = MaxToolCallsOverride is > 0 ? MaxToolCallsOverride.Value : Llm.LlmBudget.Default.MaxToolCalls,
+        MaxTotalTokens = MaxTotalTokensOverride is > 0
+            ? MaxTotalTokensOverride.Value
+            : Llm.LlmBudget.Default.MaxTotalTokens,
+    };
+
     /// <summary>Name this profile's API key is stored under in the secret store.</summary>
     public static string SecretName(string profileId) => "provider:" + profileId;
 }

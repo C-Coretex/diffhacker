@@ -59,13 +59,6 @@ public static class ProfileFailures
     /// <summary>No provider is configured, or none is marked active.</summary>
     public const string NoProvider = "profile_no_provider";
 
-    /// <summary>
-    /// The document would not fit the size budget, even after being handed back to be shortened.
-    /// Nothing is stored: a profile silently truncated to fit would be a profile that ends
-    /// mid-sentence on every future run.
-    /// </summary>
-    public const string OverBudget = "profile_over_budget";
-
     /// <summary>The model answered, but not with something that could be read as a profile.</summary>
     public const string UnreadableAnswer = "profile_unreadable_answer";
 }

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.14/answer-budget-prompt-request.schema.json",
+  "title": "AnswerBudgetPromptRequest",
+  "description": "Request for run.answerBudgetPrompt: the reviewer's answer to a run.budgetLimitReached prompt. Naming a promptId that is not currently waiting is a no-op rather than an error, since the run may already have ended some other way — cancelled, or failed outright — by the time the click reaches the host.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["promptId", "decision"],
+  "properties": {
+    "promptId": {
+      "type": "string",
+      "description": "The id carried on the run.budgetLimitReached notification being answered."
+    },
+    "decision": {
+      "title": "BudgetPromptDecision",
+      "description": "continue raises the limit that was hit by its original amount and lets the run keep going. stop ends the run exactly as a hard stop would: whatever exists is partial, and nothing further is spent.",
+      "type": "string",
+      "enum": ["continue", "stop"]
+    }
+  }
+}

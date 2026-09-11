@@ -9,6 +9,7 @@ import {
   generateProfile,
   getProfile,
   onAnalysisProgress,
+  onBudgetLimitReached,
   onToolCallEvent,
 } from '@/rpc/methods';
 import { useRpc } from '@/rpc/RpcProvider';
@@ -27,6 +28,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { BudgetPromptDialog } from './BudgetPromptDialog';
 import { DocumentationPanel } from './DocumentationPanel';
 import { ProfileDocumentForm } from './ProfileDocumentForm';
 import { ProfileRunPanel } from './ProfileRunPanel';
@@ -48,6 +50,7 @@ export function ProfileScreen() {
   const state = useAppStore((state) => state.profileState);
   const error = useAppStore((state) => state.profileError);
   const run = useAppStore((state) => state.profileRun);
+  const budgetPrompt = useAppStore((state) => state.profileBudgetPrompt);
 
   const startLoading = useAppStore((store) => store.startLoadingProfile);
   const setProfile = useAppStore((store) => store.setProfile);
@@ -56,6 +59,7 @@ export function ProfileScreen() {
   const endRun = useAppStore((store) => store.endProfileRun);
   const recordProgress = useAppStore((store) => store.recordProfileProgress);
   const recordEvent = useAppStore((store) => store.recordProfileRunEvent);
+  const setBudgetPrompt = useAppStore((store) => store.setProfileBudgetPrompt);
 
   const [runError, setRunError] = useState<string>();
   const abort = useRef<AbortController>(null);
@@ -85,12 +89,14 @@ export function ProfileScreen() {
 
     const stopProgress = onAnalysisProgress(client, recordProgress);
     const stopEvents = onToolCallEvent(client, recordEvent);
+    const stopBudgetPrompts = onBudgetLimitReached(client, setBudgetPrompt);
 
     return () => {
       stopProgress();
       stopEvents();
+      stopBudgetPrompts();
     };
-  }, [client, recordProgress, recordEvent]);
+  }, [client, recordProgress, recordEvent, setBudgetPrompt]);
 
   const generate = useCallback(async () => {
     if (!client || !path) return;
@@ -130,6 +136,8 @@ export function ProfileScreen() {
 
   return (
     <div className="flex flex-col gap-6">
+      <BudgetPromptDialog prompt={budgetPrompt} onResolved={() => setBudgetPrompt(undefined)} />
+
       <Card>
         <CardHeader>
           <CardTitle>{t('profile.heading')}</CardTitle>

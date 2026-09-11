@@ -5,6 +5,7 @@ import type {
   AnalysisProgress,
   AnalysisTrace,
   AnalysisView,
+  BudgetLimitReached,
   ChangesetResult,
   EditorSettings,
   EnvironmentInfo,
@@ -133,6 +134,12 @@ interface AppState {
    */
   profileRunContext?: ToolCallEvent;
 
+  /**
+   * A budget limit the profile run is currently paused at, cleared once the reviewer answers
+   * through `run.answerBudgetPrompt`. Undefined the rest of the time.
+   */
+  profileBudgetPrompt?: BudgetLimitReached;
+
   analysis: AnalysisStatus;
   analysisView?: AnalysisView;
   analysisError?: string;
@@ -149,6 +156,9 @@ interface AppState {
 
   /** @see profileRunContext */
   analysisRunContext?: ToolCallEvent;
+
+  /** @see profileBudgetPrompt */
+  analysisBudgetPrompt?: BudgetLimitReached;
 
   /** @see profileRunStartedAt */
   analysisRunStartedAt?: number;
@@ -328,6 +338,7 @@ interface AppState {
   startProfileRun(): void;
   recordProfileProgress(progress: AnalysisProgress): void;
   recordProfileRunEvent(event: ToolCallEvent): void;
+  setProfileBudgetPrompt(prompt: BudgetLimitReached | undefined): void;
   endProfileRun(): void;
 
   startLoadingAnalysis(): void;
@@ -337,6 +348,7 @@ interface AppState {
   startAnalysisRun(): void;
   recordAnalysisProgress(progress: AnalysisProgress): void;
   recordAnalysisRunEvent(event: ToolCallEvent): void;
+  setAnalysisBudgetPrompt(prompt: BudgetLimitReached | undefined): void;
   endAnalysisRun(): void;
   setAnalysisLibrary(library: AnalysisLibrary): void;
   setAnalysisFreshness(freshness: AnalysisFreshness): void;
@@ -494,6 +506,7 @@ export const useAppStore = create<AppState>((set) => ({
       profileRunEvents: [],
       profileRunLatest: undefined,
       profileRunContext: undefined,
+      profileBudgetPrompt: undefined,
       // And so does the analysis: it describes one repository's uncommitted change and means
       // nothing beside another's.
       analysis: 'idle',
@@ -503,6 +516,7 @@ export const useAppStore = create<AppState>((set) => ({
       analysisRunEvents: [],
       analysisRunLatest: undefined,
       analysisRunContext: undefined,
+      analysisBudgetPrompt: undefined,
       analysisLibrary: undefined,
       analysisFreshness: undefined,
       analysisStaleDismissed: undefined,
@@ -542,6 +556,7 @@ export const useAppStore = create<AppState>((set) => ({
       profileRunLatest: undefined,
       profileRunContext: undefined,
       profileRunStartedAt: Date.now(),
+      profileBudgetPrompt: undefined,
     }),
 
   recordProfileProgress: (profileRunProgress) => set({ profileRunProgress }),
@@ -557,7 +572,9 @@ export const useAppStore = create<AppState>((set) => ({
       };
     }),
 
-  endProfileRun: () => set({ profileRun: 'idle' }),
+  setProfileBudgetPrompt: (profileBudgetPrompt) => set({ profileBudgetPrompt }),
+
+  endProfileRun: () => set({ profileRun: 'idle', profileBudgetPrompt: undefined }),
 
   startLoadingAnalysis: () => set({ analysis: 'loading', analysisError: undefined }),
   setAnalysis: (analysisView) =>
@@ -599,6 +616,7 @@ export const useAppStore = create<AppState>((set) => ({
       analysisRunLatest: undefined,
       analysisRunContext: undefined,
       analysisRunStartedAt: Date.now(),
+      analysisBudgetPrompt: undefined,
     }),
 
   recordAnalysisProgress: (analysisRunProgress) => set({ analysisRunProgress }),
@@ -614,7 +632,9 @@ export const useAppStore = create<AppState>((set) => ({
       };
     }),
 
-  endAnalysisRun: () => set({ analysisRun: 'idle' }),
+  setAnalysisBudgetPrompt: (analysisBudgetPrompt) => set({ analysisBudgetPrompt }),
+
+  endAnalysisRun: () => set({ analysisRun: 'idle', analysisBudgetPrompt: undefined }),
 
   setAnalysisLibrary: (analysisLibrary) => set({ analysisLibrary }),
 

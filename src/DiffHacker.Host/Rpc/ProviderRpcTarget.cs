@@ -104,6 +104,11 @@ public sealed class ProviderRpcTarget(
             // context window is not a thing. Absent clears the override and falls back to the
             // bundled table, exactly as an absent rate does.
             ContextWindowTokens = ReadContextWindow(request),
+
+            // The same shape again: each stands alone, and absent clears the override and falls
+            // back to LlmBudget.Default.
+            MaxToolCallsOverride = ReadMaxToolCalls(request),
+            MaxTotalTokensOverride = ReadMaxTotalTokens(request),
         };
 
         await profiles.SaveAsync(profile, cancellationToken).ConfigureAwait(false);
@@ -282,6 +287,8 @@ public sealed class ProviderRpcTarget(
             id: profile.Id,
             inputCostPerMillion: (double?)profile.InputCostPerMillion,
             isActive: isActive,
+            maxToolCalls: profile.MaxToolCallsOverride,
+            maxTotalTokens: profile.MaxTotalTokensOverride,
             model: profile.Model,
             modelSuggestions: profile.ModelSuggestions,
             contextWindowTokens: profile.ContextWindowTokens,
@@ -335,6 +342,46 @@ public sealed class ProviderRpcTarget(
             throw RpcErrors.Failure(
                 "provider_invalid_context_window",
                 "A context window must be a positive number of tokens.");
+        }
+
+        return tokens;
+    }
+
+    /// <summary>
+    /// The optional tool-call budget override. Rejected rather than clamped when not positive,
+    /// for the same reason as <see cref="ReadContextWindow"/>: a typo silently becoming "no
+    /// override" would leave the user looking at the default wondering why theirs did not take.
+    /// </summary>
+    private static int? ReadMaxToolCalls(SaveProviderRequest request)
+    {
+        if (request.MaxToolCalls is not { } calls)
+        {
+            return null;
+        }
+
+        if (calls <= 0)
+        {
+            throw RpcErrors.Failure(
+                "provider_invalid_max_tool_calls",
+                "A tool-call limit must be a positive number.");
+        }
+
+        return calls;
+    }
+
+    /// <summary>The optional token budget override. See <see cref="ReadMaxToolCalls"/>.</summary>
+    private static long? ReadMaxTotalTokens(SaveProviderRequest request)
+    {
+        if (request.MaxTotalTokens is not { } tokens)
+        {
+            return null;
+        }
+
+        if (tokens <= 0)
+        {
+            throw RpcErrors.Failure(
+                "provider_invalid_max_total_tokens",
+                "A token limit must be a positive number.");
         }
 
         return tokens;

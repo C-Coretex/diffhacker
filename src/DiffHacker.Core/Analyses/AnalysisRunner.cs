@@ -36,6 +36,7 @@ public sealed partial class AnalysisRunner(
     IAnalysisStore analyses,
     IGitClient git,
     IToolProgressSink progressSink,
+    IBudgetDecisionPrompt budgetPrompt,
     TimeProvider clock,
     ILogger<AnalysisRunner> logger) : IAnalysisRunner
 {
@@ -165,14 +166,16 @@ public sealed partial class AnalysisRunner(
         };
 
         await using var session = await sessions
-            .CreateAsync(provider, LlmBudget.Default, cancellationToken)
+            .CreateAsync(provider, provider.EffectiveBudget, cancellationToken)
             .ConfigureAwait(false);
 
         LlmRunResult run;
 
         try
         {
-            run = await session.RunAsync(conversation, progress, cancellationToken).ConfigureAwait(false);
+            run = await session
+                .RunAsync(conversation, progress, cancellationToken, budgetPrompt.AskAsync)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

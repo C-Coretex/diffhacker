@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.14/budget-limit-reached.schema.json",
+  "title": "BudgetLimitReached",
+  "description": "Payload of the run.budgetLimitReached notification: an analysis or repository-profiling run has hit one of its configured limits and is paused, waiting to be told whether to keep going. The renderer answers with run.answerBudgetPrompt naming promptId; the run stays paused on the host until it does, or until the request is cancelled some other way.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["promptId", "limit", "explanation", "toolCallsUsed", "tokensUsed", "turnsUsed"],
+  "properties": {
+    "promptId": {
+      "type": "string",
+      "description": "Identifies this one prompt. Echoed back on run.answerBudgetPrompt; naming an id that is no longer waiting is a no-op rather than an error, since a renderer racing a cancel against a click is expected."
+    },
+    "limit": {
+      "title": "BudgetLimitKind",
+      "description": "Which limit was reached.",
+      "type": "string",
+      "enum": ["tool_calls", "tokens", "turns", "cost"]
+    },
+    "explanation": {
+      "type": "string",
+      "description": "The same sentence a hard stop would use, e.g. 'The run reached its limit of 500 tool calls.' Shown as the body of the prompt."
+    },
+    "toolCallsUsed": {
+      "type": "integer",
+      "description": "Tool calls completed so far."
+    },
+    "tokensUsed": {
+      "type": "integer",
+      "description": "Input plus output tokens spent so far, across the whole run."
+    },
+    "turnsUsed": {
+      "type": "integer",
+      "description": "Round trips to the provider completed so far."
+    },
+    "costUsd": {
+      "type": "number",
+      "description": "Estimated cost in US dollars spent so far. Absent when the model has no entry in the price table — unknown is reported as unknown, never as zero."
+    }
+  }
+}

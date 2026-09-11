@@ -9,9 +9,13 @@ namespace DiffHacker.Core.Llm;
 /// run gets prevented, because killing one mid-flight wastes everything already spent.
 /// </para>
 /// <para>
-/// Iteration 13 makes these user-configurable. Until then <see cref="Default"/> is what every
-/// run uses, and hitting any of them produces <see cref="LlmRunOutcome.BudgetExceeded"/> with
-/// an explanation of what was and was not produced (§0.2.5, §0.2.8).
+/// <see cref="Default"/> is what every run uses unless a profile overrides it — see
+/// <see cref="Providers.LlmProviderProfile.EffectiveBudget"/>. Hitting a limit does not fail the
+/// run outright: <see cref="ILlmSession.RunAsync"/> takes an optional
+/// <see cref="BudgetDecisionCallback"/>, and a caller that supplies one is asked whether to raise
+/// the limit that was hit and keep going, or stop — a run with no caller to ask falls back to the
+/// old behaviour, producing <see cref="LlmRunOutcome.BudgetExceeded"/> with an explanation of what
+/// was and was not produced (§0.2.5, §0.2.8).
 /// </para>
 /// </summary>
 public sealed record LlmBudget

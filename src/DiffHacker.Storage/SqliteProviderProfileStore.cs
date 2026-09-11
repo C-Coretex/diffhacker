@@ -29,7 +29,9 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
                model_suggestions AS ModelSuggestions,
                input_cost_per_million  AS InputCostPerMillion,
                output_cost_per_million AS OutputCostPerMillion,
-               context_window_tokens   AS ContextWindowTokens
+               context_window_tokens   AS ContextWindowTokens,
+               max_tool_calls          AS MaxToolCalls,
+               max_total_tokens        AS MaxTotalTokens
         FROM provider_profiles
         """;
 
@@ -67,10 +69,12 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
             INSERT INTO provider_profiles
                 (id, provider_type, display_name, model, base_url,
                  created_at_utc, updated_at_utc, model_suggestions,
-                 input_cost_per_million, output_cost_per_million, context_window_tokens)
+                 input_cost_per_million, output_cost_per_million, context_window_tokens,
+                 max_tool_calls, max_total_tokens)
             VALUES (@Id, @ProviderType, @DisplayName, @Model, @BaseUrl,
                     @CreatedAtUtc, @UpdatedAtUtc, @ModelSuggestions,
-                    @InputCostPerMillion, @OutputCostPerMillion, @ContextWindowTokens)
+                    @InputCostPerMillion, @OutputCostPerMillion, @ContextWindowTokens,
+                    @MaxToolCalls, @MaxTotalTokens)
             ON CONFLICT(id) DO UPDATE SET
                 provider_type           = @ProviderType,
                 display_name            = @DisplayName,
@@ -80,7 +84,9 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
                 model_suggestions       = @ModelSuggestions,
                 input_cost_per_million  = @InputCostPerMillion,
                 output_cost_per_million = @OutputCostPerMillion,
-                context_window_tokens   = @ContextWindowTokens;
+                context_window_tokens   = @ContextWindowTokens,
+                max_tool_calls          = @MaxToolCalls,
+                max_total_tokens        = @MaxTotalTokens;
             """,
             ProviderProfileRow.From(profile),
             cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -162,6 +168,16 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
         /// </summary>
         public int? ContextWindowTokens { get; init; }
 
+        /// <summary>Overrides <c>LlmBudget.Default.MaxToolCalls</c>. Null when no override is set.</summary>
+        public int? MaxToolCalls { get; init; }
+
+        /// <summary>
+        /// Overrides <c>LlmBudget.Default.MaxTotalTokens</c>. An INTEGER rather than text like
+        /// <see cref="ContextWindowTokens"/> — SQLite's INTEGER affinity is 64-bit, so this needs
+        /// no wider column than the tool-call one despite the domain type being <c>long</c>.
+        /// </summary>
+        public long? MaxTotalTokens { get; init; }
+
         public static ProviderProfileRow From(LlmProviderProfile profile) => new()
         {
             Id = profile.Id,
@@ -177,6 +193,8 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
             InputCostPerMillion = FormatMoney(profile.InputCostPerMillion),
             OutputCostPerMillion = FormatMoney(profile.OutputCostPerMillion),
             ContextWindowTokens = profile.ContextWindowTokens,
+            MaxToolCalls = profile.MaxToolCallsOverride,
+            MaxTotalTokens = profile.MaxTotalTokensOverride,
         };
 
         public LlmProviderProfile ToProfile() => new()
@@ -194,6 +212,8 @@ public sealed class SqliteProviderProfileStore(AppDatabase database) : IProvider
             InputCostPerMillion = ParseMoney(InputCostPerMillion),
             OutputCostPerMillion = ParseMoney(OutputCostPerMillion),
             ContextWindowTokens = ContextWindowTokens,
+            MaxToolCallsOverride = MaxToolCalls,
+            MaxTotalTokensOverride = MaxTotalTokens,
         };
 
         private static string? FormatMoney(decimal? value) =>

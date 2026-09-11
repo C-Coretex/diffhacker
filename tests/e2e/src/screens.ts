@@ -223,6 +223,15 @@ export class SettingsScreen {
     return this.page.getByLabel(en.providers.contextWindowLabel);
   }
 
+  /** The configurable runaway guards: how many tool calls and tokens a run on this profile may spend. */
+  get maxToolCallsField(): Locator {
+    return this.page.getByLabel(en.providers.maxToolCallsLabel);
+  }
+
+  get maxTotalTokensField(): Locator {
+    return this.page.getByLabel(en.providers.maxTotalTokensLabel);
+  }
+
   async addProvider(details: {
     name: string;
     model: string;
@@ -231,6 +240,10 @@ export class SettingsScreen {
     cost?: { input: string; output: string };
     /** The optional context-window override. Unlike a price, it stands alone. */
     contextWindow?: string;
+    /** The optional tool-call budget override. Stands alone, like the context window. */
+    maxToolCalls?: string;
+    /** The optional token budget override. Stands alone, like the context window. */
+    maxTotalTokens?: string;
     /** Set to point at an OpenAI-compatible endpoint, which is how the stub provider is used. */
     baseUrl?: string;
   }): Promise<void> {
@@ -252,6 +265,14 @@ export class SettingsScreen {
 
     if (details.contextWindow) {
       await this.contextWindowField.fill(details.contextWindow);
+    }
+
+    if (details.maxToolCalls) {
+      await this.maxToolCallsField.fill(details.maxToolCalls);
+    }
+
+    if (details.maxTotalTokens) {
+      await this.maxTotalTokensField.fill(details.maxTotalTokens);
     }
 
     await this.saveButton.click();
@@ -345,6 +366,27 @@ export class ProfileScreen {
       .locator('[data-slot="card"]')
       .filter({ has: this.page.getByText(title, { exact: true }) })
       .getByRole('button', { name: en.profile.save, exact: true });
+  }
+}
+
+/**
+ * The prompt a run shows when it hits a configured budget limit, asking whether to raise it and
+ * keep going or stop. Shared between the analysis screen and the profile screen, so it is its own
+ * class rather than duplicated on both.
+ */
+export class BudgetPromptDialog {
+  constructor(private readonly page: Page) {}
+
+  get dialog(): Locator {
+    return this.page.getByTestId('budget-prompt-dialog');
+  }
+
+  get continueButton(): Locator {
+    return this.page.getByTestId('budget-prompt-continue');
+  }
+
+  get stopButton(): Locator {
+    return this.page.getByTestId('budget-prompt-stop');
   }
 }
 
@@ -824,5 +866,6 @@ export function screens(page: Page) {
     profile: new ProfileScreen(page),
     analysis: new AnalysisScreen(page),
     documentation: new DocumentationPanel(page),
+    budgetPrompt: new BudgetPromptDialog(page),
   };
 }

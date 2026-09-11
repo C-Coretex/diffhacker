@@ -511,11 +511,22 @@ public sealed class AnalysisRunnerTests
                 Store,
                 Git,
                 new NullProgressSink(),
+                new StoppingBudgetPrompt(),
                 TimeProvider.System,
                 NullLogger<AnalysisRunner>.Instance);
 
             return runner.RunAsync("/repo", Options, null, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Answers every budget prompt with Stop. None of these tests drive a session into an actual
+    /// limit — they exist so a future one that does gets the same hard-stop behaviour by default.
+    /// </summary>
+    private sealed class StoppingBudgetPrompt : IBudgetDecisionPrompt
+    {
+        public Task<BudgetDecision> AskAsync(LlmBudgetLimitReached limit, CancellationToken cancellationToken) =>
+            Task.FromResult(BudgetDecision.Stop);
     }
 
     private sealed class NullProgressSink : IToolProgressSink
@@ -625,7 +636,8 @@ public sealed class AnalysisRunnerTests
         public Task<LlmRunResult> RunAsync(
             LlmConversation conversation,
             IProgress<LlmRunEvent>? progress,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            BudgetDecisionCallback? onBudgetExceeded = null)
         {
             Conversation = conversation;
 

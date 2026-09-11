@@ -189,6 +189,18 @@ internal static class Program
         services.AddSingleton<IRpcNotifier>(sp => sp.GetRequiredService<RpcNotifier>());
         services.AddSingleton<IToolProgressSink, ToolProgressNotifier>();
         services.AddSingleton<RunEventNotifier>();
+
+        // A run that hits a configured budget limit asks the renderer whether to continue rather
+        // than failing outright. BudgetDecisionNotifier both sends that question — as a plain
+        // notification, the same as every other host-to-renderer push — and holds the wait for
+        // whichever run.answerBudgetPrompt call resolves it, which is why it is registered under
+        // both of the interfaces it implements: AnalysisRunner and ProfileBuilder ask through
+        // IBudgetDecisionPrompt, and BudgetPromptRpcTarget answers through IBudgetPromptResolver.
+        services.AddSingleton<BudgetDecisionNotifier>();
+        services.AddSingleton<IBudgetDecisionPrompt>(sp => sp.GetRequiredService<BudgetDecisionNotifier>());
+        services.AddSingleton<IBudgetPromptResolver>(sp => sp.GetRequiredService<BudgetDecisionNotifier>());
+        services.AddSingleton<BudgetPromptRpcTarget>();
+
         services.AddSingleton<HostRpcTarget>();
         services.AddSingleton<EnvironmentRpcTarget>();
         services.AddSingleton<RepositoryRpcTarget>();
@@ -210,6 +222,7 @@ internal static class Program
                 sp.GetRequiredService<ProfileRpcTarget>(),
                 sp.GetRequiredService<AnalysisRpcTarget>(),
                 sp.GetRequiredService<EditorRpcTarget>(),
+                sp.GetRequiredService<BudgetPromptRpcTarget>(),
             ],
             sp.GetRequiredService<ILogger<RpcBridge>>()));
 

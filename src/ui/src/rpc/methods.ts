@@ -6,8 +6,10 @@ import type {
   AnalysisRequest,
   AnalysisTrace,
   AnalysisView,
+  AnswerBudgetPromptRequest,
   BrowseFolderRequest,
   BrowseFolderResult,
+  BudgetLimitReached,
   ChangesetRequest,
   ChangesetResult,
   DocumentationExportRequest,
@@ -112,6 +114,8 @@ export const RpcMethods = {
   describeEditors: 'editor.describe',
   saveEditorSettings: 'editor.save',
   openInEditor: 'editor.open',
+
+  answerBudgetPrompt: 'run.answerBudgetPrompt',
 } as const;
 
 /**
@@ -131,6 +135,7 @@ export const RpcMethods = {
 export const RpcNotifications = {
   analysisProgress: 'analysis.progress',
   analysisToolCall: 'analysis.toolCall',
+  budgetLimitReached: 'run.budgetLimitReached',
 } as const;
 
 /**
@@ -260,6 +265,28 @@ export function onToolCallEvent(
   handler: (event: ToolCallEvent) => void,
 ): () => void {
   return client.on<ToolCallEvent>(RpcNotifications.analysisToolCall, handler);
+}
+
+/**
+ * Subscribes to a run pausing at a budget limit. Returns the unsubscribe function.
+ *
+ * Fired by either kind of run — analysing a change or profiling a repository — since both go
+ * through the same tool-calling loop. The run stays paused on the host until
+ * {@link answerBudgetPrompt} names the same `promptId`.
+ */
+export function onBudgetLimitReached(
+  client: RpcClient,
+  handler: (limit: BudgetLimitReached) => void,
+): () => void {
+  return client.on<BudgetLimitReached>(RpcNotifications.budgetLimitReached, handler);
+}
+
+/** Answers a paused run's budget prompt: raise the limit and keep going, or stop it. */
+export function answerBudgetPrompt(
+  client: RpcClient,
+  request: AnswerBudgetPromptRequest,
+): Promise<void> {
+  return client.call<void>(RpcMethods.answerBudgetPrompt, request);
 }
 
 export function getProfile(client: RpcClient, request: ProfileRequest): Promise<ProfileState> {

@@ -1301,3 +1301,70 @@ that fails is logged and shows nothing: it must never take the analysis away or 
 nobody knows. The banner sits above the analysis rather than replacing it, because what is on screen
 is still a faithful account of the change as it was. Dismissing it lasts for the session and only for
 the difference it described, so a later check that finds something else shows it again.
+
+## Configurable limits and the budget prompt
+
+Follow-up 10 asked for two things: `LlmBudget`'s tool-call and token ceilings become user-configurable,
+and hitting one no longer fails a run outright — it pauses and asks whether to continue. Both an
+analysis run and a repository-profiling run go through the same `LlmSession` loop, so one mechanism
+serves both.
+
+### The pause is a callback, not a new outcome
+
+`ILlmSession.RunAsync` gained one optional parameter, `BudgetDecisionCallback? onBudgetExceeded`,
+defaulting to null. Every limit check (`LlmSession.ExceededLimit`) is unchanged in what it detects;
+what changed is what happens next. With no callback, a reached limit hard-stops exactly as before —
+every caller written before this feature, including every existing test, is untouched by construction
+rather than by an update. With one, the session calls it, and:
+
+- **Continue** raises the one limit that was hit by the amount it started at (`LlmSession.Extend`) and
+  loops the check again — deliberately linear (500, 1000, 1500 tool calls, …) rather than doubling, so
+  repeated continues cost predictable rather than runaway room. Turns and the cost ceiling go through
+  the same callback for consistency, though neither is user-configurable the way tool calls and tokens
+  are (§0.6 leaves multi-pass and cost estimation to later work).
+- **Stop** produces the same `LlmRunResult` a hard stop always did — `LlmRunOutcome.BudgetExceeded`,
+  the same explanation — so nothing downstream needed to change: a stopped run is a failed run, and
+  §0.2.8 already forbids showing anything partial for one of those.
+
+`MaxConsecutiveToolFailures` — a stuck-loop detector, not a spend limit — still hard-stops
+unconditionally. Asking the reviewer whether to continue when the model has demonstrably stopped
+making progress would not serve them; that stop stays exactly as it was.
+
+### Asking the renderer needed no new RPC direction
+
+The host already pushes notifications freely (`IRpcNotifier`) and the renderer already calls the host
+freely; nothing here needed the host to *call into* the renderer and wait for a return value.
+`BudgetDecisionNotifier` sends `run.budgetLimitReached` with a fresh `promptId` and then awaits a
+`TaskCompletionSource` it holds keyed by that id — not on a reply to the notification, which JSON-RPC
+notifications do not have, but on the renderer's own follow-up call, `run.answerBudgetPrompt`, landing
+on the small `BudgetPromptRpcTarget` and resolving the matching wait. The class implements both
+`IBudgetDecisionPrompt` (what `AnalysisRunner`/`ProfileBuilder` ask through) and `IBudgetPromptResolver`
+(what the RPC target resolves through), registered under both interfaces from one singleton.
+
+`run.budgetLimitReached` and `run.answerBudgetPrompt` are named for the run rather than for analysis or
+profile specifically, the same reasoning `analysis.toolCall` already stretches to profiling: one
+mechanism, one pair of methods, regardless of which kind of run hit the limit.
+
+### The character budget stopped being a runaway guard
+
+The unrelated half of the same follow-up: `ProjectProfile.EffectiveCharacterBudget` is the user's own
+dial (§0.6), not a spend limit, and `ProfileBuilder` used to fail the whole run when a document was
+still over it after one shorten attempt (`ProfileFailures.OverBudget`, now deleted along with its
+`en.ts` string — nothing produces it any more). It now keeps the shortened document only if shortening
+actually helped, and otherwise saves the original — complete and valid, merely long — rather than
+discarding it. `ProfileProvenance.DocumentCharacters` against `EffectiveCharacterBudget` is already
+enough for the screen to say a stored profile is oversized; no new field was needed.
+
+### A migration was the easy part to miss
+
+`LlmProviderProfile.MaxToolCallsOverride`/`MaxTotalTokensOverride` round-trip through
+`SqliteProviderProfileStore` as their own INTEGER columns, the same shape `ContextWindowTokens`
+already used — provider profiles are explicit columns, not a JSON document, so a new domain property
+needs a schema migration (`AppDatabase.CurrentSchemaVersion` 7 → 8) and explicit mapping in
+`ProviderProfileRow`, or it never reaches the database at all. The first pass of this feature added the
+domain property, the RPC mapping and the settings-form fields but skipped the storage layer entirely;
+nothing failed to compile or to unit-test, because every layer above the missing column faithfully
+passed a value on and every layer below it faithfully returned null. Only
+`13-budget-limits.spec.ts` — a real save, a real restart-free re-read, a real run against the
+now-configured limit — caught it, which is the whole reason that suite exists rather than a unit test
+standing in for it.

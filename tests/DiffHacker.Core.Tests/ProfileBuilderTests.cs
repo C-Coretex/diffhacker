@@ -156,7 +156,7 @@ public sealed class ProfileBuilderTests
     }
 
     [Fact]
-    public async Task A_document_that_is_still_too_long_after_one_repair_fails_rather_than_being_truncated()
+    public async Task A_document_that_is_still_too_long_after_one_repair_is_saved_rather_than_failed_or_truncated()
     {
         var harness = new Harness();
         harness.Store.Existing = ProjectProfile.Empty("/repo", DateTimeOffset.UnixEpoch) with
@@ -169,11 +169,13 @@ public sealed class ProfileBuilderTests
 
         var result = await harness.BuildAsync(TestContext.Current.CancellationToken);
 
-        result.FailureCode.ShouldBe(ProfileFailures.OverBudget);
-
-        // A profile cut off mid-sentence would misinform every future analysis, quietly.
-        harness.Store.Saved.ShouldBeNull();
-        harness.Store.Runs.ShouldHaveSingleItem().Outcome.ShouldBe(ProfileRunOutcome.Failed);
+        // The character budget is the reviewer's own dial, not a runaway guard: a complete,
+        // valid profile that is merely long is saved whole rather than truncated or discarded.
+        result.Succeeded.ShouldBeTrue();
+        harness.Store.Saved.ShouldNotBeNull().Architecture.ShouldContain("xxxx");
+        harness.Store.SavedProvenance.ShouldNotBeNull().DocumentCharacters
+            .ShouldBeGreaterThan(ProfileBudget.MinimumCharacters);
+        harness.Store.Runs.ShouldHaveSingleItem().Outcome.ShouldBe(ProfileRunOutcome.Completed);
     }
 
     [Fact]
@@ -259,11 +261,23 @@ public sealed class ProfileBuilderTests
                 Store,
                 Git,
                 new NullProgressSink(Store),
+                new StoppingBudgetPrompt(),
                 TimeProvider.System,
                 NullLogger<ProfileBuilder>.Instance);
 
             return builder.BuildAsync("/repo", null, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Answers every budget prompt with Stop, matching the hard-stop behaviour these tests
+    /// exercised before continuing was an option. None of the sessions here ever hit a limit —
+    /// they exist to answer the question if that assumption is ever wrong.
+    /// </summary>
+    private sealed class StoppingBudgetPrompt : IBudgetDecisionPrompt
+    {
+        public Task<BudgetDecision> AskAsync(LlmBudgetLimitReached limit, CancellationToken cancellationToken) =>
+            Task.FromResult(BudgetDecision.Stop);
     }
 
     private sealed class NullProgressSink(FakeProfileStore store) : IToolProgressSink
@@ -376,7 +390,8 @@ public sealed class ProfileBuilderTests
         public Task<LlmRunResult> RunAsync(
             LlmConversation conversation,
             IProgress<LlmRunEvent>? progress,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            BudgetDecisionCallback? onBudgetExceeded = null)
         {
             Conversation = conversation;
 

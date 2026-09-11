@@ -1,4 +1,5 @@
 using System.Text;
+using DiffHacker.Core.Llm;
 using DiffHacker.Core.Providers;
 using DiffHacker.Storage.Secrets;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -140,6 +141,9 @@ public sealed class SqliteProviderProfileStoreTests : IAsyncLifetime
         {
             BaseUrl = "https://example.test/v1",
             ModelSuggestions = ["a-model", "b-model"],
+            ContextWindowTokens = 128_000,
+            MaxToolCallsOverride = 250,
+            MaxTotalTokensOverride = 5_000_000,
         };
 
         await _store.SaveAsync(profile, TestContext.Current.CancellationToken);
@@ -149,6 +153,21 @@ public sealed class SqliteProviderProfileStoreTests : IAsyncLifetime
         loaded.Model.ShouldBe(profile.Model);
         loaded.BaseUrl.ShouldBe("https://example.test/v1");
         loaded.ModelSuggestions.ShouldBe(["a-model", "b-model"]);
+        loaded.ContextWindowTokens.ShouldBe(128_000);
+        loaded.MaxToolCallsOverride.ShouldBe(250);
+        loaded.MaxTotalTokensOverride.ShouldBe(5_000_000);
+    }
+
+    [Fact]
+    public async Task The_budget_override_is_absent_rather_than_zero_when_never_set()
+    {
+        await _store.SaveAsync(Profile("p1"), TestContext.Current.CancellationToken);
+        var loaded = (await _store.FindAsync("p1", TestContext.Current.CancellationToken))!;
+
+        loaded.MaxToolCallsOverride.ShouldBeNull();
+        loaded.MaxTotalTokensOverride.ShouldBeNull();
+        loaded.EffectiveBudget.MaxToolCalls.ShouldBe(LlmBudget.Default.MaxToolCalls);
+        loaded.EffectiveBudget.MaxTotalTokens.ShouldBe(LlmBudget.Default.MaxTotalTokens);
     }
 
     [Fact]
@@ -260,14 +279,15 @@ public sealed class SqliteProviderProfileStoreTests : IAsyncLifetime
         }
 
         // Iteration 6's run history counts LLM tokens, and "input_tokens" is the name for that in
-        // every provider's API. Iteration 8's context-window override is measured in them too.
-        // Blanking those three out before the scan keeps the guard's real question — is anything
-        // here named like a credential? — answerable, without renaming a column to something less
-        // true. Nothing else in the schema may say "token".
+        // every provider's API. Iteration 8's context-window override is measured in them too, and
+        // so is the configurable token budget. Blanking those out before the scan keeps the
+        // guard's real question — is anything here named like a credential? — answerable, without
+        // renaming a column to something less true. Nothing else in the schema may say "token".
         var sql = schema.ToString()
             .Replace("input_tokens", "input_count", StringComparison.Ordinal)
             .Replace("output_tokens", "output_count", StringComparison.Ordinal)
-            .Replace("context_window_tokens", "context_window_size", StringComparison.Ordinal);
+            .Replace("context_window_tokens", "context_window_size", StringComparison.Ordinal)
+            .Replace("max_total_tokens", "max_total_count", StringComparison.Ordinal);
 
         foreach (var forbidden in new[] { "api_key", "apikey", "secret", "password", "token", "credential" })
         {

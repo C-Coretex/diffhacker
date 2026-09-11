@@ -8,6 +8,7 @@ import {
   getAnalysis,
   listAnalyses,
   onAnalysisProgress,
+  onBudgetLimitReached,
   onToolCallEvent,
   runAnalysis,
   setGrouping,
@@ -24,6 +25,7 @@ import { MarkdownReferences } from './analysis/Markdown';
 import { StaleAnalysisBanner } from './analysis/StaleAnalysisBanner';
 import { useFreshnessCheck } from './analysis/useFreshnessCheck';
 import { AnalysisOverviewBand } from './AnalysisOverviewBand';
+import { BudgetPromptDialog } from './BudgetPromptDialog';
 import { useReviewShortcuts } from './diff/useReviewShortcuts';
 import { useSplitter } from './diff/useSplitter';
 import { AnalysisGraph } from './graph/AnalysisGraph';
@@ -75,6 +77,7 @@ export function AnalysisScreen() {
   const error = useAppStore((state) => state.analysisError);
   const run = useAppStore((state) => state.analysisRun);
   const freshness = useAppStore((state) => state.analysisFreshness);
+  const budgetPrompt = useAppStore((state) => state.analysisBudgetPrompt);
 
   const startLoading = useAppStore((store) => store.startLoadingAnalysis);
   const setAnalysis = useAppStore((store) => store.setAnalysis);
@@ -83,6 +86,7 @@ export function AnalysisScreen() {
   const endRun = useAppStore((store) => store.endAnalysisRun);
   const recordProgress = useAppStore((store) => store.recordAnalysisProgress);
   const recordEvent = useAppStore((store) => store.recordAnalysisRunEvent);
+  const setBudgetPrompt = useAppStore((store) => store.setAnalysisBudgetPrompt);
   const setLibrary = useAppStore((store) => store.setAnalysisLibrary);
 
   const [runError, setRunError] = useState<string>();
@@ -136,12 +140,14 @@ export function AnalysisScreen() {
 
     const stopProgress = onAnalysisProgress(client, recordProgress);
     const stopEvents = onToolCallEvent(client, recordEvent);
+    const stopBudgetPrompts = onBudgetLimitReached(client, setBudgetPrompt);
 
     return () => {
       stopProgress();
       stopEvents();
+      stopBudgetPrompts();
     };
-  }, [client, recordProgress, recordEvent]);
+  }, [client, recordProgress, recordEvent, setBudgetPrompt]);
 
   const analyse = useCallback(async () => {
     if (!client || !path) return;
@@ -204,6 +210,8 @@ export function AnalysisScreen() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <BudgetPromptDialog prompt={budgetPrompt} onResolved={() => setBudgetPrompt(undefined)} />
+
       <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-6 py-3">
         <div className="flex min-w-0 flex-col">
           <h1 className="flex items-center gap-2 text-sm font-semibold">

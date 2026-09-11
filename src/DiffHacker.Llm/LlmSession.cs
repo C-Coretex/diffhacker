@@ -28,7 +28,11 @@ internal sealed partial class LlmSession : ILlmSession
     private readonly IChatClient _chat;
     private readonly HttpClient _httpClient;
     private readonly LlmProviderProfile _profile;
-    private readonly LlmBudget _budget;
+
+    // Not readonly: a limit that is continued past is raised by Extend(), which is why the
+    // original values are kept separately as the increment each further continue adds.
+    private LlmBudget _budget;
+    private readonly LlmBudget _originalBudget;
     private readonly IModelCatalog _pricing;
     private readonly ILogger<LlmSession> _logger;
     private readonly Func<double> _jitter;
@@ -59,7 +63,7 @@ internal sealed partial class LlmSession : ILlmSession
 
     /// <summary>
     /// Tool calls finished so far. Counted as each one finishes rather than read from
-    /// <see cref="_toolCalls"/>, which is filled only once a whole turn's concurrent calls are done �
+    /// <see cref="_toolCalls"/>, which is filled only once a whole turn's concurrent calls are done �
     /// the live view would otherwise sit still through a turn of six reads and then jump.
     /// </summary>
     private int _toolCallsFinished;
@@ -84,6 +88,7 @@ internal sealed partial class LlmSession : ILlmSession
         _httpClient = httpClient;
         _profile = profile;
         _budget = budget;
+        _originalBudget = budget;
         _pricing = pricing;
         _logger = logger;
 
@@ -101,7 +106,8 @@ internal sealed partial class LlmSession : ILlmSession
     public async Task<LlmRunResult> RunAsync(
         LlmConversation conversation,
         IProgress<LlmRunEvent>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        BudgetDecisionCallback? onBudgetExceeded = null)
     {
         ArgumentNullException.ThrowIfNull(conversation);
 
@@ -134,14 +140,11 @@ internal sealed partial class LlmSession : ILlmSession
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (++turn > _budget.MaxTurns)
-            {
-                return BudgetStop($"The run reached its limit of {_budget.MaxTurns} turns.", turn - 1);
-            }
+            turn++;
 
-            if (BudgetExceeded() is { } exceeded)
+            if (await EnforceBudgetAsync(turn, onBudgetExceeded, cancellationToken).ConfigureAwait(false) is { } stopped)
             {
-                return BudgetStop(exceeded, turn - 1);
+                return stopped;
             }
 
             progress?.Report(new LlmRunEvent
@@ -937,24 +940,100 @@ internal sealed partial class LlmSession : ILlmSession
         return rate?.CostOf(usage);
     }
 
-    private string? BudgetExceeded()
+    /// <summary>Which limit, if any, the run has reached as of <paramref name="turn"/>.</summary>
+    private LlmBudgetLimitReached? ExceededLimit(int turn)
     {
+        if (turn > _budget.MaxTurns)
+        {
+            return Reached(LlmBudgetLimit.Turns, $"The run reached its limit of {_budget.MaxTurns} turns.", turn);
+        }
+
         if (_toolCalls.Count >= _budget.MaxToolCalls)
         {
-            return $"The run reached its limit of {_budget.MaxToolCalls} tool calls.";
+            return Reached(
+                LlmBudgetLimit.ToolCalls, $"The run reached its limit of {_budget.MaxToolCalls} tool calls.", turn);
         }
 
         if (_cumulative.TotalTokens >= _budget.MaxTotalTokens)
         {
-            return $"The run reached its limit of {_budget.MaxTotalTokens:N0} tokens.";
+            return Reached(
+                LlmBudgetLimit.Tokens, $"The run reached its limit of {_budget.MaxTotalTokens:N0} tokens.", turn);
         }
 
         if (_budget.MaxCostUsd is { } ceiling && _cumulative.EstimatedCostUsd >= ceiling)
         {
-            return $"The run reached its cost ceiling of ${ceiling:N2}.";
+            return Reached(LlmBudgetLimit.Cost, $"The run reached its cost ceiling of ${ceiling:N2}.", turn);
         }
 
         return null;
+    }
+
+    private LlmBudgetLimitReached Reached(LlmBudgetLimit limit, string explanation, int turn) => new()
+    {
+        Limit = limit,
+        Explanation = explanation,
+        ToolCallsUsed = _toolCalls.Count,
+        TokensUsed = _cumulative.TotalTokens,
+        TurnsUsed = turn - 1,
+        CostUsd = _cumulative.EstimatedCostUsd,
+    };
+
+    /// <summary>
+    /// Checks every limit and, while one is reached, either stops the run or — when
+    /// <paramref name="onBudgetExceeded"/> is supplied and answers <see cref="BudgetDecision.Continue"/>
+    /// — raises that limit and checks again, since more than one can be reached at once. Returns
+    /// null once nothing is over, which is the signal to let the turn proceed.
+    /// </summary>
+    private async Task<LlmRunResult?> EnforceBudgetAsync(
+        int turn,
+        BudgetDecisionCallback? onBudgetExceeded,
+        CancellationToken cancellationToken)
+    {
+        while (ExceededLimit(turn) is { } reached)
+        {
+            if (onBudgetExceeded is null)
+            {
+                return BudgetStop(reached.Explanation, turn - 1);
+            }
+
+            BudgetPaused(_logger, _profile.Id, reached.Explanation);
+
+            var decision = await onBudgetExceeded(reached, cancellationToken).ConfigureAwait(false);
+
+            if (decision == BudgetDecision.Stop)
+            {
+                return BudgetStop(reached.Explanation, turn - 1);
+            }
+
+            Extend(reached.Limit);
+            BudgetExtended(_logger, _profile.Id, reached.Limit.ToString());
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Raises the one limit that was hit by the amount it started at, so repeatedly continuing
+    /// grows a run linearly (500, 1000, 1500 tool calls, …) rather than doubling it.
+    /// </summary>
+    private void Extend(LlmBudgetLimit limit)
+    {
+        _budget = limit switch
+        {
+            LlmBudgetLimit.ToolCalls => _budget with { MaxToolCalls = _budget.MaxToolCalls + _originalBudget.MaxToolCalls },
+            LlmBudgetLimit.Tokens => _budget with
+            {
+                MaxTotalTokens = _budget.MaxTotalTokens + _originalBudget.MaxTotalTokens,
+            },
+            LlmBudgetLimit.Turns => _budget with { MaxTurns = _budget.MaxTurns + _originalBudget.MaxTurns },
+            LlmBudgetLimit.Cost => _budget with
+            {
+                MaxCostUsd = _originalBudget.MaxCostUsd is { } increment
+                    ? (_budget.MaxCostUsd ?? 0m) + increment
+                    : _budget.MaxCostUsd,
+            },
+            _ => _budget,
+        };
     }
 
     private LlmRunResult Completed(string? text, string? structuredJson, int turn) => new()
@@ -1086,4 +1165,17 @@ internal sealed partial class LlmSession : ILlmSession
         string profileId,
         int rejectionCount,
         int round);
+
+    [LoggerMessage(
+        EventId = 4010,
+        Level = LogLevel.Information,
+        Message = "Run on provider {ProfileId} paused at a budget limit and is asking whether to "
+            + "continue: {Explanation}")]
+    private static partial void BudgetPaused(ILogger logger, string profileId, string explanation);
+
+    [LoggerMessage(
+        EventId = 4011,
+        Level = LogLevel.Information,
+        Message = "Run on provider {ProfileId} was told to continue past its {Limit} limit.")]
+    private static partial void BudgetExtended(ILogger logger, string profileId, string limit);
 }

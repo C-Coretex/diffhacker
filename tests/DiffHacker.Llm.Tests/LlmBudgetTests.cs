@@ -146,6 +146,107 @@ public sealed class LlmBudgetTests
     }
 
     [Fact]
+    public async Task A_reached_limit_is_a_hard_stop_when_nothing_is_asked_to_decide()
+    {
+        // The default, and every caller written before this existed: no callback means no
+        // behaviour change from a plain hard stop.
+        var harness = new SessionHarness { Budget = LlmBudget.Default with { MaxToolCalls = 1 } };
+
+        harness.Provider
+            .Calls(("echo", new { text = "a" }))
+            .Calls(("echo", new { text = "b" }));
+
+        await using var session = harness.Build();
+        var result = await session.RunAsync(
+            SessionHarness.Conversation([SessionHarness.EchoTool()]),
+            null,
+            TestContext.Current.CancellationToken);
+
+        result.Outcome.ShouldBe(LlmRunOutcome.BudgetExceeded);
+        result.ToolCalls.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Continuing_past_a_reached_limit_raises_it_by_the_original_amount_and_keeps_going()
+    {
+        var harness = new SessionHarness { Budget = LlmBudget.Default with { MaxToolCalls = 2 } };
+
+        for (var i = 0; i < 5; i++)
+        {
+            harness.Provider.Calls(("echo", new { text = i.ToString(System.Globalization.CultureInfo.InvariantCulture) }));
+        }
+
+        harness.Provider.Says("done");
+
+        var asked = new List<LlmBudgetLimitReached>();
+
+        await using var session = harness.Build();
+        var result = await session.RunAsync(
+            SessionHarness.Conversation([SessionHarness.EchoTool()]),
+            null,
+            TestContext.Current.CancellationToken,
+            (limit, _) =>
+            {
+                asked.Add(limit);
+                return Task.FromResult(BudgetDecision.Continue);
+            });
+
+        // One prompt per limit reached: 2, then 4 (2 + the original 2), by which point the fifth
+        // call and the closing turn both fit under the raised ceiling.
+        asked.Count.ShouldBe(2);
+        asked[0].Limit.ShouldBe(LlmBudgetLimit.ToolCalls);
+        asked[0].ToolCallsUsed.ShouldBe(2);
+        asked[1].ToolCallsUsed.ShouldBe(4);
+        result.Outcome.ShouldBe(LlmRunOutcome.Completed);
+        result.ToolCalls.Count.ShouldBe(5);
+    }
+
+    [Fact]
+    public async Task Stopping_when_asked_produces_the_same_partial_result_a_hard_stop_would()
+    {
+        var harness = new SessionHarness { Budget = LlmBudget.Default with { MaxToolCalls = 2 } };
+
+        for (var i = 0; i < 5; i++)
+        {
+            harness.Provider.Calls(("echo", new { text = i.ToString(System.Globalization.CultureInfo.InvariantCulture) }));
+        }
+
+        await using var session = harness.Build();
+        var result = await session.RunAsync(
+            SessionHarness.Conversation([SessionHarness.EchoTool()]),
+            null,
+            TestContext.Current.CancellationToken,
+            (_, _) => Task.FromResult(BudgetDecision.Stop));
+
+        result.Outcome.ShouldBe(LlmRunOutcome.BudgetExceeded);
+        result.FailureCode.ShouldBe(LlmFailures.BudgetExceeded);
+        result.ToolCalls.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task The_turn_limit_can_also_be_continued_past()
+    {
+        var harness = new SessionHarness { Budget = LlmBudget.Default with { MaxTurns = 1 } };
+
+        harness.Provider
+            .Calls(("echo", new { text = "a" }))
+            .Says("done");
+
+        await using var session = harness.Build();
+        var result = await session.RunAsync(
+            SessionHarness.Conversation([SessionHarness.EchoTool()]),
+            null,
+            TestContext.Current.CancellationToken,
+            (limit, _) =>
+            {
+                limit.Limit.ShouldBe(LlmBudgetLimit.Turns);
+                return Task.FromResult(BudgetDecision.Continue);
+            });
+
+        result.Outcome.ShouldBe(LlmRunOutcome.Completed);
+    }
+
+    [Fact]
     public void The_defaults_are_sized_for_a_large_changeset()
     {
         // These are user-visible behaviour, so the numbers are pinned rather than assumed.

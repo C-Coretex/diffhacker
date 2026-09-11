@@ -20,10 +20,14 @@ namespace DiffHacker.Core.Knowledge;
 /// </para>
 /// <para>
 /// Two things are deliberate about how it ends. A run that is over the size budget is handed back
-/// once to be shortened and then <b>fails</b>, rather than being truncated to fit: a profile cut
-/// off mid-sentence would misinform every future analysis, quietly, forever. And a cancelled run
-/// records what it spent before rethrowing, because the money is gone whether or not the profile
-/// was produced and the user is entitled to know how much.
+/// once to be shortened and, if that does not bring it under, is <b>saved anyway</b> rather than
+/// being truncated or failed: a profile cut off mid-sentence would misinform every future analysis
+/// quietly and forever, and the character budget is the user's own dial (§0.6), not a runaway
+/// guard — discarding a complete, valid profile because it is merely long serves nobody. The
+/// reviewer sees it is oversized from <see cref="ProfileProvenance.DocumentCharacters"/> against
+/// <see cref="ProjectProfile.EffectiveCharacterBudget"/> and can raise the budget or trim it by
+/// hand. And a cancelled run records what it spent before rethrowing, because the money is gone
+/// whether or not the profile was produced and the user is entitled to know how much.
 /// </para>
 /// </summary>
 public sealed partial class ProfileBuilder(
@@ -33,6 +37,7 @@ public sealed partial class ProfileBuilder(
     IProjectProfileStore profiles,
     IGitClient git,
     IToolProgressSink progressSink,
+    IBudgetDecisionPrompt budgetPrompt,
     TimeProvider clock,
     ILogger<ProfileBuilder> logger) : IProfileBuilder
 {
@@ -96,14 +101,16 @@ public sealed partial class ProfileBuilder(
         };
 
         await using var session = await sessions
-            .CreateAsync(provider, LlmBudget.Default, cancellationToken)
+            .CreateAsync(provider, provider.EffectiveBudget, cancellationToken)
             .ConfigureAwait(false);
 
         LlmRunResult run;
 
         try
         {
-            run = await session.RunAsync(conversation, progress, cancellationToken).ConfigureAwait(false);
+            run = await session
+                .RunAsync(conversation, progress, cancellationToken, budgetPrompt.AskAsync)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -142,16 +149,25 @@ public sealed partial class ProfileBuilder(
         {
             OverBudget(logger, size, budget);
 
-            document = await ShortenAsync(document, size, budget, provider, cancellationToken)
+            var shortened = await ShortenAsync(document, size, budget, provider, cancellationToken)
                 .ConfigureAwait(false);
 
-            size = document is null ? int.MaxValue : ProfileBudget.Measure(document);
-
-            if (document is null || size > budget)
+            if (shortened is not null)
             {
-                return await FailAsync(
-                    repositoryPath, provider, startedAt, stopwatch, ProfileFailures.OverBudget,
-                    null, session, recorder, cancellationToken).ConfigureAwait(false);
+                var shortenedSize = ProfileBudget.Measure(shortened);
+
+                // Only kept if it actually helped. A repair that came back the same length, longer,
+                // or unreadable leaves the original — already a complete, valid profile — in place.
+                if (shortenedSize < size)
+                {
+                    document = shortened;
+                    size = shortenedSize;
+                }
+            }
+
+            if (size > budget)
+            {
+                StillOverBudget(logger, size, budget);
             }
         }
 
@@ -346,4 +362,11 @@ public sealed partial class ProfileBuilder(
         Level = LogLevel.Information,
         Message = "Profiling {Repository} was cancelled after {ToolCalls} tool calls.")]
     private static partial void RunCancelled(ILogger logger, string repository, int toolCalls);
+
+    [LoggerMessage(
+        EventId = 6005,
+        Level = LogLevel.Warning,
+        Message = "The profile is still {Actual} characters against a budget of {Budget} after one repair; "
+            + "saving it anyway rather than truncating or failing.")]
+    private static partial void StillOverBudget(ILogger logger, int actual, int budget);
 }

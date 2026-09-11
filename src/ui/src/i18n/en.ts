@@ -173,6 +173,13 @@ export const en = {
       'How large this model’s context is, shown live during a run so you can see a long exploration filling up. DiffHacker ships a table of these and it goes stale, so you can say. Leave it blank to use the table, or to leave the size unknown. It is never a limit: no run is stopped for exceeding it.',
     contextWindowLabel: 'Context window, in tokens',
     contextWindowPlaceholder: '200000',
+    budgetLegend: 'Run limits (optional)',
+    budgetHint:
+      'How much a single run on this model may spend before it pauses to ask whether to keep going, rather than failing outright. Leave either blank to use the default (500 tool calls, 10,000,000 tokens).',
+    maxToolCallsLabel: 'Max tool calls',
+    maxToolCallsPlaceholder: '500',
+    maxTotalTokensLabel: 'Max tokens (input + output)',
+    maxTotalTokensPlaceholder: '10000000',
     testFailed: 'The connection failed.',
     providerSaid: 'The provider said:',
     httpStatus: 'HTTP {status}',
@@ -375,6 +382,24 @@ export const en = {
     contextNotReported: 'not reported',
     contextPruned:
       '{pruned} characters of older tool results have been dropped to make room. The model was told, and can call a tool again.',
+  },
+
+  /**
+   * A run — analysing a change or profiling a repository, both go through the same tool-calling
+   * loop — paused at a configured limit rather than failing outright. Shared between the two
+   * screens for the same reason toolLog is. Nothing partial is ever shown or saved (§0.2.8), so
+   * the body says as much rather than implying there is something to lose by stopping.
+   */
+  budgetPrompt: {
+    title: 'Run paused: {limit} limit reached',
+    limitToolCalls: 'tool-call',
+    limitTokens: 'token',
+    limitTurns: 'turn',
+    limitCost: 'cost',
+    body:
+      '{explanation} So far it has used {toolCalls} tool call(s) and {tokens} token(s), and produced nothing yet. Continue raises this limit and lets it keep going; stopping ends the run now — either way, what it already spent is spent.',
+    continue: 'Continue',
+    stop: 'Stop',
   },
 
   /**
@@ -888,8 +913,6 @@ export const en = {
     profile_repository_unreadable:
       '{path} could not be read as a git working tree. It may have been moved or deleted.',
     profile_run_failed: 'The repository could not be profiled. See log.txt for details.',
-    profile_over_budget:
-      'The model could not fit the profile inside its size budget, even after being asked to shorten it. Raise the budget, or try a model that follows instructions more closely.',
     profile_unreadable_answer:
       'The model answered, but not with something that could be read as a profile. Try again, or use a more capable model.',
     profile_not_found: 'There is no profile for this repository to edit.',

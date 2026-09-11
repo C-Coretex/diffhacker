@@ -3,7 +3,3 @@ Nice to haves:
    like risks, descriptions, grouping modes (get only one), verbosity. If something is disabled - just remove info about it in the prompt 
    and say clearly that this is not needed (so LLM would have less work)
 5. Add user instructions. Add a button help with information, FAQ and step by step guide (not screenshots, real tour in UI)
-10. **Configurable limits**: max tool calls per run, max tokens per run, hard stop with a clear
-   **partial-result explanation** when exceeded.
-11. **Export and import** an analysis result as a file, so a reviewer can hand their analysis to
-   a colleague.

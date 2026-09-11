@@ -55,13 +55,12 @@ function parseRate(input: string, output: string): { input: number; output: numb
 }
 
 /**
- * The context-window override, or undefined for "no override, use the bundled table".
- *
- * A whole positive number of tokens. Anything else is dropped rather than sent — the host rejects a
- * non-positive window with an error, and there is no sense making the user submit a typo to find
- * that out. A window is never fractional, so a decimal is a mistake too.
+ * A whole-number override — context window, tool-call limit, or token limit — or undefined for
+ * "no override, use the bundled default". Anything else is dropped rather than sent: the host
+ * rejects a non-positive value with an error, and there is no sense making the user submit a
+ * typo to find that out. None of these three is ever fractional, so a decimal is a mistake too.
  */
-function parseWindow(value: string): number | undefined {
+function parsePositiveInteger(value: string): number | undefined {
   const parsed = Number.parseInt(value, 10);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
@@ -89,6 +88,8 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
   const [inputCost, setInputCost] = useState(format(profile?.inputCostPerMillion));
   const [outputCost, setOutputCost] = useState(format(profile?.outputCostPerMillion));
   const [contextWindow, setContextWindow] = useState(format(profile?.contextWindowTokens));
+  const [maxToolCalls, setMaxToolCalls] = useState(format(profile?.maxToolCalls));
+  const [maxTotalTokens, setMaxTotalTokens] = useState(format(profile?.maxTotalTokens));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -100,7 +101,9 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
   const baseUrlRequired = providerType === 'openai_compatible';
   const suggestionsId = `${fieldId}-models`;
   const rate = parseRate(inputCost, outputCost);
-  const contextWindowTokens = parseWindow(contextWindow);
+  const contextWindowTokens = parsePositiveInteger(contextWindow);
+  const maxToolCallsOverride = parsePositiveInteger(maxToolCalls);
+  const maxTotalTokensOverride = parsePositiveInteger(maxTotalTokens);
   const modelSuggestions = [...new Set([...(profile?.modelSuggestions ?? []), ...testedModels])];
 
   // Exactly what is on screen right now, tested whether or not it has been saved yet — the same
@@ -139,6 +142,9 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
           // Unlike the rate, this stands alone: half a rate is a wrong number, half a context
           // window is not a thing. Omitted when blank, which clears any override.
           ...(contextWindowTokens === undefined ? {} : { contextWindowTokens }),
+          // Same shape again: each stands alone, and omitted clears the override.
+          ...(maxToolCallsOverride === undefined ? {} : { maxToolCalls: maxToolCallsOverride }),
+          ...(maxTotalTokensOverride === undefined ? {} : { maxTotalTokens: maxTotalTokensOverride }),
         });
 
         setProviders([...result.profiles], result.activeProfileId);
@@ -159,6 +165,8 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
       apiKey,
       rate,
       contextWindowTokens,
+      maxToolCallsOverride,
+      maxTotalTokensOverride,
       t,
       setProviders,
       onDone,
@@ -330,6 +338,41 @@ export function ProviderForm({ profile, onDone }: ProviderFormProps) {
                 placeholder={t('providers.contextWindowPlaceholder')}
                 onChange={(event) => setContextWindow(event.target.value)}
               />
+            </div>
+          </fieldset>
+
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-sm font-medium">{t('providers.budgetLegend')}</legend>
+            <p className="text-muted-foreground text-xs">{t('providers.budgetHint')}</p>
+            <div className="flex gap-3">
+              <div className="flex flex-1 flex-col gap-2">
+                <Label htmlFor={`${fieldId}-max-tool-calls`}>{t('providers.maxToolCallsLabel')}</Label>
+                <Input
+                  id={`${fieldId}-max-tool-calls`}
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  step="1"
+                  value={maxToolCalls}
+                  autoComplete="off"
+                  placeholder={t('providers.maxToolCallsPlaceholder')}
+                  onChange={(event) => setMaxToolCalls(event.target.value)}
+                />
+              </div>
+              <div className="flex flex-1 flex-col gap-2">
+                <Label htmlFor={`${fieldId}-max-tokens`}>{t('providers.maxTotalTokensLabel')}</Label>
+                <Input
+                  id={`${fieldId}-max-tokens`}
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  step="1"
+                  value={maxTotalTokens}
+                  autoComplete="off"
+                  placeholder={t('providers.maxTotalTokensPlaceholder')}
+                  onChange={(event) => setMaxTotalTokens(event.target.value)}
+                />
+              </div>
             </div>
           </fieldset>
 

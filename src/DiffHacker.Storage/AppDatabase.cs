@@ -23,7 +23,7 @@ public sealed partial class AppDatabase : IAsyncDisposable
     /// Bumped whenever <see cref="MigrateAsync"/> gains a step. Stored in the file, so an older
     /// build opening a newer database can say so rather than misreading it.
     /// </summary>
-    private const int CurrentSchemaVersion = 7;
+    private const int CurrentSchemaVersion = 8;
 
     private readonly string _connectionString;
     private readonly ILogger<AppDatabase> _logger;
@@ -321,6 +321,20 @@ public sealed partial class AppDatabase : IAsyncDisposable
             // default again, which is the same honest reading of "remembered per analysis".
             await connection.ExecuteAsync(new CommandDefinition(
                 "ALTER TABLE analyses ADD COLUMN grouping_mode TEXT NULL;",
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+
+        if (version < 8)
+        {
+            // The configurable runaway guards: how many tool calls and tokens a run on this
+            // profile may spend before it pauses to ask whether to continue. Nullable and
+            // additive like every column above — a version-7 row reads back as "no override",
+            // which is exactly LlmBudget.Default.
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                ALTER TABLE provider_profiles ADD COLUMN max_tool_calls   INTEGER NULL;
+                ALTER TABLE provider_profiles ADD COLUMN max_total_tokens INTEGER NULL;
+                """,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
 

@@ -46,6 +46,17 @@
       "type": "integer",
       "minimum": 1,
       "description": "The model's context window in tokens, overriding the bundled model table. Absent to clear the override and fall back to the table. Unlike the cost pair this stands alone — half a rate bills the other half at zero, but half a context window is not a thing. Displayed during a run and never enforced: no budget consults it and no run is stopped for exceeding it."
+    },
+    "maxToolCalls": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Overrides the default tool-call ceiling (500) for a run on this profile. Absent to clear the override and fall back to the default. This is a runaway guard, not a cost control — reaching it pauses the run and asks whether to continue rather than failing it outright."
+    },
+    "maxTotalTokens": {
+      "type": "integer",
+      "format": "int64",
+      "minimum": 1,
+      "description": "Overrides the default token ceiling (10,000,000, input plus output across the whole run) for a run on this profile. Absent to clear the override and fall back to the default. See maxToolCalls."
     }
   }
 }
