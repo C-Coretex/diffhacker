@@ -37,6 +37,7 @@ import { NodeNavigator } from './NodeNavigator';
 import { OpenInEditorButtons } from './OpenInEditorButtons';
 import { ReadingOrderNav } from './ReadingOrderNav';
 import { useReviewMarks } from './useReviewMarks';
+import { useVerticalSplitter } from './useVerticalSplitter';
 
 /**
  * The diff panel — the half of a review that used to happen in another window.
@@ -65,6 +66,12 @@ import { useReviewMarks } from './useReviewMarks';
  * has read the prose and wants the height for code has said something about how they read, not about
  * that one file. It is the same component the hover card draws, so the two cannot drift.
  *
+ * Its height is also draggable, the same way the panel's own width is (`useSplitter`,
+ * `useVerticalSplitter` here): a reviewer weighing a long explanation against a wide diff should be
+ * able to trade one for the other rather than live with whatever fraction of the panel it defaulted
+ * to. `DIFF_EXPLANATION_MIN_CODE` keeps Monaco from being dragged away entirely, the same way
+ * `DIFF_PANEL_MIN_GRAPH` keeps a rail of diagram on screen.
+ *
  * Content comes from two `changeset.fileContent` calls rather than from `changeset.fileDiff`: a
  * `DiffEditor` compares two texts, and the two sides already answer every awkward case requirement 8
  * lists — a deleted file is absent on one side, an added one on the other, and binary and too-large
@@ -80,6 +87,8 @@ export function DiffPanel({ view }: { view: AnalysisView }) {
   const reviewedError = useAppStore((state) => state.reviewedError);
   const fullScreen = useAppStore((state) => state.diffFullScreen);
   const setFullScreen = useAppStore((state) => state.setDiffFullScreen);
+  const explanationHeight = useAppStore((state) => state.diffExplanationHeight);
+  const setExplanationHeight = useAppStore((state) => state.setDiffExplanationHeight);
 
   const marks = useReviewMarks(view.repositoryPath);
 
@@ -88,6 +97,9 @@ export function DiffPanel({ view }: { view: AnalysisView }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const editor = useRef<Monaco.editor.IStandaloneDiffEditor | null>(null);
+  const panel = useRef<HTMLDivElement>(null);
+
+  const explanationSplitter = useVerticalSplitter(panel, explanationHeight, setExplanationHeight);
 
   const node = useMemo(
     () => view.nodes.find((candidate) => candidate.id === nodeId),
@@ -196,6 +208,7 @@ export function DiffPanel({ view }: { view: AnalysisView }) {
 
   return (
     <section
+      ref={panel}
       className="flex h-full min-h-0 flex-col overflow-hidden"
       data-testid="diff-panel"
       data-node-id={node.id}
@@ -272,11 +285,35 @@ export function DiffPanel({ view }: { view: AnalysisView }) {
       </div>
 
       {/*
-        Requirement 4 and requirement 5, below the code and always on screen. Scrolls on its own so
-        a long explanation never takes the diff's height, and never pushes the navigation off the
-        bottom of a panel the reviewer is trying to leave.
+        The divider that trades code height for explanation height, and back. A separator rather
+        than a button, the same as the panel's own: it only moves, and it has no state of its own to
+        announce beyond the drag in progress.
       */}
-      <div className="max-h-[45%] shrink-0 overflow-y-auto border-t border-border">
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label={t('analysis.diff.resizeExplanationHandle')}
+        data-testid="diff-explanation-splitter"
+        data-dragging={explanationSplitter.dragging ? 'true' : 'false'}
+        onPointerDown={explanationSplitter.onPointerDown}
+        className={
+          explanationSplitter.dragging
+            ? 'h-1 shrink-0 cursor-row-resize bg-primary'
+            : 'h-1 shrink-0 cursor-row-resize bg-border hover:bg-primary/60'
+        }
+      />
+
+      {/*
+        Requirement 4 and requirement 5, below the code and always on screen. Scrolls on its own so
+        a long explanation never takes more than the reviewer dragged it to, and never pushes the
+        navigation off the bottom of a panel the reviewer is trying to leave. The height is theirs to
+        set — a long explanation or a cramped laptop screen wants a different split than the default.
+      */}
+      <div
+        data-testid="diff-explanation-panel"
+        className="shrink-0 overflow-y-auto border-t border-border"
+        style={{ height: explanationHeight }}
+      >
         <Explanation node={node} />
         <NodeNavigator view={view} nodeId={node.id} />
 

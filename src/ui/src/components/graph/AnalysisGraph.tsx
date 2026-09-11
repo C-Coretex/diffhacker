@@ -26,7 +26,8 @@ import {
 } from '@/graph/flowGraph';
 import { MERGED_HEADER, MERGED_ROW_HEIGHT, NODE_HEIGHT, NODE_WIDTH } from '@/graph/elkOptions';
 import { mergePlan } from '@/graph/implementationGroups';
-import { projectColourStyle } from '@/graph/palette';
+import { assignProjectColours, projectColourStyle } from '@/graph/palette';
+import { applyProjectFilter, hiddenFileCount } from '@/graph/projectFilter';
 import { createWorkerLayout, inProcessLayout, type LayoutRunner } from '@/graph/runLayout';
 import { searchGraph } from '@/graph/search';
 import { useAppStore } from '@/store/appStore';
@@ -38,6 +39,7 @@ import { GraphActionsProvider, type GraphActions } from './graphActions';
 import { GraphHoverCard } from './GraphHoverCard';
 import { GraphToolbar } from './GraphToolbar';
 import { ContainerHoverCard, EdgeHoverCard, NodeHoverCard } from './hoverCards';
+import { ProjectFilterBanner } from './ProjectFilter';
 import { ImplementationGroupNode } from './ImplementationGroupNode';
 import { useEdgePan } from './useEdgePan';
 import { useHoverTarget, type HoverTarget } from './useHoverTarget';
@@ -99,6 +101,9 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
   const diffPanelWidth = useAppStore((state) => state.diffPanelWidth);
   const diffFullScreen = useAppStore((state) => state.diffFullScreen);
   const mergeImplementations = useAppStore((state) => state.graphMergeImplementations);
+  const hiddenProjects = useAppStore((state) => state.graphHiddenProjects);
+  const toggleProject = useAppStore((state) => state.toggleProjectHidden);
+  const showAllProjects = useAppStore((state) => state.showAllProjects);
 
   /** The width the last centring was done at, so a drag pans without animating. */
   const lastWidth = useRef(diffPanelWidth);
@@ -189,10 +194,21 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
 
   useEffect(() => () => runnerRef.current?.dispose(), []);
 
+  // Colours are ranked by node count (`palette.ts`), so they are computed once from the whole
+  // analysis and threaded through everything downstream — a project's hue must not change just
+  // because hiding another one changed the count it is ranked against.
+  const colours = useMemo(() => assignProjectColours(view), [view]);
+
+  // The reviewer's own decluttering, never the analysis: `applyProjectFilter` returns `view`
+  // unchanged when nothing is hidden, and every surface outside this one still gets the real thing.
+  // @see projectFilter.ts
+  const filteredView = useMemo(() => applyProjectFilter(view, hiddenProjects), [view, hiddenProjects]);
+  const hiddenFiles = useMemo(() => hiddenFileCount(view, hiddenProjects), [view, hiddenProjects]);
+
   // Highlight is derived rather than stored: the search box already holds the query, and a second
   // copy of "what matches" is a second thing to keep in step.
   const highlight = useMemo(() => {
-    const hits = searchGraph(view, search);
+    const hits = searchGraph(filteredView, search);
     return {
       matchedNodeIds: new Set(hits.map((hit) => hit.nodeId)),
       matchedContainerIds: new Set(hits.filter((hit) => hit.field === 'containerTitle').map((hit) => hit.containerId)),
@@ -200,13 +216,13 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
       currentNodeId: currentNodeId ?? null,
       reviewedNodeIds,
     };
-  }, [view, search, focusedNodeId, currentNodeId, reviewedNodeIds]);
+  }, [filteredView, search, focusedNodeId, currentNodeId, reviewedNodeIds]);
 
   // Which boxes stand for an abstraction and its implementations. A change of layout like collapsing
   // a container is, and relaid out the same way; the analysis underneath is untouched.
-  const merge = useMemo(() => mergePlan(view, mergeImplementations), [view, mergeImplementations]);
+  const merge = useMemo(() => mergePlan(filteredView, mergeImplementations), [filteredView, mergeImplementations]);
 
-  const elkGraph = useMemo(() => buildElkGraph(view, collapsed, merge), [view, collapsed, merge]);
+  const elkGraph = useMemo(() => buildElkGraph(filteredView, collapsed, merge), [filteredView, collapsed, merge]);
 
   useEffect(() => {
     let cancelled = false;
@@ -219,7 +235,7 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
         // A layout that finished after the reviewer collapsed something else would paint the
         // older arrangement over the newer one.
         if (cancelled) return;
-        setGraph(toFlowGraph(view, laidOut, collapsed, highlight, merge));
+        setGraph(toFlowGraph(filteredView, laidOut, collapsed, highlight, merge, colours));
         setLayoutError(null);
         setLaidOutOnce(true);
       })
@@ -235,7 +251,7 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
     // relaying out three hundred nodes on every keystroke in the search box is the one thing
     // guaranteed to make this feel slow. The effect below repaints for it instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [elkGraph, view, collapsed, merge]);
+  }, [elkGraph, filteredView, collapsed, merge, colours]);
 
   // Highlighting without relayout: same positions, new node data.
   useEffect(() => {
@@ -245,10 +261,12 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
 
   const focusNode = useCallback(
     (nodeId: string) => {
-      const node = view.nodes.find((candidate) => candidate.id === nodeId);
+      // From `filteredView`: a search hit is only ever offered for a node the diagram actually
+      // drew, so this is the same lookup the box itself came from.
+      const node = filteredView.nodes.find((candidate) => candidate.id === nodeId);
       if (node) revealNode(nodeId, node.containerId);
     },
-    [view.nodes, revealNode],
+    [filteredView.nodes, revealNode],
   );
 
   /**
@@ -332,12 +350,22 @@ function GraphSurface({ view, onChangeGrouping, groupingBusy }: GraphProps) {
         data-grouping-mode={view.grouping}
       >
         <GraphToolbar
-          view={view}
-          colours={graph.colours}
+          view={filteredView}
+          colours={colours}
+          hiddenProjects={hiddenProjects}
+          onToggleProject={toggleProject}
+          onShowAllProjects={showAllProjects}
           onSelectSearchHit={focusNode}
           onFitView={() => void fitView({ duration: 300 })}
           onChangeGrouping={onChangeGrouping}
           groupingBusy={groupingBusy}
+        />
+
+        <ProjectFilterBanner
+          colours={colours}
+          hidden={hiddenProjects}
+          hiddenFileCount={hiddenFiles}
+          onShowAll={showAllProjects}
         />
 
         <div ref={canvas} className="relative min-h-0 flex-1">

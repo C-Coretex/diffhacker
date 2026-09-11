@@ -9,6 +9,7 @@ import { GraphLegend } from './GraphLegend';
 import { GroupingPicker, groupingBodyKey } from './GroupingPicker';
 import { MergeToggle } from './MergeToggle';
 import { NodeSearch } from './NodeSearch';
+import { ProjectFilterControl } from './ProjectFilter';
 
 /**
  * The strip above the canvas: switch grouping, find a file, fit the whole change on screen, fold
@@ -26,6 +27,9 @@ import { NodeSearch } from './NodeSearch';
 export function GraphToolbar({
   view,
   colours,
+  hiddenProjects,
+  onToggleProject,
+  onShowAllProjects,
   onSelectSearchHit,
   onFitView,
   onChangeGrouping,
@@ -33,6 +37,9 @@ export function GraphToolbar({
 }: {
   view: AnalysisView;
   colours: readonly ProjectColour[];
+  hiddenProjects: ReadonlySet<string>;
+  onToggleProject: (project: string) => void;
+  onShowAllProjects: () => void;
   onSelectSearchHit: (nodeId: string) => void;
   onFitView: () => void;
   onChangeGrouping: (grouping: AnalysisGroupingMode) => void;
@@ -77,6 +84,13 @@ export function GraphToolbar({
       </Button>
 
       <MergeToggle view={view} />
+
+      <ProjectFilterControl
+        colours={colours}
+        hidden={hiddenProjects}
+        onToggle={onToggleProject}
+        onShowAll={onShowAllProjects}
+      />
 
       <div className="ml-auto flex items-center gap-2">
         <span className="text-xs text-muted-foreground">

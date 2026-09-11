@@ -555,6 +555,31 @@ export class AnalysisScreen {
     return this.page.getByRole('button', { name: en.analysis.graph.legend, exact: true });
   }
 
+  // -------------------------------------------------------------- the project filter
+
+  get projectFilterButton(): Locator {
+    return this.page.getByTestId('project-filter-trigger');
+  }
+
+  /** One project's checkbox in the open filter popover. */
+  projectFilterItem(project: string): Locator {
+    return this.page.getByTestId(`project-filter-item-${project}`);
+  }
+
+  /** "Show all", inside the popover — distinct from the banner's own copy of the same button. */
+  get projectFilterShowAllButton(): Locator {
+    return this.page.getByTestId('project-filter-show-all');
+  }
+
+  /** The standing warning that some projects are hidden right now. */
+  get projectFilterBanner(): Locator {
+    return this.page.getByTestId('project-filter-banner');
+  }
+
+  get projectFilterBannerShowAllButton(): Locator {
+    return this.projectFilterBanner.getByTestId('project-filter-banner-show-all');
+  }
+
   /** The live context meter, on the run panel. */
   get contextMeter(): Locator {
     return this.page.getByRole('button', { name: en.toolLog.contextLabel });
@@ -777,6 +802,16 @@ export class AnalysisScreen {
 
   get diffSplitter(): Locator {
     return this.page.getByTestId('diff-splitter');
+  }
+
+  /** The vertical divider between the code and the explanation strip under it. */
+  get diffExplanationSplitter(): Locator {
+    return this.page.getByTestId('diff-explanation-splitter');
+  }
+
+  /** The explanation strip's own resizable box, distinct from `nodeExplanation`'s prose inside it. */
+  get diffExplanationPanel(): Locator {
+    return this.page.getByTestId('diff-explanation-panel');
   }
 
   get degradedNotice(): Locator {

@@ -200,6 +200,18 @@ interface AppState {
   graphDetailsOpen: boolean;
 
   /**
+   * Projects the reviewer has unchecked in the project filter. Empty means nothing is hidden — the
+   * default, and what "show all" restores. Named by what is *hidden* rather than what is shown so an
+   * empty set has one unambiguous meaning; a "shown" set would leave unchecking the last project
+   * indistinguishable from never having filtered at all.
+   *
+   * Reset with the rest of `graphDefaults`: a project name from one analysis means nothing in the
+   * next. Survives a switch of grouping, like `graphMergeImplementations` — which files belong to
+   * which project does not change when the same analysis is redrawn by theme instead of by flow.
+   */
+  graphHiddenProjects: ReadonlySet<string>;
+
+  /**
    * Whether the overview band is expanded past its summary and risk column.
    *
    * Closed by default. What a reviewer needs on screen at all times is what the change does and
@@ -300,6 +312,13 @@ interface AppState {
    */
   diffPanelWidth: number;
 
+  /**
+   * Height of the explanation strip under the code, in pixels. Same reasoning as `diffPanelWidth`:
+   * session state, not persisted, and dragged the same way — the code is what most reviewers want
+   * more of, but a long explanation or a wide risk list is worth trading it for on demand.
+   */
+  diffExplanationHeight: number;
+
   /** Which external editors are available, from `editor.describe`. Undefined until asked. */
   editors?: EditorSettings;
 
@@ -373,6 +392,8 @@ interface AppState {
   setGraphBandOpen(open: boolean): void;
   setGraphOnlyRenderVisible(enabled: boolean): void;
   setGraphMergeImplementations(merge: boolean): void;
+  toggleProjectHidden(project: string): void;
+  showAllProjects(): void;
 
   openDiffFor(nodeId: string, containerId: string): void;
   openContainerDiff(containerId: string, firstNodeId: string): void;
@@ -382,6 +403,7 @@ interface AppState {
   applyReviewedState(nodeIds: readonly string[]): void;
   failReviewed(message: string | undefined): void;
   setDiffPanelWidth(width: number): void;
+  setDiffExplanationHeight(height: number): void;
   setDiffFullScreen(fullScreen: boolean): void;
   setDiffExplanationOpen(open: boolean): void;
   setEditorError(message: string | undefined): void;
@@ -402,6 +424,17 @@ export const DIFF_PANEL_DEFAULT_WIDTH = 720;
 export const DIFF_PANEL_MIN_WIDTH = 420;
 export const DIFF_PANEL_MIN_GRAPH = 260;
 
+/**
+ * How tall the explanation strip under the diff opens, and how it may be dragged.
+ *
+ * `DIFF_EXPLANATION_MIN_CODE` is this feature's own version of `DIFF_PANEL_MIN_GRAPH`: the code is
+ * the reason the panel is open at all, so the tallest the explanation goes still leaves that much of
+ * Monaco on screen.
+ */
+export const DIFF_EXPLANATION_DEFAULT_HEIGHT = 260;
+export const DIFF_EXPLANATION_MIN_HEIGHT = 120;
+export const DIFF_EXPLANATION_MIN_CODE = 160;
+
 /** The graph view's own state, in one place so both reset paths use the same words. */
 const graphDefaults = {
   graphCollapsed: new Set<string>() as ReadonlySet<string>,
@@ -409,6 +442,7 @@ const graphDefaults = {
   graphFocusedNodeId: undefined,
   graphLegendOpen: false,
   graphDetailsOpen: false,
+  graphHiddenProjects: new Set<string>() as ReadonlySet<string>,
   graphOverviewOpen: false,
   graphBandOpen: true,
   diffNodeId: undefined,
@@ -472,6 +506,7 @@ export const useAppStore = create<AppState>((set) => ({
   // are part of it. setAnalysis seeds them from what the host stored rather than clearing them.
   reviewedNodeIds: new Set<string>() as ReadonlySet<string>,
   diffPanelWidth: DIFF_PANEL_DEFAULT_WIDTH,
+  diffExplanationHeight: DIFF_EXPLANATION_DEFAULT_HEIGHT,
 
   // Not in graphDefaults either: this one is how the reviewer reads, not what they are reading.
   diffExplanationOpen: true,
@@ -698,6 +733,15 @@ export const useAppStore = create<AppState>((set) => ({
     set({ graphMergeImplementations });
   },
 
+  toggleProjectHidden: (project) =>
+    set((state) => {
+      const next = new Set(state.graphHiddenProjects);
+      if (!next.delete(project)) next.add(project);
+      return { graphHiddenProjects: next };
+    }),
+
+  showAllProjects: () => set({ graphHiddenProjects: new Set<string>() }),
+
   // Opening a diff is also a navigation, so it expands the container and centres the diagram the same
   // way every other "take me to this file" does. Requirement 6 is the other half of the same set: the
   // node the panel is showing is the node the diagram rings as current.
@@ -761,6 +805,8 @@ export const useAppStore = create<AppState>((set) => ({
   failReviewed: (reviewedError) => set({ reviewedError }),
 
   setDiffPanelWidth: (diffPanelWidth) => set({ diffPanelWidth }),
+
+  setDiffExplanationHeight: (diffExplanationHeight) => set({ diffExplanationHeight }),
 
   setDiffFullScreen: (diffFullScreen) => set({ diffFullScreen }),
 

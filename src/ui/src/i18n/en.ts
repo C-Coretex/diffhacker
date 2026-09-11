@@ -762,6 +762,26 @@ export const en = {
       legendPaletteFull:
         'Only the {count} largest projects get a colour of their own; every box also prints its project name.',
 
+      /**
+       * Filtering by project, unlike the "faded, never hidden" emphasis channel above: unchecking a
+       * project here genuinely removes its files from the diagram — the diff panel, the reading order
+       * and the risk register are unaffected, and the banner says so for as long as it is in effect.
+       */
+      projectFilter: {
+        // Deliberately not the bare word "Projects" — the legend already uses that for its own
+        // heading, and the two controls are visible together once the legend is open.
+        label: 'Filter projects',
+        labelFiltered: 'Filter projects ({count} hidden)',
+        heading: 'Show projects',
+        showAll: 'Show all',
+        noProjects: 'Nothing in this change was attributed to a project, so there is nothing to filter.',
+        fileCount: '{count} files',
+        bannerSingle:
+          'Hiding {project} — {count} files are off the diagram. Nothing was removed from the analysis.',
+        bannerMultiple:
+          'Hiding {count} projects — {files} files are off the diagram. Nothing was removed from the analysis.',
+      },
+
       reviewed: 'Reviewed',
       current: 'Open in the diff panel',
       openDiff: 'Open the diff',
@@ -808,6 +828,7 @@ export const en = {
       previousHunk: 'Previous change',
       nextHunk: 'Next change',
       resizeHandle: 'Drag to resize the diff panel',
+      resizeExplanationHandle: 'Drag to resize the explanation',
       expand: 'Widen the panel',
       collapse: 'Give the diagram its width back',
       fullScreen: 'Full screen',

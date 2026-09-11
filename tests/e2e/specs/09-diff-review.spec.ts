@@ -268,6 +268,28 @@ test('a reviewer reads every kind of file, follows the graph, and their progress
     await analysis.explanationToggle.click();
     await expect(analysis.nodeExplanation).toBeVisible();
 
+    // ------------------------------------------------- the explanation, given more room by dragging
+
+    // Trading code height for explanation height is the whole point of a resizable divider between
+    // them: dragging it up should grow the explanation's own box and shrink Monaco's by roughly the
+    // same amount, not just move a line that does nothing.
+    const explanationBefore = (await analysis.diffExplanationPanel.boundingBox())!;
+    const monacoBefore = (await analysis.monaco.boundingBox())!;
+    const handle = (await analysis.diffExplanationSplitter.boundingBox())!;
+
+    await app.page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await app.page.mouse.down();
+    await app.page.mouse.move(handle.x + handle.width / 2, handle.y - 120, { steps: 8 });
+    await app.page.mouse.up();
+
+    const explanationAfter = (await analysis.diffExplanationPanel.boundingBox())!;
+    const monacoAfter = (await analysis.monaco.boundingBox())!;
+
+    expect(explanationAfter.height).toBeGreaterThan(explanationBefore.height + 60);
+    expect(monacoAfter.height).toBeLessThan(monacoBefore.height - 60);
+
+    await app.shot('the explanation, given more room by dragging');
+
     // Full screen, and the way back out. The diagram is hidden rather than thrown away, so the box
     // that was current is still current when it returns.
     await analysis.fullScreenButton.click();

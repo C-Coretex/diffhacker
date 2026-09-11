@@ -48,6 +48,7 @@ describe('AnalysisGraph', () => {
       graphFocusedNodeId: undefined,
       graphLegendOpen: false,
       graphOnlyRenderVisible: false,
+      graphHiddenProjects: new Set<string>(),
       diffNodeId: undefined,
       reviewedNodeIds: new Set<string>(),
     });
@@ -486,6 +487,34 @@ describe('AnalysisGraph', () => {
     // carries the category on its own.
     expect(within(legend).getByText('DiffHacker.Core')).toBeInTheDocument();
     expect(within(legend).getByText('docs')).toBeInTheDocument();
+  });
+
+  it('hides a project from the diagram, warns while it is hidden, and brings it back', async () => {
+    const user = insideTheCard();
+    renderGraph();
+    await boxes();
+
+    expect(screen.getByTestId('graph-node-src/Notes.md')).toBeInTheDocument();
+    expect(screen.queryByTestId('project-filter-banner')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Filter projects' }));
+    await user.click(screen.getByTestId('project-filter-item-docs'));
+
+    // The node is gone from the diagram, not merely dimmed — and the container that held only that
+    // one node is gone with it, because a container with nothing left in it draws nothing.
+    await waitFor(() => expect(screen.queryByTestId('graph-node-src/Notes.md')).not.toBeInTheDocument());
+    expect(screen.queryByTestId('graph-container-docs')).not.toBeInTheDocument();
+
+    // The other project is unaffected.
+    expect(screen.getByTestId('graph-node-src/Contract.cs')).toBeInTheDocument();
+
+    const banner = await screen.findByTestId('project-filter-banner');
+    expect(within(banner).getByText(/docs/)).toBeInTheDocument();
+
+    await user.click(within(banner).getByRole('button', { name: 'Show all' }));
+
+    await waitFor(() => expect(screen.getByTestId('graph-node-src/Notes.md')).toBeInTheDocument());
+    expect(screen.queryByTestId('project-filter-banner')).not.toBeInTheDocument();
   });
 
   it('opens the diff on a double-click without spending the single one', async () => {

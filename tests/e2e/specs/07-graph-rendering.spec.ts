@@ -146,9 +146,47 @@ test('an analysis renders as a diagram that can be searched, collapsed and expan
 
     await expect(app.page.getByText(en.analysis.graph.legendDirect)).toBeVisible();
     await expect(app.page.getByText(en.analysis.graph.legendConceptual)).toBeVisible();
-    await expect(app.page.getByText(en.analysis.graph.legendProjects)).toBeVisible();
+    // exact: true — the toolbar's own project-filter button reads "Filter projects", a substring
+    // match away from colliding with the legend's heading.
+    await expect(app.page.getByText(en.analysis.graph.legendProjects, { exact: true })).toBeVisible();
 
     await app.shot('the diagram legend');
+
+    // Closes the legend before opening the next popover — otherwise it stays open, and its
+    // portalled content sits over whatever the project filter draws underneath it.
+    await app.page.keyboard.press('Escape');
+
+    // ------------------------------------------------------------ the project filter
+
+    // `docs/` and `src/` have no manifest, so `ProjectLocator` falls back to the top-level
+    // directory — the same two projects `stubTwoClusterResult` already split into two clusters.
+    await analysis.projectFilterButton.click();
+    await analysis.projectFilterItem('docs').click();
+
+    // Off the diagram entirely, not merely dimmed — and its cluster goes with it, because a
+    // cluster with nothing left in it draws nothing.
+    await expect(analysis.graphNode('docs/notes.md')).toHaveCount(0);
+    await expect(analysis.graphNode('docs/changelog.md')).toHaveCount(0);
+    await expect(analysis.graphContainer('first-half')).toHaveCount(0);
+
+    // The other project is unaffected by hiding this one.
+    await expect(analysis.graphNode('src/cache.ts')).toBeVisible();
+    await expect(analysis.graphContainer('second-half')).toBeVisible();
+
+    const banner = analysis.projectFilterBanner;
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText('docs');
+
+    await app.shot('a project filtered off the diagram');
+
+    // The filter popover is still open over the canvas; close it before reaching for the banner's
+    // own button underneath it.
+    await app.page.keyboard.press('Escape');
+
+    await analysis.projectFilterBannerShowAllButton.click();
+
+    await expect(analysis.graphNode('docs/notes.md')).toBeVisible();
+    await expect(banner).toHaveCount(0);
   } finally {
     await provider.stop();
   }

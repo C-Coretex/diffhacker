@@ -120,8 +120,11 @@ export function toFlowGraph(
   collapsed: ReadonlySet<string>,
   highlight: GraphHighlight = NO_HIGHLIGHT,
   merge: MergePlan = NO_MERGE,
+  // Precomputed from the *unfiltered* analysis when the caller has one, so hiding a project never
+  // reshuffles the colours of the ones still on screen — `assignProjectColours` ranks by node count,
+  // and a view with some nodes filtered out is not the count a colour was promised against.
+  colours: readonly ProjectColour[] = assignProjectColours(view),
 ): FlowGraph {
-  const colours = assignProjectColours(view);
   const slots = colourSlots(colours);
   const factsByPath = new Map(view.changedFiles.map((file) => [file.path, file]));
   const containersById = new Map(view.containers.map((container) => [container.id, container]));
