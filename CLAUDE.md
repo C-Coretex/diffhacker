@@ -327,12 +327,19 @@ Run from the repository root.
   states what the field is and the constraint the validator checks; persuasion belongs in the prompt.
   The same rule governs `ProfilePrompt` and `project-profile-document.schema.json`.
 - **Anything re-sent per turn is measured, not eyeballed.** The fixed preamble of an analysis request
-  is the system prompt + the response schema + the ten tool descriptions: ~7,100 tokens, before a
+  is the system prompt + the response schema + the ten tool descriptions: ~7,400 tokens, before a
   single changed-file row — and the schema goes twice, as the response format and again through
   `StructuredOutput.PromptSuffix`, which is why Iteration 11's opt-out strips it rather than
   discarding the answer. `list_changed_files` at 150 rows a page and `ToolText`'s byte caps exist
   for the same reason. Tool descriptions have a 200-character floor (`ToolboxCatalogTests`) — that is
   a floor, not a target, and each still says what its tool will not do and which tool to use instead.
+- **Prose is a Markdown subset we own, drawn by one component.** `lib/markdown.ts` parses exactly
+  what the prompt's Formatting section names (bold, italic, code, lists, fenced code; `*` only, never
+  `_`) into plain objects; `components/analysis/Markdown.tsx` draws them. No package, no HTML, no
+  `href`. A risk is `InlineMarkdown` only. A code span or link naming a node's path opens its diff
+  through `MarkdownReferences`. Anywhere prose is clamped or used as a hint rather than drawn goes
+  through `plainText()`. Widen the grammar in both places or neither. See
+  [docs/decisions.md](docs/decisions.md#formatted-prose).
 - **The analysis result is the model's, unedited.** `AnalysisValidator` reports; it never corrects.
   Errors go back into the same conversation (`LlmConversation.ResultValidator`, two rounds) and then
   fail the run; warnings — cycles above all — travel with the stored result. Nothing partial is ever

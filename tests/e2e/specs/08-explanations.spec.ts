@@ -28,7 +28,12 @@ import { en, fill } from '../src/strings.ts';
 const apiKey = 'sk-e2e-explain-9d31c47ba0e5';
 
 /** Runs an analysis of a small two-cluster change and leaves the diagram on screen. */
-async function analysed(diffhacker: AppFactory, repos: RepoSet, provider: StubProvider) {
+async function analysed(
+  diffhacker: AppFactory,
+  repos: RepoSet,
+  provider: StubProvider,
+  answer: (changed: readonly string[]) => unknown = stubTwoClusterResult,
+) {
   const repo = repos.clean();
   repo.write('src/cache.ts', 'export const cache = () => 0;\n');
   repo.write('src/tenant.ts', 'export type Tenant = string;\n');
@@ -58,7 +63,7 @@ async function analysed(diffhacker: AppFactory, repos: RepoSet, provider: StubPr
   await expect(analysis.emptyNotice).toBeVisible();
 
   const changed = ['docs/changelog.md', 'docs/notes.md', 'src/cache.ts', 'src/tenant.ts'];
-  provider.answers(stubTwoClusterResult(changed));
+  provider.answers(answer(changed));
 
   await analysis.runButton.click();
   await expect(analysis.rerunButton).toBeVisible({ timeout: 30_000 });
@@ -431,6 +436,79 @@ test('the overview across the top collects every risk in the result', async ({
     await expect(
       app.page.getByText(fill(en.analysis.overview.clusterSize, { count: 2 })).first(),
     ).toBeVisible();
+  } finally {
+    await provider.stop();
+  }
+});
+
+/**
+ * The two-cluster answer, with the entry node's prose written the way the prompt now asks for it:
+ * a bold phrase, identifiers in backticks, a list, a code block, and a changed file named by its
+ * path so it can be opened from the text.
+ */
+function withMarkdown(changed: readonly string[]) {
+  const result = stubTwoClusterResult(changed);
+
+  return {
+    ...result,
+    nodes: result.nodes.map((node) =>
+      node.filePath === 'docs/changelog.md'
+        ? {
+            ...node,
+            whatChanged:
+              'The **tenant** is now part of `cacheKey`, in two places:\n- the key itself\n- the eviction scan',
+            howItAffectsOthers: 'Read `src/cache.ts` next, where the key is built.',
+            implementationNotes: 'Every call now reads:\n```ts\ncache(tenant)\n```',
+            risks: ['**Breaks** every caller of `cache` that passes no tenant.'],
+          }
+        : node,
+    ),
+  };
+}
+
+test("the model's Markdown is drawn, and a file it names opens its diff", async ({
+  diffhacker,
+  repos,
+}) => {
+  // Unit tests render the tree in jsdom. What only a real window shows is that it reads as
+  // formatting on a real card — no asterisks, no backticks — and that a citation clicked there
+  // opens the diff through the real bridge, while the WebView stays on diffhacker://app.
+  const provider = await StubProvider.start();
+
+  try {
+    const { app, analysis } = await analysed(diffhacker, repos, provider, withMarkdown);
+
+    const card = await analysis.clickForCard(analysis.graphNode('docs/changelog.md'));
+
+    await expect(card.locator('strong', { hasText: 'tenant' })).toBeVisible();
+    await expect(card.locator('code', { hasText: 'cacheKey' })).toBeVisible();
+    // Scoped to the prose: the risk column beside it is a list of its own.
+    await expect(card.getByTestId('markdown').locator('ul > li')).toHaveCount(2);
+    await expect(card.locator('pre code')).toHaveText('cache(tenant)');
+    await expect(card).not.toContainText('**');
+    await expect(card).not.toContainText('`');
+
+    // A risk takes inline formatting and stays one entry in its own column.
+    await expect(analysis.hoverRisks.locator('strong', { hasText: 'Breaks' })).toBeVisible();
+    await expect(analysis.hoverRisks.getByRole('listitem')).toHaveCount(1);
+
+    // Nothing on the card can take the WebView anywhere.
+    await expect(card.locator('a[href]')).toHaveCount(0);
+
+    await app.shot('the model’s Markdown, drawn on a card');
+
+    const reference = card.getByTestId('markdown-reference').filter({ hasText: 'src/cache.ts' });
+    await expect(reference).toHaveAttribute(
+      'title',
+      fill(en.analysis.markdown.openReference, { path: 'src/cache.ts' }),
+    );
+
+    await reference.click();
+
+    await expect(analysis.diffPanel).toHaveAttribute('data-node-id', 'src/cache.ts');
+    expect(app.page.url()).toMatch(/^diffhacker:\/\/app\//);
+
+    await app.shot('a file named in the prose, opened from it');
   } finally {
     await provider.stop();
   }

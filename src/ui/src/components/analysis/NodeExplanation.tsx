@@ -1,5 +1,6 @@
 import type { AnalysisNodeInfo, ChangedFileFactsInfo } from '@/contracts';
 import { useT } from '@/i18n/useT';
+import { Markdown } from '@/components/analysis/Markdown';
 import { RiskColumn } from '@/components/analysis/RiskList';
 import { cn } from '@/lib/utils';
 
@@ -60,7 +61,7 @@ export function Prose({ label, value }: { label: string; value: string }) {
       <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </h4>
-      <p className="whitespace-pre-wrap text-sm leading-relaxed">{value}</p>
+      <Markdown text={value} className="text-sm leading-relaxed" />
     </div>
   );
 }

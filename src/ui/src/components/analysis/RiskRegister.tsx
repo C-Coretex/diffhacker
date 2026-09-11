@@ -3,6 +3,7 @@ import type { AnalysisView } from '@/contracts';
 import { useT } from '@/i18n/useT';
 import type { ResourceKey } from '@/i18n/translate';
 import { useAppStore } from '@/store/appStore';
+import { InlineMarkdown } from './Markdown';
 
 /** One risk, and where in the result it was written. */
 export interface RegisteredRisk {
@@ -99,7 +100,9 @@ export function RiskRegister({ view }: { view: AnalysisView }) {
                 aria-hidden
               />
               <div className="min-w-0">
-                <p className="text-sm">{risk.text}</p>
+                <p className="text-sm">
+                  <InlineMarkdown text={risk.text} />
+                </p>
                 {risk.nodeId && risk.containerId ? (
                   <button
                     type="button"

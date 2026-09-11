@@ -235,6 +235,44 @@ public sealed partial class AnalysisPromptTests
     }
 
     [Fact]
+    public void The_prompt_names_the_markdown_the_renderer_draws_and_what_it_does_not()
+    {
+        // The renderer understands a subset, not CommonMark. A model told only "Markdown" writes
+        // headings and tables into a card the size of a business card; a model told the subset writes
+        // what will actually be drawn.
+        var prompt = Prompt();
+
+        prompt.ShouldContain("rendered as Markdown");
+        prompt.ShouldContain("fenced code blocks");
+        prompt.ShouldContain("Headings, tables, links, images and HTML are not rendered");
+        prompt.ShouldContain("Titles are plain text");
+
+        // A risk stays one line item in the risk column, never a block of its own.
+        prompt.ShouldContain("A risk is one line: inline formatting only");
+    }
+
+    [Fact]
+    public void The_prompt_says_a_path_in_backticks_becomes_a_way_to_open_that_file()
+    {
+        // The citation the renderer turns into a button only works if the model spells the path the
+        // way the changed-file list does — the same exact match the resolver makes.
+        var prompt = Prompt();
+
+        prompt.ShouldContain("path in backticks");
+        prompt.ShouldContain("spelled exactly as the changed-file list spells it");
+        prompt.ShouldContain("opens that file's diff");
+    }
+
+    [Fact]
+    public void The_prompt_still_ends_by_asking_for_the_document_alone()
+    {
+        // Sections are joined in order, and the formatting section went in after the writing one.
+        // The last thing the model reads should still be what to answer with.
+        Prompt().ShouldEndWith("Answer with the structured document alone.");
+        Prompt(changeClusters: false).ShouldEndWith("Answer with the structured document alone.");
+    }
+
+    [Fact]
     public void The_length_budgets_are_asked_for_rather_than_enforced()
     {
         // The distinction requirement 15 lives or dies on. A model that believes overshooting is

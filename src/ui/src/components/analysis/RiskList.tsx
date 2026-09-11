@@ -1,6 +1,7 @@
 import { TriangleAlertIcon } from 'lucide-react';
 import { useT } from '@/i18n/useT';
 import { cn } from '@/lib/utils';
+import { InlineMarkdown } from './Markdown';
 
 /**
  * A list of risks, and nothing else.
@@ -9,6 +10,9 @@ import { cn } from '@/lib/utils';
  * explanations"* — and it is now drawn in six places: the overview band, the risk register, and the
  * node, edge and container hover cards. One component means one answer to what a risk looks like,
  * and it means a risk can never be rendered as a paragraph inside prose by accident.
+ *
+ * A risk is drawn with inline Markdown only — bold, italic, code, a file it names — and never with
+ * a list or a code block, which would make one entry in the column a paragraph again.
  */
 export function RiskList({
   risks,
@@ -35,7 +39,7 @@ export function RiskList({
             className="mt-0.5 size-3.5 shrink-0 text-warning-foreground"
             aria-hidden
           />
-          <span>{risk}</span>
+          <InlineMarkdown text={risk} />
         </li>
       ))}
     </ul>

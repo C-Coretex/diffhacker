@@ -12,6 +12,7 @@ import { useT } from '@/i18n/useT';
 import { copyText } from '@/lib/clipboard';
 import { useAppStore } from '@/store/appStore';
 import { Badge } from '@/components/ui/badge';
+import { Markdown } from '@/components/analysis/Markdown';
 import { ChangeStats, NodeExplanation } from '@/components/analysis/NodeExplanation';
 import { RiskColumn } from '@/components/analysis/RiskList';
 import { basename } from '@/graph/truncate';
@@ -176,9 +177,11 @@ export function EdgeHoverCard({
                 )}
               </div>
 
-              <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                {edge.explanation || t('analysis.hover.nothingWritten')}
-              </p>
+              {edge.explanation ? (
+                <Markdown text={edge.explanation} className="text-sm leading-relaxed" />
+              ) : (
+                <p className="text-sm leading-relaxed">{t('analysis.hover.nothingWritten')}</p>
+              )}
 
               <p className="break-all font-mono text-[10px] text-muted-foreground">
                 {edge.sourceNodeId} → {edge.targetNodeId}
@@ -216,11 +219,12 @@ export function ContainerHoverCard({
 
       <div className="grid grid-cols-[1.6fr_1fr] gap-3 p-3">
         <div className="flex min-w-0 flex-col gap-2.5">
-          <p className="text-sm leading-relaxed">{container.summary}</p>
+          <Markdown text={container.summary} className="text-sm leading-relaxed" />
           {container.explanation && (
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-              {container.explanation}
-            </p>
+            <Markdown
+              text={container.explanation}
+              className="text-sm leading-relaxed text-muted-foreground"
+            />
           )}
         </div>
 

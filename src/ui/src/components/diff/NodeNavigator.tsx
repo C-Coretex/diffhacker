@@ -4,6 +4,7 @@ import { useT } from '@/i18n/useT';
 import { useAppStore } from '@/store/appStore';
 import { Badge } from '@/components/ui/badge';
 import { clamp } from '@/graph/truncate';
+import { plainText } from '@/lib/markdown';
 import { neighboursOf, type Neighbour } from './neighbours';
 
 /**
@@ -151,7 +152,7 @@ function NeighbourButton({
 
       {neighbour.explanation && (
         <span className="text-[11px] leading-snug text-muted-foreground">
-          {clamp(neighbour.explanation, 160)}
+          {clamp(plainText(neighbour.explanation), 160)}
         </span>
       )}
     </button>

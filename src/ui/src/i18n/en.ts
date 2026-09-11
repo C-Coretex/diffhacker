@@ -511,6 +511,11 @@ export const en = {
       nothingWritten: 'The model wrote nothing here.',
     },
 
+    /** The model's prose, drawn as Markdown. A file it names can be opened from the text. */
+    markdown: {
+      openReference: 'Open the diff of {path}',
+    },
+
     diagnosticsHeading: 'What validation noticed',
     diagnosticsBody:
       'The result passed every rule that would have stopped it. These are the things worth knowing anyway.',

@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { MarkdownReferences } from './analysis/Markdown';
 import { AnalysisOverviewBand } from './AnalysisOverviewBand';
 import { useReviewShortcuts } from './diff/useReviewShortcuts';
 import { useSplitter } from './diff/useSplitter';
@@ -254,12 +255,15 @@ export function AnalysisScreen() {
 
       {analysed && view && (
         <div className="flex min-h-0 flex-1 flex-col">
-          <AnalysisOverviewBand view={view} />
-          <ReviewWorkspace
-            view={view}
-            onChangeGrouping={(grouping) => void changeGrouping(grouping)}
-            groupingBusy={switching}
-          />
+          {/* Every file the model's prose names, wherever it is drawn, opens from the text. */}
+          <MarkdownReferences view={view}>
+            <AnalysisOverviewBand view={view} />
+            <ReviewWorkspace
+              view={view}
+              onChangeGrouping={(grouping) => void changeGrouping(grouping)}
+              groupingBusy={switching}
+            />
+          </MarkdownReferences>
         </div>
       )}
 

@@ -63,7 +63,8 @@ public static class AnalysisPrompt
         changeClusters ? ReadingOrderBoth : ReadingOrderOne,
         RulesShared,
         changeClusters ? RulesBoth : RulesOne,
-        Writing);
+        Writing,
+        Formatting);
 
     private const string Opening =
         """
@@ -322,6 +323,33 @@ public static class AnalysisPrompt
           in an important file. If everything is a 5 you have said nothing.
         - Some files are listed with contents withheld — credentials, key material. Give them a
           node describing the file-level change; do not work around it.
+        """;
+
+    /// <summary>
+    /// What the prose is drawn as. The renderer understands exactly this subset
+    /// (<c>src/ui/src/lib/markdown.ts</c>), so the list here is the grammar, not a style suggestion —
+    /// and a model told "Markdown" without it reaches for headings and tables a business card has no
+    /// room for.
+    /// </summary>
+    private const string Formatting =
+        """
+        ## Formatting — a little Markdown, for the skimming eye
+
+        The overall summary, container summaries and explanations, the four node prose fields, edge
+        explanations and risks are rendered as Markdown — this much of it and no more: **bold**,
+        *italic*, `code`, bullet and numbered lists, and ``` fenced code blocks. Headings, tables,
+        links, images and HTML are not rendered; do not use them. Titles are plain text.
+
+        - A changed file's path in backticks, spelled exactly as the changed-file list spells it,
+          becomes a link that opens that file's diff: `src/Cache/CacheKey.cs`. It is the cheapest
+          way to hand the reader on. Identifiers go in backticks too.
+        - Bold the one phrase a skimming reviewer must not miss, at most once in a field. Bold
+          everywhere is emphasis nowhere.
+        - A list only for genuinely parallel items — the three call sites that changed. Prose
+          otherwise.
+        - Code blocks only in the overall summary and container explanations, a few lines, and only
+          when the code says it better than a sentence. A risk is one line: inline formatting only.
+        - Markup counts toward the lengths above.
 
         Answer with the structured document alone.
         """;

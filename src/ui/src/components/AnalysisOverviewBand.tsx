@@ -5,6 +5,7 @@ import type { ResourceKey } from '@/i18n/translate';
 import { useT } from '@/i18n/useT';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Markdown } from '@/components/analysis/Markdown';
 import { RiskList } from '@/components/analysis/RiskList';
 import { collectRisks, RiskRegister } from '@/components/analysis/RiskRegister';
 import { ReviewProgress } from '@/components/diff/ReviewProgress';
@@ -107,7 +108,7 @@ export function AnalysisOverviewBand({ view }: { view: AnalysisView }) {
 
       {showSummary && (
         <div className="grid grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] gap-6 px-6 pb-3 pt-2">
-          <p className="min-w-0 whitespace-pre-wrap text-sm leading-relaxed">{view.summary}</p>
+          <Markdown text={view.summary} className="text-sm leading-relaxed" />
 
           <section className="flex min-w-0 flex-col gap-2 rounded-md border border-warning/30 bg-warning/10 p-3">
             <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-warning-foreground">
@@ -418,10 +419,10 @@ function Details({ view }: { view: AnalysisView }) {
                 {t('analysis.nodeCount', { count: container.nodeIds.length })}
               </p>
               <h4 className="text-base font-medium">{container.title}</h4>
-              <p className="text-sm text-muted-foreground">{container.summary}</p>
+              <Markdown text={container.summary} className="text-sm text-muted-foreground" />
             </header>
 
-            <p className="whitespace-pre-wrap text-sm leading-relaxed">{container.explanation}</p>
+            <Markdown text={container.explanation} className="text-sm leading-relaxed" />
             <RiskList risks={container.risks} hideWhenEmpty />
 
             <ol className="grid gap-3 lg:grid-cols-2">
@@ -461,7 +462,7 @@ function Details({ view }: { view: AnalysisView }) {
                     <Badge variant="outline">{t('analysis.edgeCrosses')}</Badge>
                   )}
                 </p>
-                <p className="text-muted-foreground">{edge.explanation}</p>
+                <Markdown text={edge.explanation} className="text-muted-foreground" />
                 <RiskList risks={edge.risks} hideWhenEmpty />
               </li>
             ))}
@@ -519,7 +520,9 @@ function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="whitespace-pre-wrap">{value}</dd>
+      <dd>
+        <Markdown text={value} />
+      </dd>
     </div>
   );
 }

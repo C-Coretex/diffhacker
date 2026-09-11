@@ -1,4 +1,5 @@
 import type { AnalysisView } from '@/contracts';
+import { plainText } from '@/lib/markdown';
 
 /** What a hit matched on, so the results can be grouped and the reason shown. */
 export type SearchField = 'path' | 'nodeTitle' | 'containerTitle';
@@ -74,7 +75,8 @@ export function searchGraph(view: AnalysisView, query: string): SearchHit[] {
       nodeId: container.entryNodeId,
       containerId: container.id,
       label: container.title,
-      detail: container.summary,
+      // A one-line hint under the hit, not a place prose is drawn: the markup would show as symbols.
+      detail: plainText(container.summary),
       field: 'containerTitle',
     });
   }

@@ -1,6 +1,4 @@
 Nice to haves:
-1. text is rendered not like text, but in MD format (or something to show bold, code, citations and so on),
-   so it would be easier to read and understand important places. Of course LLM would need to write in such format.
 2. an option in (set default in settings and can override per analysis) to disable specific analysis parts
    like risks, descriptions, grouping modes (get only one), verbosity. If something is disabled - just remove info about it in the prompt 
    and say clearly that this is not needed (so LLM would have less work)
@@ -19,5 +17,3 @@ Nice to haves:
    **partial-result explanation** when exceeded.
 11. **Export and import** an analysis result as a file, so a reviewer can hand their analysis to
    a colleague.
-12. during an analysis show tool reasoning & messages in UI (since we have them in backend anyway)
-   + tool calls should have timestamp and new tool calls should appear at the top (history should be appended from the top)

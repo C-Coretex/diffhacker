@@ -1105,3 +1105,43 @@ The renderer's own view state divides the same way. `graphCollapsed` and `diffCo
 them on a grouping change. The file open in the diff panel, the reviewed marks, the panel width and
 the band folds are node-keyed or presentational and survive — a reviewer who switches grouping while
 reading a file is still reading that file.
+
+## Formatted prose
+
+### The model writes a Markdown subset, and the renderer draws exactly that subset
+
+Every prose field — the overall summary, container summaries and explanations, the four node fields,
+edge explanations and risks — is drawn as Markdown by `components/analysis/Markdown.tsx`, over a
+parser of our own in `lib/markdown.ts`. It understands bold, italic, inline code, bullet and numbered
+lists and fenced code blocks; a heading keeps its words as a bold line, and a table, a link or HTML
+stays text. The prompt's **Formatting** section names that list, so the grammar the parser has to be
+complete for is one we chose.
+
+No package. `react-markdown` with `remark-gfm` is about forty transitive packages to render more than
+we ask for, and every piece of it still has to be turned off again: raw HTML, links that would move
+the WebView off `diffhacker://app`, images the CSP blocks anyway. `markdown-to-jsx` is small, but
+turning HTML off in it is an option somebody has to remember to keep set. A parser that returns plain
+objects, drawn by React, cannot produce markup at all, so it needs no sanitiser.
+
+Three choices in the grammar are deliberate:
+
+- **Only `*` makes emphasis, never `_`.** What a model writes with underscores in it is `snake_case`,
+  `__init__.py` and `_private`, far more often than italics. CommonMark would render `__init__` bold.
+- **Every newline is a line break**, as in a GitHub comment. Analyses stored before this were
+  plain text shown with `white-space: pre-wrap`, and they still render as they did.
+- **A risk gets inline formatting only.** A list or a code block inside one entry would put a
+  paragraph back into the risk column that §0.1 keeps separate.
+
+### A file the prose names opens from the text
+
+A code span or a link whose text is a node's id or file path is drawn as a button that opens that
+file's diff: `openDiffFor`, the same navigation as the card's own button. A trailing `:42`,
+`:12-40` or `#L12` is ignored, and so are a leading `./` and backslashes. A basename alone never
+matches, because `index.ts` names a dozen files and a reference that opened the wrong one would be
+worse than none. `MarkdownReferences` builds one index per screen, and without it every code span
+is text. That is why `plainText()` exists for the places prose is clamped or used as a hint
+rather than drawn: the navigator's edge preview and the search results.
+
+The Formatting section is ~1,150 characters, about 290 tokens a turn. It pays for itself only if
+the model actually cites paths the way the changed-file list spells them, which is why it gives an
+example and says what the citation does.
