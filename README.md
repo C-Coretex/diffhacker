@@ -85,8 +85,9 @@ and the analysis is current again.
   the provider directly for what each run uses.
 - **A local repository with uncommitted changes.** DiffHacker reviews your working tree against
   `HEAD`: staged, unstaged and new files together.
+- **To run it:** install release file
 - **To build it:** the [.NET SDK 10](https://dotnet.microsoft.com/download) and
-  [Node.js 24](https://nodejs.org/). There are no installers yet.
+  [Node.js 24](https://nodejs.org/).
 
 It is built on a cross-platform shell, but so far it has only been tested on **Windows**. macOS and
 Linux should work but are unverified.
