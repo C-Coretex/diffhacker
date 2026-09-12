@@ -41,6 +41,12 @@ public sealed partial class RepositoryWriteTests
         // AppPaths.DiffCacheDirectory — inside the application's own data directory — and checks the
         // containment itself before writing, which is why this entry is not a hole in the rule above.
         ["src/DiffHacker.Host/Editor/HeadBlobExtractor.cs"] = "the extracted HEAD side, in the diff cache",
+
+        // "Delete all local data": wipes the database, secrets, diff cache and log files under
+        // AppPaths.DataDirectory, then leaves a marker for the one file it could not remove — the
+        // active log — to be swept up at the next launch, before logging reopens it.
+        ["src/DiffHacker.Host/Rpc/DataRpcTarget.cs"] = "the database, secret and diff-cache files, and old logs",
+        ["src/DiffHacker.Host/PendingDataWipe.cs"] = "the log directory, finishing a wipe from the previous run",
     };
 
     [Fact]

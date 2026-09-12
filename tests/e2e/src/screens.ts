@@ -133,13 +133,25 @@ export class ChangesetPanel {
     await expect(this.page.getByText(en.changeset.loading)).toBeHidden();
   }
 
-  /** Expands a row's diff and returns the `<pre>` holding it. */
+  /**
+   * Expands a row's diff and returns the Monaco diff editor holding it — the same editor diff the
+   * analysis screen opens a file into, not a unified-diff text dump. For a file with nothing to
+   * render as text (binary, too large), read `diffUnavailable(path)` instead.
+   */
   async showDiff(path: string): Promise<Locator> {
     const row = this.row(path);
     await row.getByRole('button', { name: en.changeset.diff.show }).click();
     await expect(row.getByRole('button', { name: en.changeset.diff.hide })).toBeVisible();
     await expect(row.getByText(en.changeset.diff.loading)).toBeHidden();
-    return row.locator('pre');
+
+    const monaco = row.getByTestId('monaco-diff');
+    await expect(monaco).toBeVisible();
+    return monaco;
+  }
+
+  /** The statement shown in place of an editor diff, for a row already expanded via `showDiff`'s button. */
+  diffUnavailable(path: string): Locator {
+    return this.row(path).getByTestId('diff-unavailable');
   }
 }
 
@@ -329,6 +341,20 @@ export class SettingsScreen {
   async saveAnalysisDefaults(): Promise<void> {
     await this.saveAnalysisDefaultsButton.click();
     await expect(this.analysisDefaults.getByText(en.analysis.parts.saved, { exact: true })).toBeVisible();
+  }
+
+  // --------------------------------------------------------- "delete all local data"
+
+  get deleteAllDataButton(): Locator {
+    return this.page.getByRole('button', { name: en.dataManagement.deleteButton, exact: true });
+  }
+
+  get deleteAllDataConfirmButton(): Locator {
+    return this.page.getByRole('button', { name: en.dataManagement.confirmAction, exact: true });
+  }
+
+  get deleteAllDataDone(): Locator {
+    return this.page.getByText(en.dataManagement.done, { exact: true });
   }
 }
 

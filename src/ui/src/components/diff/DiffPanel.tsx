@@ -30,7 +30,7 @@ import { useTheme } from '@/theme/useTheme';
 import { Badge } from '@/components/ui/badge';
 import { ChangeStats, NodeExplanation } from '@/components/analysis/NodeExplanation';
 import { ContainerStrip } from './ContainerStrip';
-import { describeContent, type DiffContent } from './diffContent';
+import { describeContent, formatBytes, type DiffContent } from './diffContent';
 import { DiffUnavailable } from './DiffUnavailable';
 import { MonacoDiff } from './MonacoDiff';
 import { NodeNavigator } from './NodeNavigator';
@@ -278,7 +278,12 @@ export function DiffPanel({ view }: { view: AnalysisView }) {
                 />
               </div>
             ) : (
-              <DiffUnavailable content={content} node={node} facts={facts} />
+              <DiffUnavailable
+                content={content}
+                path={node.filePath}
+                previousPath={previousPath}
+                status={facts?.status}
+              />
             )}
           </div>
         )}
@@ -586,10 +591,4 @@ function Notices({ content }: { content: DiffContent }) {
       )}
     </div>
   );
-}
-
-/** Bytes as something a person reads. Matches how the changeset panel already phrases a size. */
-export function formatBytes(bytes: number): string {
-  const megabytes = bytes / (1024 * 1024);
-  return megabytes >= 1 ? `${megabytes.toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
 }

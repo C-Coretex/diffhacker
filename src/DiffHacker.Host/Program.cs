@@ -46,6 +46,10 @@ internal static class Program
         // provider profiles and API keys, and must never touch the developer's real ones.
         var paths = ResolvePaths(options);
 
+        // Finishes a "delete all local data" request from the previous run: the log file it left
+        // behind, because it could not remove one Serilog itself still had open.
+        PendingDataWipe.ApplyIfRequested(paths);
+
         using var serilog = LoggingSetup.Create(paths, options.Verbose);
         using var loggerFactory = new SerilogLoggerFactory(serilog);
         var logger = loggerFactory.CreateLogger(typeof(Program));
@@ -212,6 +216,7 @@ internal static class Program
         services.AddSingleton<ProfileRpcTarget>();
         services.AddSingleton<AnalysisRpcTarget>();
         services.AddSingleton<EditorRpcTarget>();
+        services.AddSingleton<DataRpcTarget>();
 
         services.AddSingleton(sp => new RpcBridge(
             sp.GetRequiredService<IAppShell>(),
@@ -226,6 +231,7 @@ internal static class Program
                 sp.GetRequiredService<AnalysisRpcTarget>(),
                 sp.GetRequiredService<EditorRpcTarget>(),
                 sp.GetRequiredService<BudgetPromptRpcTarget>(),
+                sp.GetRequiredService<DataRpcTarget>(),
             ],
             sp.GetRequiredService<ILogger<RpcBridge>>()));
 

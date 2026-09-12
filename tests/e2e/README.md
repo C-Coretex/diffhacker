@@ -105,6 +105,8 @@ specs/
                                          screen leaves them out, and a run override is forgotten
   15-user-guide.spec.ts                  the Help guide followed for real, each step photographed,
                                          and Help reachable from every screen with every image loaded
+  16-delete-all-local-data.spec.ts       the database and a stored key erased, the window closing
+                                         itself, and a fresh launch starting clean
 src/
   appHarness.ts    launches the host, attaches over CDP, screenshots, tears down
   gitFixture.ts    builds real repositories in temp directories

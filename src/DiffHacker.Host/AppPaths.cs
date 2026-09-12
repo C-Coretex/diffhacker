@@ -62,6 +62,14 @@ public sealed class AppPaths
     /// </summary>
     public string DiffCacheDirectory => Path.Combine(DataDirectory, "diff-cache");
 
+    /// <summary>
+    /// Left behind by <c>data.deleteAll</c> when the active log file could not be removed
+    /// because Serilog still held it open. Checked once at the next launch, before
+    /// <see cref="Logging.LoggingSetup"/> opens a new one, so the log directory ends up genuinely
+    /// empty (see <see cref="PendingDataWipe"/>).
+    /// </summary>
+    public string PendingLogWipeMarkerFile => Path.Combine(DataDirectory, ".pending-log-wipe");
+
     public void EnsureCreated()
     {
         Directory.CreateDirectory(DataDirectory);

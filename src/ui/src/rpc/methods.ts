@@ -119,6 +119,8 @@ export const RpcMethods = {
   openInEditor: 'editor.open',
 
   answerBudgetPrompt: 'run.answerBudgetPrompt',
+
+  deleteAllLocalData: 'data.deleteAll',
 } as const;
 
 /**
@@ -482,4 +484,14 @@ export function saveEditorSettings(
  */
 export function openInEditor(client: RpcClient, request: OpenInEditorRequest): Promise<void> {
   return client.call<void>(RpcMethods.openInEditor, request);
+}
+
+/**
+ * Erases every analysis, provider profile and API key, cached diff and log file DiffHacker has
+ * written for this user. Nothing in any reviewed repository is touched — only the application's
+ * own data directory. The host closes the window shortly after this resolves, so nothing here
+ * keeps running against a database it just deleted.
+ */
+export function deleteAllLocalData(client: RpcClient): Promise<void> {
+  return client.call<void>(RpcMethods.deleteAllLocalData);
 }

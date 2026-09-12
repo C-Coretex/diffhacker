@@ -368,6 +368,14 @@ public sealed partial class AppDatabase : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
+    /// <summary>
+    /// Releases every pooled connection this process holds open, so the database file underneath
+    /// them can be deleted. Used only by the "delete all local data" request — this instance goes
+    /// on believing it is initialised afterward, which is harmless because the caller closes the
+    /// application immediately: nothing re-opens a connection against the file that took its place.
+    /// </summary>
+    public static void ClearPools() => SqliteConnection.ClearAllPools();
+
     [LoggerMessage(EventId = 3001, Level = LogLevel.Information, Message = "Migrating the settings database from schema {From} to {To}.")]
     private static partial void MigratingDatabase(ILogger logger, int from, int to);
 }

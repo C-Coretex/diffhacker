@@ -116,9 +116,6 @@ export const en = {
       show: 'Show diff',
       hide: 'Hide diff',
       loading: 'Loading the diff…',
-      binary: 'This file is binary, so there is no text diff to show.',
-      absent: 'There is no diff to show for this file.',
-      tooLarge: 'This diff is {size} and is too large to display here.',
     },
   },
   providers: {
@@ -232,6 +229,20 @@ export const en = {
     save: 'Save editor commands',
     saving: 'Saving…',
     saved: 'Saved.',
+  },
+
+  dataManagement: {
+    heading: 'Delete all local data',
+    description:
+      'Removes everything DiffHacker has stored on this machine: every analysis, your provider profiles and their API keys, cached diffs, and the log files. Nothing in any repository you have reviewed is touched.',
+    deleteButton: 'Delete all local data',
+    confirmTitle: 'Delete all local data?',
+    confirmBody:
+      'This permanently deletes every stored analysis, provider profile, API key and log file. It cannot be undone. DiffHacker closes immediately afterward — reopen it to keep using the app.',
+    confirmCancel: 'Cancel',
+    confirmAction: 'Delete everything',
+    deleting: 'Deleting…',
+    done: 'All local data deleted. DiffHacker is closing now — reopen it when you are ready.',
   },
 
   /**

@@ -87,27 +87,28 @@ test('a reviewer can open a repository, read its changeset and open diffs', asyn
 
   // ---------------------------------------------------------------- a text diff
 
+  // The editor diff — the same Monaco `DiffEditor` the analysis screen opens a file into, not the
+  // unified-diff text dump this screen used to show. Both sides are real code, so there is no
+  // `diff --git` header and no leading `+`/`-` on a line, just the file's own content either side.
   const diff = await changeset.showDiff('src/Web/edited.ts');
-  await expect(diff).toContainText('diff --git a/src/Web/edited.ts b/src/Web/edited.ts');
-  await expect(diff).toContainText('-export const b = 2;');
-  await expect(diff).toContainText('+export const staged = 2;');
-  await expect(diff).toContainText('+export const unstaged = 4;');
+  await expect(diff).toContainText('export const b = 2;');
+  await expect(diff).toContainText('export const staged = 2;');
+  await expect(diff).toContainText('export const unstaged = 4;');
   await app.shot('a text diff, expanded');
 
   // ---------------------------------------------------------------- an untracked file's diff
 
   // Requirement 2: an untracked file's whole content is the added side, even though git will not
-  // diff a file it does not know about.
+  // diff a file it does not know about — the committed side is simply empty.
   const untrackedDiff = await changeset.showDiff('src/Web/brandNew.tsx');
-  await expect(untrackedDiff).toContainText('--- /dev/null');
-  await expect(untrackedDiff).toContainText('+export const New = () => null;');
+  await expect(untrackedDiff).toContainText('export const New = () => null;');
   await app.shot('an untracked file diff, built from the file itself');
 
   // ---------------------------------------------------------------- a binary file's diff
 
   await binaryRow.getByRole('button', { name: en.changeset.diff.show }).click();
-  await expect(binaryRow.getByText(en.changeset.diff.binary)).toBeVisible();
-  await expect(binaryRow.locator('pre')).toHaveCount(0);
+  await expect(changeset.diffUnavailable('assets/logo.png')).toContainText(en.analysis.diff.binaryHeading);
+  await expect(binaryRow.getByTestId('monaco-diff')).toHaveCount(0);
   await app.shot('a binary file states itself instead of dumping bytes');
 
   // ---------------------------------------------------------------- the untracked toggle

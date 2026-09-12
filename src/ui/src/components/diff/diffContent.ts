@@ -88,3 +88,13 @@ export function describeContent(head: FileContentInfo, working: FileContentInfo)
       sides.find((side) => side.usedFallbackEncoding)?.encoding ?? null,
   };
 }
+
+/**
+ * Bytes as something a person reads. Lives here, dependency-free, rather than on `DiffPanel` —
+ * `DiffUnavailable` needs it too, and importing it from a component that also pulls in Monaco's
+ * setup module would drag that whole chunk along for a message that has no editor in it.
+ */
+export function formatBytes(bytes: number): string {
+  const megabytes = bytes / (1024 * 1024);
+  return megabytes >= 1 ? `${megabytes.toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
+}

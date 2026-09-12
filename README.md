@@ -85,7 +85,7 @@ and the analysis is current again.
   the provider directly for what each run uses.
 - **A local repository with uncommitted changes.** DiffHacker reviews your working tree against
   `HEAD`: staged, unstaged and new files together.
-- **To run it:** install release file
+- **To run it:** download portable release files
 - **To build it:** the [.NET SDK 10](https://dotnet.microsoft.com/download) and
   [Node.js 24](https://nodejs.org/).
 
@@ -110,6 +110,11 @@ Then:
 The **[user guide](docs/user-guide.md)** walks through all of it step by step with screenshots, and
 covers reading the diagram, keyboard shortcuts, an FAQ and troubleshooting. The same guide is inside
 the app: press **Help** in the top right corner of any screen.
+
+Publish:
+```terminal
+dotnet publish src/DiffHacker.Host -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish/win-x64
+```
 
 ## Your code and your keys
 

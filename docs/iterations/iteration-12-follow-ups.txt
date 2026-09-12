@@ -1,5 +1,0 @@
-Nice to haves:
-
-
-add icon
-build exe

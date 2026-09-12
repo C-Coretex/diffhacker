@@ -1,11 +1,14 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <RootNamespace>DiffHacker.Host</RootNamespace>
+    <StartupObject>DiffHacker.Host.Program</StartupObject>
+    <AssemblyTitle>Diffhacker</AssemblyTitle>
     <!--
-      Exe rather than WinExe: CI needs the host's stdout to diagnose a failed self-test run.
-      Switching Windows builds to a windowed subsystem belongs with packaging, Iteration 14.
+      WinExe: the old self-test mode this Exe subsystem existed for was removed (see
+      CLAUDE.md, "The renderer self-test was removed"), so nothing reads the host's stdout
+      any more. A console window on launch was a pure leftover.
     -->
   </PropertyGroup>
 
@@ -28,6 +31,9 @@
     -->
     <EmbedUiAssets Condition="'$(EmbedUiAssets)' == '' AND '$(Configuration)' == 'Release'">true</EmbedUiAssets>
     <EmbedUiAssets Condition="'$(EmbedUiAssets)' == ''">false</EmbedUiAssets>
+    <TargetFramework>net10.0</TargetFramework>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
+    <Copyright />
   </PropertyGroup>
 
   <ItemGroup>
@@ -63,11 +69,11 @@
     <UiSource Include="$(UiDir)vite.config.ts" />
     <UiSource Include="$(UiDir)tsconfig*.json" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="icon.ico" />
+  </ItemGroup>
 
-  <Target Name="_InstallUiDependencies"
-          Condition="'$(SkipUiBuild)' != 'true'"
-          Inputs="$(UiDir)package-lock.json"
-          Outputs="$(UiInstallStamp)">
+  <Target Name="_InstallUiDependencies" Condition="'$(SkipUiBuild)' != 'true'" Inputs="$(UiDir)package-lock.json" Outputs="$(UiInstallStamp)">
     <MakeDir Directories="$(UiStampDir)" />
     <Exec Command="npm ci" WorkingDirectory="$(UiDir)" StandardOutputImportance="low" />
     <Touch Files="$(UiInstallStamp)" AlwaysCreate="true" />
@@ -79,11 +85,7 @@
     extension point below runs before references would otherwise resolve. Without it the UI is
     built against the previous generation of the contracts and only notices one build later.
   -->
-  <Target Name="BuildUi"
-          Condition="'$(SkipUiBuild)' != 'true'"
-          DependsOnTargets="ResolveProjectReferences;_InstallUiDependencies"
-          Inputs="@(UiSource)"
-          Outputs="$(UiBuildStamp)">
+  <Target Name="BuildUi" Condition="'$(SkipUiBuild)' != 'true'" DependsOnTargets="ResolveProjectReferences;_InstallUiDependencies" Inputs="@(UiSource)" Outputs="$(UiBuildStamp)">
     <Exec Command="npm run build" WorkingDirectory="$(UiDir)" StandardOutputImportance="high" />
     <Touch Files="$(UiBuildStamp)" AlwaysCreate="true" />
   </Target>
@@ -93,13 +95,9 @@
     and ResGen have already consumed the EmbeddedResource list, so items added there are
     silently dropped and the app ships with zero assets.
   -->
-  <Target Name="_EmbedUi"
-          BeforeTargets="PrepareForBuild"
-          DependsOnTargets="BuildUi"
-          Condition="'$(EmbedUiAssets)' == 'true'">
+  <Target Name="_EmbedUi" BeforeTargets="PrepareForBuild" DependsOnTargets="BuildUi" Condition="'$(EmbedUiAssets)' == 'true'">
 
-    <Error Condition="!Exists('$(UiDistDir)index.html')"
-           Text="The renderer bundle is missing. Expected $(UiDistDir)index.html. Run `npm run build` in src/ui, or build without SkipUiBuild=true." />
+    <Error Condition="!Exists('$(UiDistDir)index.html')" Text="The renderer bundle is missing. Expected $(UiDistDir)index.html. Run `npm run build` in src/ui, or build without SkipUiBuild=true." />
 
     <ItemGroup>
       <_UiAsset Include="$(UiDistDir)**\*.*" />
@@ -113,15 +111,13 @@
       "this page cannot be reached" screen. Hooking this target too late in the build silently
       drops every item, and the only symptom is a blank app.
     -->
-    <Error Condition="'@(_UiAsset)' == ''"
-           Text="No renderer assets were collected from $(UiDistDir). The embed target is running after the resource list has been consumed." />
+    <Error Condition="'@(_UiAsset)' == ''" Text="No renderer assets were collected from $(UiDistDir). The embed target is running after the resource list has been consumed." />
 
-    <Message Importance="normal" Text="Embedding @(_UiAsset->Count()) renderer asset(s) from $(UiDistDir)" />
+    <Message Importance="normal" Text="Embedding @(_UiAsset-&gt;Count()) renderer asset(s) from $(UiDistDir)" />
   </Target>
 
   <!-- Debug builds locate the bundle on disk rather than embedding it. -->
-  <Target Name="_StampUiDistPath" BeforeTargets="PrepareForBuild" DependsOnTargets="BuildUi"
-          Condition="'$(EmbedUiAssets)' != 'true'">
+  <Target Name="_StampUiDistPath" BeforeTargets="PrepareForBuild" DependsOnTargets="BuildUi" Condition="'$(EmbedUiAssets)' != 'true'">
     <ItemGroup>
       <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
         <_Parameter1>DiffHacker.UiDistPath</_Parameter1>

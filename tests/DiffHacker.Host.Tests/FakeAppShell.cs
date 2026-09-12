@@ -31,9 +31,10 @@ internal sealed class FakeAppShell : IAppShell
 
     public void Run(Uri startUrl) => throw new NotSupportedException("The fake shell has no message loop.");
 
-    public void Close()
-    {
-    }
+    /// <summary>How many times <see cref="Close"/> was asked for — "delete all local data" closes exactly once.</summary>
+    public int CloseCalls { get; private set; }
+
+    public void Close() => CloseCalls++;
 
     /// <summary>
     /// What the next <see cref="ShowFolderPickerAsync"/> call returns. Null simulates the user

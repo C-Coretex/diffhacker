@@ -1,11 +1,55 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ChangedFileInfo, ChangesetResult, RepositoryInfo } from '@/contracts';
+import type { ChangedFileInfo, ChangesetResult, FileContentInfo, RepositoryInfo } from '@/contracts';
 import { RpcProvider } from '@/rpc/RpcProvider';
 import { useAppStore } from '@/store/appStore';
 import { FakeTransport } from '@/test/fakeTransport';
 import { ChangesetPanel } from './ChangesetPanel';
+
+/**
+ * Monaco does not run under jsdom — see `DiffPanel.test.tsx` — so it is replaced by a stub that
+ * records what it was asked for. What this panel is responsible for is fetching the right two
+ * sides and handing them to the editor; whether Monaco then draws them is proven for real in the
+ * end-to-end suite.
+ */
+const monacoProps = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }));
+
+vi.mock('./diff/MonacoDiff', () => ({
+  MonacoDiff: (props: Record<string, unknown>) => {
+    monacoProps.current = props;
+    return <div data-testid="monaco-diff" />;
+  },
+}));
+
+function fileContent(overrides: Partial<FileContentInfo> = {}): FileContentInfo {
+  return {
+    kind: 'text',
+    text: 'line one\nline two\n',
+    sizeBytes: 18,
+    encoding: 'utf-8',
+    usedFallbackEncoding: false,
+    ...overrides,
+  };
+}
+
+/** Answers the two `changeset.fileContent` calls a row's diff makes, HEAD first. */
+async function respondWithSides(
+  transport: FakeTransport,
+  head: FileContentInfo,
+  working: FileContentInfo,
+) {
+  await waitFor(() => expect(fileContentRequests(transport)).toHaveLength(2));
+
+  transport.respondTo('changeset.fileContent', head);
+  transport.respondTo('changeset.fileContent', working);
+}
+
+function fileContentRequests(transport: FakeTransport) {
+  return transport.sent
+    .map((raw) => JSON.parse(raw) as { method: string; params: [{ path: string; side: string }] })
+    .filter((request) => request.method === 'changeset.fileContent');
+}
 
 const repository: RepositoryInfo = {
   path: '/repos/alpha',
@@ -85,6 +129,7 @@ async function settleLoad(transport: FakeTransport, result: ChangesetResult) {
 
 describe('ChangesetPanel', () => {
   beforeEach(() => {
+    monacoProps.current = null;
     useAppStore.setState({
       repositoryInfo: repository,
       repository: 'open',
@@ -203,47 +248,91 @@ describe('ChangesetPanel', () => {
     expect(screen.getByText('was src/Core/Analyzer.cs')).toBeInTheDocument();
   });
 
-  it('fetches and shows the diff for a file on demand', async () => {
+  it('fetches both sides on demand and hands them to the editor diff', async () => {
     const transport = new FakeTransport();
     renderPanel(transport);
     await settleLoad(transport, changeset({ files: [modified] }));
 
     await userEvent.click(await screen.findByRole('button', { name: 'Show diff' }));
 
-    await waitFor(() => expect(transport.lastRequest().method).toBe('changeset.fileDiff'));
-    expect(transport.lastRequest().params).toEqual([
-      {
-        repositoryPath: '/repos/alpha',
-        path: 'src/Core/Analyzer.cs',
-        untracked: false,
-      },
-    ]);
+    await waitFor(() => expect(fileContentRequests(transport)).toHaveLength(2));
+    const [head, working] = fileContentRequests(transport);
+    expect(head?.params[0]).toMatchObject({ path: 'src/Core/Analyzer.cs', side: 'head' });
+    expect(working?.params[0]).toMatchObject({ path: 'src/Core/Analyzer.cs', side: 'working_tree' });
 
-    transport.respond({
-      kind: 'text',
-      path: 'src/Core/Analyzer.cs',
-      sizeBytes: 120,
-      unifiedDiff: '@@ -1 +1 @@\n-before\n+after\n',
-    });
+    await respondWithSides(
+      transport,
+      fileContent({ text: 'before\n' }),
+      fileContent({ text: 'after\n' }),
+    );
 
-    expect(await screen.findByText(/\+after/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('monaco-diff')).toBeInTheDocument());
+    expect(monacoProps.current?.content).toMatchObject({ original: 'before\n', modified: 'after\n' });
+
+    // Not the old plain unified-diff text dump — the editor diff, same as the analysis screen's.
+    expect(screen.queryByText(/^@@/)).not.toBeInTheDocument();
   });
 
-  it('says an oversized diff is oversized instead of showing nothing', async () => {
+  it('reads the committed side of a renamed file from the path it had before it moved', async () => {
+    const transport = new FakeTransport();
+    renderPanel(transport);
+
+    await settleLoad(
+      transport,
+      changeset({
+        files: [
+          {
+            ...modified,
+            path: 'src/Core/Renamed.cs',
+            previousPath: 'src/Core/Analyzer.cs',
+            status: 'renamed',
+          },
+        ],
+      }),
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Show diff' }));
+
+    await waitFor(() => expect(fileContentRequests(transport)).toHaveLength(2));
+    const [head, working] = fileContentRequests(transport);
+    expect(head?.params[0]).toMatchObject({ path: 'src/Core/Analyzer.cs', side: 'head' });
+    expect(working?.params[0]).toMatchObject({ path: 'src/Core/Renamed.cs', side: 'working_tree' });
+  });
+
+  it('says an oversized diff is oversized instead of showing nothing, and never mounts an editor', async () => {
     const transport = new FakeTransport();
     renderPanel(transport);
     await settleLoad(transport, changeset({ files: [modified] }));
 
     await userEvent.click(await screen.findByRole('button', { name: 'Show diff' }));
-    await waitFor(() => expect(transport.lastRequest().method).toBe('changeset.fileDiff'));
 
-    transport.respond({
-      kind: 'too_large',
-      path: 'src/Core/Analyzer.cs',
-      sizeBytes: 42_000_000,
-    });
+    await respondWithSides(
+      transport,
+      fileContent({ kind: 'too_large', text: undefined, sizeBytes: 42_000_000 }),
+      fileContent({ kind: 'too_large', text: undefined, sizeBytes: 42_000_000 }),
+    );
 
-    expect(await screen.findByText(/40\.1 MB and is too large/)).toBeInTheDocument();
+    expect(await screen.findByTestId('diff-unavailable')).toBeInTheDocument();
+    expect(screen.getByTestId('diff-unavailable')).toHaveTextContent(/40\.1 MB/);
+    expect(screen.queryByTestId('monaco-diff')).not.toBeInTheDocument();
+  });
+
+  it('shows a binary file as a statement rather than a wall of bytes', async () => {
+    const transport = new FakeTransport();
+    renderPanel(transport);
+    await settleLoad(transport, changeset({ files: [binary] }));
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Show diff' }));
+
+    await respondWithSides(
+      transport,
+      fileContent({ kind: 'binary', text: undefined }),
+      fileContent({ kind: 'binary', text: undefined }),
+    );
+
+    expect(await screen.findByTestId('diff-unavailable')).toBeInTheDocument();
+    expect(screen.getByTestId('diff-unavailable')).toHaveAttribute('data-kind', 'binary');
+    expect(screen.queryByTestId('monaco-diff')).not.toBeInTheDocument();
   });
 
   it('resolves a host error code to a message and never shows the developer detail', async () => {

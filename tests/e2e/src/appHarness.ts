@@ -257,11 +257,39 @@ export class DiffHackerApp {
   }
 
   /**
+   * Whether "delete all local data" left its marker for the next launch to finish removing the
+   * log file it could not delete itself — Serilog was still holding it open at the time.
+   */
+  hasPendingLogWipeMarker(): boolean {
+    return existsSync(join(this.dataDirectory, '.pending-log-wipe'));
+  }
+
+  /**
    * Stops the app and returns the root to relaunch from, so a test can prove that state
    * survives a restart rather than assuming it.
    */
   async stop(): Promise<string> {
     await this.browser.close();
+    await terminateAndWait(this.host);
+    return this.root;
+  }
+
+  /**
+   * Waits for the host to close the window on its own — "delete all local data" schedules this
+   * itself, a moment after the request that triggers it resolves — rather than forcing it the
+   * way {@link stop} does. The assertion this makes possible is that the host really closed the
+   * window, not that the harness did.
+   */
+  async waitUntilClosedByTheHost(timeoutMs = 10_000): Promise<string> {
+    const deadline = Date.now() + timeoutMs;
+    while (this.browser.isConnected() && Date.now() < deadline) {
+      await delay(50);
+    }
+
+    if (this.browser.isConnected()) {
+      throw new Error(`The window was still open after ${timeoutMs}ms.`);
+    }
+
     await terminateAndWait(this.host);
     return this.root;
   }
