@@ -8,14 +8,25 @@ _DiffHacker is a desktop app that takes the uncommitted change in a local reposi
 explain it as a diagram: which files belong together, where to start reading, how each part leads
 to the next, and what could go wrong._
 
-When delegating work to an LLM, one can easily lose overall codebase understanding. Personally, I like to be in control of code I ship, so I read every file that was changed before shipping the change.
-The problem with such an approach appears when many files are changed. Regular GIT clients show the files as list of alphabetically sorted entries.
-However, to properly understand the changes, I need to keep in mind all code dependencies. If an interface was changed, I either need to go straight to the implementation file, which might not be the next in the list, or I have to remember that the interface was changed while I'm reading other files, until I open the implementation file.
+To use the app:
+  1. Download the portable [DiffHacker.exe](https://github.com/C-Coretex/diffhacker/releases/tag/v1.0.0) file
+  2. Add an LLM provider
+  3. Open a repository folder with local diff and click "Analyze"
 
-There are tools that link changed files by dependency. This helps substantially; now instead of reading files in alphabetical order I can read real dependency graphs.
-However, this helps only with direct dependencies. What we do in our heads is conceptually grouping changes into clusters. Even if there is no direct code dependency, changes could be grouped into "logical cases", inside of which there could be multiple changes from multiple projects.
+_[User guide](docs/user-guide.md)_
 
-Why not utilize what LLMs do best: gathering context. That's why I've built this app - to help software engineers like myself to maintain knowledge about the codebase more easily. 
+---
+When delegating work to an LLM, one can easily lose overall codebase understanding. 
+
+Personally, I like to be in control of code I ship, so **I read every file that was changed before shipping the change**.
+The problem with such an approach appears when *many files* are changed. Regular `git` clients show the files as list of alphabetically sorted entries.
+
+However, to properly understand the changes, I need to **keep in mind all code dependencies**. If an *interface* was changed, I either need to go straight to the *implementation file*, which might not be the next in the list, or I have to remember that the interface was changed while I'm reading other files, until I open the implementation file.
+
+There are tools that link changed files by dependency. This helps substantially; now instead of reading files in alphabetical order I can read real **dependency graphs**.
+However, this helps only with *direct* dependencies. What we do in our heads is conceptually grouping changes into clusters. Even if there is no direct code dependency, changes could be grouped into "**logical cases**", inside of which there could be multiple changes from multiple projects.
+
+Why not utilize what LLMs do best: gathering context. That's why I've built this app - to help software engineers like myself maintain knowledge about the codebase more easily. 
 
 ### Changed file list:
 <img height="300" alt="image" src="https://github.com/user-attachments/assets/a26ce52f-ca8c-46a3-8c37-75b1288abc1d" />
@@ -96,7 +107,7 @@ and the analysis is current again.
   the provider directly for what each run uses.
 - **A local repository with uncommitted changes.** DiffHacker reviews your working tree against
   `HEAD`: staged, unstaged and new files together.
-- **To run it:** download portable release files
+- **To run it:** download portable release file
 - **To build it:** the [.NET SDK 10](https://dotnet.microsoft.com/download) and
   [Node.js 24](https://nodejs.org/).
 
