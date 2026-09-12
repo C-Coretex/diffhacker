@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.15/save-file-content-result.schema.json",
+  "title": "SaveFileContentResult",
+  "description": "What changeset.saveFileContent wrote.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sizeBytes"],
+  "properties": {
+    "sizeBytes": {
+      "type": "integer",
+      "format": "int64",
+      "description": "Size of the file now on disk, in bytes."
+    }
+  }
+}

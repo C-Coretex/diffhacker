@@ -1,6 +1,7 @@
 using System.Text.Json;
 using DiffHacker.Core.Changes;
 using DiffHacker.Git;
+using DiffHacker.Host.Editor;
 using DiffHacker.Host.Rpc;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -34,7 +35,12 @@ public sealed class ChangesetFullStackTests : IAsyncLifetime
         _bridge = new RpcBridge(
             _shell,
             _notifier,
-            [new ChangesetRpcTarget(git, NullLogger<ChangesetRpcTarget>.Instance)],
+            [
+                new ChangesetRpcTarget(
+                    git,
+                    new RepositoryWorkingTreeWriter(NullLogger<RepositoryWorkingTreeWriter>.Instance),
+                    NullLogger<ChangesetRpcTarget>.Instance),
+            ],
             NullLogger<RpcBridge>.Instance);
 
         _bridge.Start();
@@ -99,6 +105,44 @@ public sealed class ChangesetFullStackTests : IAsyncLifetime
         patch.GetProperty("unifiedDiff").GetString()
             .ShouldNotBeNull()
             .ShouldContain("+export const value = 1;");
+    }
+
+    [Fact]
+    public async Task An_edit_saved_through_the_bridge_is_the_edit_the_next_read_sees()
+    {
+        using var repository = BuildAwkwardWorkingTree();
+        var path = JsonSerializer.Serialize(repository.Root);
+
+        _shell.Receive(
+            $$"""
+            {"jsonrpc":"2.0","id":4,"method":"changeset.fileContent","params":[
+              {"repositoryPath":{{path}},"path":"edited.cs","side":"working_tree"}]}
+            """);
+
+        using var loaded = JsonDocument.Parse(await _shell.NextSentAsync(TestContext.Current.CancellationToken));
+        var before = loaded.RootElement.GetProperty("result").GetProperty("text").GetString()!;
+        var edited = before.Replace("Value;", "Value = 1;", StringComparison.Ordinal);
+
+        _shell.Receive(
+            $$"""
+            {"jsonrpc":"2.0","id":5,"method":"changeset.saveFileContent","params":[
+              {"repositoryPath":{{path}},"path":"edited.cs","content":{{JsonSerializer.Serialize(edited)}},
+               "expectedContent":{{JsonSerializer.Serialize(before)}}}]}
+            """);
+
+        using var saved = JsonDocument.Parse(await _shell.NextSentAsync(TestContext.Current.CancellationToken));
+        saved.RootElement.TryGetProperty("error", out _).ShouldBeFalse();
+
+        _shell.Receive(
+            $$"""
+            {"jsonrpc":"2.0","id":6,"method":"changeset.fileContent","params":[
+              {"repositoryPath":{{path}},"path":"edited.cs","side":"working_tree"}]}
+            """);
+
+        using var after = JsonDocument.Parse(await _shell.NextSentAsync(TestContext.Current.CancellationToken));
+
+        after.RootElement.GetProperty("result").GetProperty("text").GetString()
+            .ShouldBe(edited, "The bridge's own read of the file agrees with what was just saved through it.");
     }
 
     [Fact]

@@ -857,6 +857,14 @@ export const en = {
       leaveContainer: 'Stop reading this cluster as a list',
       dismissEditorError: 'Dismiss',
 
+      /** §0.2.12's second write path: editing the working-tree side directly and saving it. */
+      save: 'Save',
+      saving: 'Saving…',
+      discardTitle: 'Discard the unsaved edit?',
+      discardBody: 'The change you typed into {path} has not been saved. Leaving now discards it.',
+      discardCancel: 'Keep editing',
+      discardConfirm: 'Discard edit',
+
       renamedFrom: 'was {path}',
       region: 'lines {start}–{end}',
       wholeFile: 'the whole file',
@@ -908,7 +916,7 @@ export const en = {
       /** Requirement 10: cheap shortcuts, listed where they can be found. */
       shortcutsHeading: 'Keyboard',
       shortcuts:
-        'J and K walk the reading order · R marks reviewed · C folds the cluster · Escape leaves full screen, then closes this panel',
+        'J and K walk the reading order · R marks reviewed · C folds the cluster · Ctrl/Cmd+S saves an edit · Escape leaves full screen, then closes this panel',
     },
 
     state: {
@@ -934,7 +942,7 @@ export const en = {
     },
   },
 
-  /** The documentation generator, and the one write path in the application. */
+  /** The documentation generator, and the first of the application's two write paths. */
   documentation: {
     heading: 'Project documentation',
     description:
@@ -1159,7 +1167,7 @@ export const en = {
         '- A local repository with uncommitted changes.',
       neverHeading: 'What it never does',
       never:
-        '- **Change your repository.** It never commits, stages, checks out or edits a file. The one exception is the optional documentation export on the repository profile screen, which shows you every file first and writes only when you confirm.\n' +
+        '- **Change your repository on its own.** It never commits, stages or checks out anything, and the LLM analysing your change never edits a file. There are two exceptions, both of them things you do yourself: the optional documentation export on the repository profile screen, which shows you every file first and writes only when you confirm; and typing directly into the diff editor and pressing Save, which is an ordinary text edit to the one file open, never a git operation.\n' +
         '- **Read what it should not.** Files git ignores are invisible to it, and files that usually hold credentials are listed but never opened.\n' +
         '- **Show half a result.** A run produces a complete, checked analysis, or nothing.',
     },
@@ -1384,6 +1392,11 @@ export const en = {
     changeset_repository_unreadable:
       '{path} could not be read as a git working tree. It may have been moved or deleted.',
     changeset_git_failed: 'Git could not read the changes in {path}. See log.txt for details.',
+
+    changeset_save_conflict:
+      '{path} changed on disk since it was opened here, so the edit was not saved. Reopen the diff to see the current file.',
+    changeset_save_outside_repository: 'That file is not inside the repository, so the edit was not saved.',
+    changeset_save_failed: 'The edit to {path} could not be saved. See log.txt for details.',
 
     provider_not_found: 'That provider is no longer configured.',
     provider_key_missing: 'No API key is stored for this provider. Add one and try again.',

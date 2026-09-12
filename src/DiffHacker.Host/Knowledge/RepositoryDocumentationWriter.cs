@@ -7,13 +7,15 @@ using Microsoft.Extensions.Logging;
 namespace DiffHacker.Host.Knowledge;
 
 /// <summary>
-/// The only code in DiffHacker that writes into a user's repository.
+/// One of the two places in DiffHacker that write into a user's repository.
 /// <para>
-/// §0.2.12 makes the application read-only with exactly one exception, and this is it. Everything
-/// else that touches the filesystem writes to the application's own data directory; a repository
-/// is read through git and through <c>File.ReadAllBytes</c> and never through anything that can
-/// create, replace or delete. <c>RepositoryWriteTests</c> asserts that by enumerating the source
-/// and refusing a write API anywhere but here.
+/// §0.2.12 makes the application read-only with exactly two exceptions, and this is the first:
+/// the opt-in documentation export. The second is <see cref="DiffHacker.Host.Editor.RepositoryWorkingTreeWriter"/>,
+/// saving an edit made directly in the diff editor. Everything else that touches the filesystem
+/// writes to the application's own data directory; a repository is otherwise only read, through
+/// git and through <c>File.ReadAllBytes</c>, and never through anything that can create, replace
+/// or delete. <c>RepositoryWriteTests</c> asserts that by enumerating the source and refusing a
+/// write API anywhere but these two.
 /// </para>
 /// <para>
 /// The gate is a token, not a boolean. A preview computes a hash over the target and the exact

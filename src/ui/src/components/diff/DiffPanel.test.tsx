@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileContentInfo } from '@/contracts';
@@ -57,6 +57,19 @@ function fileContentRequests(transport: FakeTransport) {
   return transport.sent
     .map((raw) => JSON.parse(raw) as { method: string; params: [{ path: string; side: string }] })
     .filter((request) => request.method === 'changeset.fileContent');
+}
+
+function saveRequests(transport: FakeTransport) {
+  return transport.sent
+    .map((raw) => JSON.parse(raw) as { method: string; params: [Record<string, unknown>] })
+    .filter((request) => request.method === 'changeset.saveFileContent');
+}
+
+/** What Monaco calls on every keystroke — MonacoDiff itself is stubbed above. */
+function editModifiedText(text: string) {
+  act(() => {
+    (monacoProps.current?.onModifiedChange as (value: string) => void)(text);
+  });
 }
 
 function open(nodeId: string) {
@@ -608,5 +621,134 @@ describe('DiffPanel', () => {
 
     // And the linear path is the whole change again.
     expect(screen.getByTestId('reading-order-position')).toHaveTextContent('4 of 6');
+  });
+
+  it('marks an edit dirty, saves it, and clears the mark once the host confirms', async () => {
+    const transport = new FakeTransport();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+
+    open('src/Caller.cs');
+
+    render(
+      <RpcProvider transport={transport}>
+        <DiffPanel view={testView()} />
+      </RpcProvider>,
+    );
+
+    await respondWithSides(transport, content({ text: 'before\n' }), content({ text: 'after\n' }));
+    await waitFor(() => expect(screen.getByTestId('monaco-diff')).toBeInTheDocument());
+
+    expect(screen.getByTestId('save-edit')).toBeDisabled();
+    expect(screen.queryByTestId('diff-dirty-indicator')).not.toBeInTheDocument();
+
+    editModifiedText('after, edited\n');
+
+    expect(screen.getByTestId('diff-dirty-indicator')).toBeInTheDocument();
+    expect(screen.getByTestId('save-edit')).toBeEnabled();
+
+    await user.click(screen.getByTestId('save-edit'));
+
+    await waitFor(() => expect(saveRequests(transport)).toHaveLength(1));
+
+    expect(saveRequests(transport)[0]!.params[0]).toMatchObject({
+      repositoryPath: testView().repositoryPath,
+      path: 'src/Caller.cs',
+      content: 'after, edited\n',
+      expectedContent: 'after\n',
+      encoding: 'utf-8',
+    });
+
+    transport.respondTo('changeset.saveFileContent', { sizeBytes: 14 });
+
+    await waitFor(() => expect(screen.queryByTestId('diff-dirty-indicator')).not.toBeInTheDocument());
+    expect(screen.getByTestId('save-edit')).toBeDisabled();
+  });
+
+  it('shows the host refusal when a save conflicts, and leaves the edit dirty to retry', async () => {
+    const transport = new FakeTransport();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+
+    open('src/Caller.cs');
+
+    render(
+      <RpcProvider transport={transport}>
+        <DiffPanel view={testView()} />
+      </RpcProvider>,
+    );
+
+    await respondWithSides(transport, content(), content());
+    await waitFor(() => expect(screen.getByTestId('monaco-diff')).toBeInTheDocument());
+
+    editModifiedText('edited\n');
+    await user.click(screen.getByTestId('save-edit'));
+
+    await waitFor(() => expect(saveRequests(transport)).toHaveLength(1));
+    transport.respondWithError('changeset_save_conflict', { path: 'src/Caller.cs' });
+
+    expect(await screen.findByTestId('save-error')).toHaveTextContent(
+      en.error.changeset_save_conflict.replace('{path}', 'src/Caller.cs'),
+    );
+
+    // Refused, not silently accepted: the mark stays so the reviewer knows to do something about it.
+    expect(screen.getByTestId('diff-dirty-indicator')).toBeInTheDocument();
+  });
+
+  it('asks before discarding an unsaved edit when the panel is closed', async () => {
+    const transport = new FakeTransport();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+
+    open('src/Caller.cs');
+
+    render(
+      <RpcProvider transport={transport}>
+        <DiffPanel view={testView()} />
+      </RpcProvider>,
+    );
+
+    await respondWithSides(transport, content(), content());
+    await waitFor(() => expect(screen.getByTestId('monaco-diff')).toBeInTheDocument());
+
+    editModifiedText('edited\n');
+    await user.click(screen.getByTestId('close-diff'));
+
+    // Not closed yet: the confirmation stands in for the navigation until answered.
+    expect(await screen.findByText(en.analysis.diff.discardTitle)).toBeInTheDocument();
+    expect(useAppStore.getState().diffNodeId).toBe('src/Caller.cs');
+
+    await user.click(screen.getByText(en.analysis.diff.discardCancel));
+
+    expect(screen.queryByText(en.analysis.diff.discardTitle)).not.toBeInTheDocument();
+    expect(useAppStore.getState().diffNodeId).toBe('src/Caller.cs');
+
+    await user.click(screen.getByTestId('close-diff'));
+    await user.click(screen.getByTestId('diff-confirm-discard'));
+
+    expect(useAppStore.getState().diffNodeId).toBeUndefined();
+  });
+
+  it('asks before discarding an unsaved edit when another file is opened, then opens it', async () => {
+    const transport = new FakeTransport();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+
+    open('src/Hub.cs');
+
+    render(
+      <RpcProvider transport={transport}>
+        <DiffPanel view={fanInFanOutView()} />
+      </RpcProvider>,
+    );
+
+    await respondWithSides(transport, content(), content());
+    await waitFor(() => expect(screen.getByTestId('node-navigator')).toBeInTheDocument());
+
+    editModifiedText('edited\n');
+    await user.click(screen.getByTestId('neighbour-src/Down2.cs'));
+
+    expect(await screen.findByText(en.analysis.diff.discardTitle)).toBeInTheDocument();
+    expect(useAppStore.getState().diffNodeId).toBe('src/Hub.cs');
+
+    await user.click(screen.getByTestId('diff-confirm-discard'));
+
+    expect(useAppStore.getState().diffNodeId).toBe('src/Down2.cs');
   });
 });

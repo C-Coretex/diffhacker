@@ -1,0 +1,3 @@
+1. in the diff when clicking side by side button, nothing changes. The diff still shows inline
+2. add an ability to ask follow up small questions in the side panel. The reply should be small and fast
+3. add additional instructions for analysis by user

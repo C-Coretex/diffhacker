@@ -897,6 +897,31 @@ export class AnalysisScreen {
     return this.editorError.getByRole('button', { name: en.analysis.diff.dismissEditorError });
   }
 
+  // ----------------------------------------- §0.2.12's second write path: editing and saving
+
+  /** The working-tree side of the diff — the only side a reviewer can type into. */
+  get diffEditableSide(): Locator {
+    return this.monaco.locator('.modified-in-monaco-diff-editor');
+  }
+
+  get saveEditButton(): Locator {
+    return this.page.getByTestId('save-edit');
+  }
+
+  /** Present only while the open file has an edit that has not been saved. */
+  get diffDirtyIndicator(): Locator {
+    return this.page.getByTestId('diff-dirty-indicator');
+  }
+
+  get saveError(): Locator {
+    return this.page.getByTestId('save-error');
+  }
+
+  /** The confirmation asked before an unsaved edit is discarded by leaving the file. */
+  get discardConfirmButton(): Locator {
+    return this.page.getByTestId('diff-confirm-discard');
+  }
+
   get readingOrderPosition(): Locator {
     return this.page.getByTestId('reading-order-position');
   }

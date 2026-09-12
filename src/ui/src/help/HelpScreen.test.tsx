@@ -148,7 +148,9 @@ describe('HelpScreen', () => {
     render(<HelpScreen />);
 
     expect(screen.getByRole('heading', { name: en.help.about.neverHeading })).toBeInTheDocument();
-    expect(screen.getByText('Change your repository.', { selector: 'strong' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Change your repository on its own.', { selector: 'strong' }),
+    ).toBeInTheDocument();
   });
 });
 

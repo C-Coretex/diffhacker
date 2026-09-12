@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test } from '../src/fixtures.ts';
 import { screens } from '../src/screens.ts';
 import { StubProvider, stubReviewResult } from '../src/stubProvider.ts';
@@ -441,6 +442,130 @@ test('a reviewer reads every kind of file, follows the graph, and their progress
     );
 
     await app.shot('the marks, after a restart');
+  } finally {
+    await provider.stop();
+  }
+});
+
+/**
+ * §0.2.12 was amended to add a second exception to DiffHacker's read-only rule: the reviewer can
+ * type directly into the diff editor's working-tree side and save it. Everything here is a real
+ * keystroke in a real Monaco editor, in the same WebView2 window this whole file exists to prove
+ * Monaco can run inside — the save itself is a real file write, checked by reading the fixture
+ * repository straight off disk rather than trusting what the interface claims happened.
+ */
+test('a reviewer edits the diff directly and saves it, with a confirmation before any edit is discarded', async ({
+  diffhacker,
+  repos,
+}) => {
+  const provider = await StubProvider.start();
+
+  try {
+    const repo = repos.reviewable();
+    const changed = [
+      'src/brand-new.ts',
+      'src/new-name.ts',
+      'assets/logo.png',
+      'src/cache.ts',
+      'src/gone.ts',
+      'src/huge.ts',
+    ];
+
+    const app = await diffhacker.launch();
+    const { welcome, settings, analysis } = screens(app.page);
+
+    await settings.openButton.click();
+    await settings.addProvider({
+      name: 'Stub provider',
+      model: 'stub-model',
+      apiKey: 'sk-e2e-diffsave-1a2b3c4d5e',
+      baseUrl: provider.baseUrl,
+    });
+    await settings.backButton.click();
+
+    await welcome.open(repo.root);
+    await analysis.openButton.click();
+
+    provider.answers(stubReviewResult(changed, region));
+
+    await analysis.runButton.click();
+    await expect(analysis.rerunButton).toBeVisible({ timeout: 60_000 });
+    await expect(analysis.graphNode('src/cache.ts')).toBeVisible({ timeout: 30_000 });
+
+    // ------------------------------------------------- typing in, and saving
+
+    await analysis.openDiff('src/cache.ts');
+    await expect(analysis.monaco).toBeVisible({ timeout: 30_000 });
+
+    await expect(analysis.saveEditButton).toBeDisabled();
+    await expect(analysis.diffDirtyIndicator).toHaveCount(0);
+
+    // Focused directly rather than clicked: Monaco's input surface is a native EditContext element
+    // the visible text and the scroll-shadow decoration both sit over, so no on-screen point is
+    // reliably "this element" as far as a synthetic mouse event is concerned.
+    const modifiedInput = analysis.diffEditableSide.getByRole('textbox');
+    await modifiedInput.focus();
+    await app.page.keyboard.press('Control+End');
+    await app.page.keyboard.insertText('export const savedFromE2E = true;\n');
+
+    await expect(analysis.diffDirtyIndicator).toBeVisible();
+    await expect(analysis.saveEditButton).toBeEnabled();
+    await app.shot('an edit typed directly into the diff, unsaved');
+
+    await analysis.saveEditButton.click();
+    await expect(analysis.diffDirtyIndicator).toHaveCount(0);
+    await app.shot('the edit, saved');
+
+    // The proof is on disk, not in the interface's own say-so: this is §0.2.12's second write
+    // path, and the fixture repository is real.
+    expect(readFileSync(repo.path('src/cache.ts'), 'utf8')).toContain(
+      'export const savedFromE2E = true;',
+    );
+
+    // ------------------------------------------------- a save refused: the file moved under it
+
+    await modifiedInput.focus();
+    await app.page.keyboard.press('Control+End');
+    await app.page.keyboard.insertText('export const secondEdit = true;\n');
+    await expect(analysis.diffDirtyIndicator).toBeVisible();
+
+    // Something other than this editor changes the file it is holding open.
+    repo.write('src/cache.ts', 'someone else changed this file entirely\n');
+
+    await analysis.saveEditButton.click();
+
+    await expect(analysis.saveError).toContainText(
+      fill(en.error.changeset_save_conflict, { path: 'src/cache.ts' }),
+    );
+
+    // Refused, not silently accepted: the file on disk is still what the other writer left, and
+    // the editor still shows the reviewer's own edit as unsaved rather than losing it.
+    expect(readFileSync(repo.path('src/cache.ts'), 'utf8')).toBe(
+      'someone else changed this file entirely\n',
+    );
+    await expect(analysis.diffDirtyIndicator).toBeVisible();
+    await app.shot('a save refused because the file changed on disk underneath it');
+
+    // ------------------------------------------------- leaving a dirty file asks first
+
+    await analysis.fitViewButton.click();
+    await analysis.graphNode('src/brand-new.ts').dblclick();
+
+    // Not navigated yet: the confirmation stands in for it until answered.
+    await expect(app.page.getByText(en.analysis.diff.discardTitle)).toBeVisible();
+    await expect(analysis.diffPanel).toHaveAttribute('data-node-id', 'src/cache.ts');
+    await app.shot('a confirmation before an unsaved edit is discarded');
+
+    await app.page.getByText(en.analysis.diff.discardCancel).click();
+    await expect(analysis.diffPanel).toHaveAttribute('data-node-id', 'src/cache.ts');
+    await expect(analysis.diffDirtyIndicator).toBeVisible();
+
+    // Asked again, and this time confirmed: the edit is discarded and the new file opens.
+    await analysis.graphNode('src/brand-new.ts').dblclick();
+    await analysis.discardConfirmButton.click();
+
+    await expect(analysis.diffPanel).toHaveAttribute('data-node-id', 'src/brand-new.ts');
+    await expect(analysis.diffDirtyIndicator).toHaveCount(0);
   } finally {
     await provider.stop();
   }

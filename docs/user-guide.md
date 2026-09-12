@@ -185,7 +185,7 @@ An AI agent, or a long day, can leave hundreds of changed files behind, and a fi
 
 ### What it never does
 
-- **Change your repository.** It never commits, stages, checks out or edits a file. The one exception is the optional documentation export on the repository profile screen, which shows you every file first and writes only when you confirm.
+- **Change your repository on its own.** It never commits, stages or checks out anything, and the LLM analysing your change never edits a file. There are two exceptions, both of them things you do yourself: the optional documentation export on the repository profile screen, which shows you every file first and writes only when you confirm; and typing directly into the diff editor and pressing Save, which is an ordinary text edit to the one file open, never a git operation.
 - **Read what it should not.** Files git ignores are invisible to it, and files that usually hold credentials are listed but never opened.
 - **Show half a result.** A run produces a complete, checked analysis, or nothing.
 

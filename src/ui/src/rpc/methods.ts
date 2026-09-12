@@ -35,6 +35,8 @@ import type {
   RecentRepositoryList,
   ReviewedState,
   SaveEditorSettingsRequest,
+  SaveFileContentRequest,
+  SaveFileContentResult,
   SaveProfileNotesRequest,
   SaveProfileRequest,
   SaveProviderRequest,
@@ -95,6 +97,7 @@ export const RpcMethods = {
   loadChangeset: 'changeset.load',
   fileDiff: 'changeset.fileDiff',
   fileContent: 'changeset.fileContent',
+  saveFileContent: 'changeset.saveFileContent',
 
   getProfile: 'profile.get',
   generateProfile: 'profile.generate',
@@ -257,6 +260,14 @@ export function fileDiff(client: RpcClient, request: FileDiffRequest): Promise<F
 
 export function fileContent(client: RpcClient, request: FileContentRequest): Promise<FileContentInfo> {
   return client.call<FileContentInfo>(RpcMethods.fileContent, request);
+}
+
+/** §0.2.12's second write path: saves an edit made directly in the diff editor. */
+export function saveFileContent(
+  client: RpcClient,
+  request: SaveFileContentRequest,
+): Promise<SaveFileContentResult> {
+  return client.call<SaveFileContentResult>(RpcMethods.saveFileContent, request);
 }
 
 /**

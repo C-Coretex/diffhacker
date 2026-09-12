@@ -32,6 +32,12 @@ export type AnalysisStatus = 'idle' | 'loading' | 'ready' | 'error';
 /** Whether a profile run is in flight. Separate from the profile's own load state. */
 export type ProfileRunStatus = 'idle' | 'running';
 
+/** A diff-panel navigation deferred behind an unsaved-edit confirmation. */
+export type DiffPendingNavigation =
+  | { readonly kind: 'open'; readonly nodeId: string; readonly containerId: string }
+  | { readonly kind: 'openContainer'; readonly containerId: string; readonly firstNodeId: string }
+  | { readonly kind: 'close' };
+
 /**
  * Which screen is showing.
  *
@@ -318,6 +324,23 @@ interface AppState {
   editorError?: string;
 
   /**
+   * Whether the diff editor's working-tree side has an edit that has not been saved.
+   *
+   * Lives here rather than as local state in the diff panel because every way of leaving the file
+   * open — closing the panel, opening another node, opening a whole cluster, `j`/`k`, `Escape` —
+   * is a store action from somewhere else in the tree, and all of them have to ask the same
+   * question before they discard anything the reviewer typed.
+   */
+  diffDirty: boolean;
+
+  /**
+   * A navigation `openDiffFor`, `openContainerDiff` or `closeDiff` deferred because
+   * {@link diffDirty} was true when it was asked for. The panel renders the confirmation; a "keep
+   * editing" answer just clears this without touching the file that's actually open.
+   */
+  diffPendingNavigation?: DiffPendingNavigation;
+
+  /**
    * Ids of the nodes marked reviewed, seeded from the stored analysis and written back through
    * `analysis.setReviewed`. A set rather than an array because the node boxes ask "is this one
    * marked" three hundred times per paint.
@@ -424,6 +447,9 @@ interface AppState {
   openContainerDiff(containerId: string, firstNodeId: string): void;
   leaveContainerQueue(): void;
   closeDiff(): void;
+  setDiffDirty(dirty: boolean): void;
+  confirmDiscardNavigation(): void;
+  cancelPendingNavigation(): void;
   setReviewed(nodeIds: readonly string[], reviewed: boolean): void;
   applyReviewedState(nodeIds: readonly string[]): void;
   failReviewed(message: string | undefined): void;
@@ -473,6 +499,8 @@ const graphDefaults = {
   diffNodeId: undefined,
   diffContainerId: undefined,
   diffFullScreen: false,
+  diffDirty: false,
+  diffPendingNavigation: undefined,
   reviewedError: undefined,
   editorError: undefined,
 } as const;
@@ -495,7 +523,7 @@ const groupingDefaults = {
   diffContainerId: undefined,
 } as const;
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   connection: 'connecting',
 
   screen: 'welcome',
@@ -785,8 +813,17 @@ export const useAppStore = create<AppState>((set) => ({
   // Opening a diff is also a navigation, so it expands the container and centres the diagram the same
   // way every other "take me to this file" does. Requirement 6 is the other half of the same set: the
   // node the panel is showing is the node the diagram rings as current.
+  //
+  // Guarded by diffDirty: this is the one function every "open a different file" gesture in the
+  // app calls — the diagram, the container strip, reading-order navigation, j/k — so gating it here
+  // once covers all of them, rather than teaching each caller to ask first. Opening the *same* node
+  // again is not a navigation (nothing would be discarded) and proceeds regardless.
   openDiffFor: (nodeId, containerId) =>
     set((state) => {
+      if (state.diffDirty && state.diffNodeId !== nodeId) {
+        return { diffPendingNavigation: { kind: 'open', nodeId, containerId } };
+      }
+
       const next = new Set(state.graphCollapsed);
       next.delete(containerId);
 
@@ -799,6 +836,8 @@ export const useAppStore = create<AppState>((set) => ({
         diffContainerId: state.diffContainerId === containerId ? containerId : undefined,
         reviewedError: undefined,
         editorError: undefined,
+        diffDirty: false,
+        diffPendingNavigation: undefined,
       };
     }),
 
@@ -806,6 +845,10 @@ export const useAppStore = create<AppState>((set) => ({
   // fold, the focus ring, the centring — is what opening any file does, because it is one.
   openContainerDiff: (containerId, firstNodeId) =>
     set((state) => {
+      if (state.diffDirty && state.diffNodeId !== firstNodeId) {
+        return { diffPendingNavigation: { kind: 'openContainer', containerId, firstNodeId } };
+      }
+
       const next = new Set(state.graphCollapsed);
       next.delete(containerId);
 
@@ -816,6 +859,8 @@ export const useAppStore = create<AppState>((set) => ({
         diffContainerId: containerId,
         reviewedError: undefined,
         editorError: undefined,
+        diffDirty: false,
+        diffPendingNavigation: undefined,
       };
     }),
 
@@ -824,7 +869,43 @@ export const useAppStore = create<AppState>((set) => ({
   leaveContainerQueue: () => set({ diffContainerId: undefined }),
 
   closeDiff: () =>
-    set({ diffNodeId: undefined, diffContainerId: undefined, diffFullScreen: false }),
+    set((state) =>
+      state.diffDirty
+        ? { diffPendingNavigation: { kind: 'close' } }
+        : {
+            diffNodeId: undefined,
+            diffContainerId: undefined,
+            diffFullScreen: false,
+            diffDirty: false,
+            diffPendingNavigation: undefined,
+          },
+    ),
+
+  setDiffDirty: (diffDirty) => set({ diffDirty }),
+
+  // The reviewer chose "discard" on the confirmation: clear the gate and run the navigation that
+  // asked for it, exactly as it would have run had nothing been dirty.
+  confirmDiscardNavigation: () => {
+    const pending = get().diffPendingNavigation;
+    if (!pending) return;
+
+    set({ diffDirty: false, diffPendingNavigation: undefined });
+
+    switch (pending.kind) {
+      case 'open':
+        get().openDiffFor(pending.nodeId, pending.containerId);
+        break;
+      case 'openContainer':
+        get().openContainerDiff(pending.containerId, pending.firstNodeId);
+        break;
+      case 'close':
+        get().closeDiff();
+        break;
+    }
+  },
+
+  // The reviewer chose "keep editing": the file that was open stays open, exactly as it was.
+  cancelPendingNavigation: () => set({ diffPendingNavigation: undefined }),
 
   // Applied before the call is made, so the checkbox answers the click rather than the network. The
   // host's answer replaces the whole set through applyReviewedState, and a failure puts it back.

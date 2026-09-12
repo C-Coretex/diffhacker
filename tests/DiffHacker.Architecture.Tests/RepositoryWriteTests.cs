@@ -6,15 +6,16 @@ namespace DiffHacker.Architecture.Tests;
 /// Iteration 6's verification step 6, as an assertion: "confirm no other code path in the entire
 /// application writes into the repository — audit it, do not assume it".
 /// <para>
-/// §0.2.12 makes DiffHacker read-only with exactly one exception, the documentation export, and an
-/// audit is worth something once and then rots. This enumerates every source file in the product
-/// and asserts that filesystem-write APIs appear only where they are supposed to.
+/// §0.2.12 makes DiffHacker read-only with exactly two exceptions — the documentation export and
+/// saving an edit made directly in the diff editor — and an audit is worth something once and then
+/// rots. This enumerates every source file in the product and asserts that filesystem-write APIs
+/// appear only where they are supposed to.
 /// </para>
 /// <para>
 /// The allowlist below is short on purpose, and every entry writes into the application's own data
-/// directory rather than into a repository — except the first, which is the exception §0.2.12
-/// names. Adding to it is a change to the product's contract, not a detail: a reviewer who sees
-/// this list grow should ask why.
+/// directory rather than into a repository — except the first two, which are the exceptions
+/// §0.2.12 names. Adding to it is a change to the product's contract, not a detail: a reviewer who
+/// sees this list grow should ask why.
 /// </para>
 /// </summary>
 public sealed partial class RepositoryWriteTests
@@ -24,9 +25,14 @@ public sealed partial class RepositoryWriteTests
     /// </summary>
     private static readonly Dictionary<string, string> Allowed = new(StringComparer.Ordinal)
     {
-        // The one exception in §0.2.12. Gated by a preview the user confirms, and by a token the
+        // The first exception in §0.2.12. Gated by a preview the user confirms, and by a token the
         // host recomputes from the bytes it is about to write.
         ["src/DiffHacker.Host/Knowledge/RepositoryDocumentationWriter.cs"] = "the documentation export",
+
+        // The second exception in §0.2.12. Gated by the text the editor started from rather than
+        // a boolean: a mismatch against what is on disk means the write is refused.
+        ["src/DiffHacker.Host/Editor/RepositoryWorkingTreeWriter.cs"] =
+            "the reviewer's saved edit, to the working-tree file already open in the diff editor",
 
         // The application's own data directory, never a repository.
         ["src/DiffHacker.Storage/Secrets/FileSecretStore.cs"] = "the encrypted secret file",
@@ -57,7 +63,7 @@ public sealed partial class RepositoryWriteTests
     }
 
     [Fact]
-    public void Only_the_documentation_export_can_write_into_a_repository()
+    public void Only_the_two_approved_paths_can_write_into_a_repository()
     {
         var offenders = ProductFiles()
             .Select(static path => (
@@ -69,10 +75,10 @@ public sealed partial class RepositoryWriteTests
             .ToArray();
 
         offenders.ShouldBeEmpty(
-            "DiffHacker is read-only apart from the opt-in documentation export (§0.2.12). "
-            + "A new write path is a change to the product's contract: if it belongs, add it to "
-            + "RepositoryWriteTests.Allowed with a note saying what it writes to, and make sure it "
-            + "is not a repository.");
+            "DiffHacker is read-only apart from the opt-in documentation export and saving an edit "
+            + "made in the diff editor (§0.2.12). A new write path is a change to the product's "
+            + "contract: if it belongs, add it to RepositoryWriteTests.Allowed with a note saying "
+            + "what it writes to, and make sure it is not a repository.");
     }
 
     [Fact]

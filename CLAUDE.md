@@ -19,7 +19,8 @@ walks downstream through consequences.
 
 Click a node → what changed and why. Click an edge → how the relationship changed. Click a
 container's title bar → what the cluster is. Risks live in a separate column from explanations.
-Double-click a node → opens the diff.
+Double-click a node → opens the diff. The diff editor's working-tree side is directly editable —
+saving there writes the file, same as an external editor would (see §0.2.12).
 
 The graph is built **entirely by the LLM**. The app's job is to give the LLM tools to
 explore the repo (search, grep, read, diff, metadata) and to render, persist and navigate
@@ -63,11 +64,16 @@ Non-negotiable, apply to every iteration.
 10. **Any changeset size must work** — 10 files or 1500.
 11. **Local uncommitted changes only** (working tree vs `HEAD`). No branch/commit picker, no
     commit ranges, no GitHub/GitLab integration anywhere in this plan.
-12. **Read-only, one exception.** Never commits/stages/checks out/modifies source files,
-    except the opt-in doc generator in Iteration 6 (explicit confirmation + preview first).
-    Generated documentation lives **in DiffHacker**, not in the repository; writing it out is a
-    separate, explicitly confirmed export, and `RepositoryWriteTests` asserts that one file is the
-    only write path in `src/`.
+12. **Read-only, with two exceptions.** DiffHacker never commits, stages or checks out anything, and
+    the LLM analysing a change never edits a file — `IGitClient` stays read-only and the toolbox
+    cannot write to disk at all (`ToolboxSandboxTests`). Two write paths exist, both gated on the
+    reviewer's own explicit action and neither reachable from analysis: the opt-in doc generator
+    (Iteration 6; explicit confirmation + preview first — generated documentation lives **in
+    DiffHacker**, not in the repository, until that confirmed export writes it out); and saving an
+    edit made directly in the diff editor's working-tree side (an ordinary text edit to the one file
+    already open, gated on the text the editor started from — the write is refused if the file on
+    disk no longer matches it, rather than behind a confirmation dialog). `RepositoryWriteTests`
+    asserts that exactly these two files are the only write paths in `src/`.
 13. **The WebView is a pure renderer.** No network/filesystem access; API keys never reach
     it. All I/O in .NET.
 14. **Production quality from iteration one** — real error handling, tests, logging,
@@ -416,8 +422,22 @@ Run from the repository root.
   [docs/decisions.md](docs/decisions.md#implementation-groups).
 - **The renderer never composes a command line.** `editor.open` takes an editor, a file and a line;
   whether that becomes `--diff` or `--goto` is decided host-side from which sides of the file exist.
-  `HeadBlobExtractor` is the eighth entry on `RepositoryWriteTests.Allowed` and writes only under
-  `AppPaths.DiffCacheDirectory` — §0.2.12's one repository write path is still the doc export alone.
+  `HeadBlobExtractor` is the ninth entry on `RepositoryWriteTests.Allowed` and writes only under
+  `AppPaths.DiffCacheDirectory` — not one of §0.2.12's two repository write paths.
+- **The diff editor's Save writes to the working tree, nowhere else.** `MonacoDiff` leaves the
+  committed (`HEAD`) side permanently `originalEditable: false`; only the working-tree side can be
+  typed into, and only `RepositoryWorkingTreeWriter` (`src/DiffHacker.Host/Editor/`) ever writes what
+  was typed to disk, via `changeset.saveFileContent`. The gate is the exact text the editor started
+  from (`SaveFileContentRequest.expectedContent`), decoded the same way `changeset.fileContent`
+  decoded it, not a hash: a mismatch against what changeset.fileContent last handed the editor refuses
+  the write (`changeset_save_conflict`) rather than overwrite a change made outside DiffHacker.
+  `TextDecoding.Encode` mirrors `Decode` so a save round-trips the file's own encoding — BOM included —
+  instead of silently rewriting it as UTF-8. Every gesture that would discard an unsaved edit (closing
+  the panel, opening another file or a whole cluster, `j`/`k`, `Escape`) is a call into one of three
+  guarded store actions (`openDiffFor`/`openContainerDiff`/`closeDiff` in `appStore.ts`); each defers
+  into `diffPendingNavigation` when `diffDirty` is set rather than performing the navigation, and
+  `DiffPanel` renders the one confirmation dialog that covers all of them. See
+  [docs/decisions.md](docs/decisions.md#the-diff-editors-save-is-the-second-write-path).
 - **Monaco needed no CSP relaxation, and must not be given one.** `monaco/setup.ts` imports
   `editor.api` plus the `basic-languages` contributions — never the barrel or `editor.main`, which
   drag in four language services and their workers. The one worker left is `editor.worker`, built as

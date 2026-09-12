@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffhacker.dev/schema/1.15/save-file-content-request.schema.json",
+  "title": "SaveFileContentRequest",
+  "description": "Parameters of changeset.saveFileContent. Writes the reviewer's edit over the working-tree side of one file, and only that file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repositoryPath", "path", "content", "expectedContent"],
+  "properties": {
+    "repositoryPath": {
+      "type": "string",
+      "description": "Absolute path to the worktree root."
+    },
+    "path": {
+      "type": "string",
+      "description": "Repository-relative path of the file being saved."
+    },
+    "content": {
+      "type": "string",
+      "description": "The full text to write, replacing whatever is on disk."
+    },
+    "expectedContent": {
+      "type": "string",
+      "description": "The working-tree text as the editor last loaded or saved it. The host refuses to write if the file on disk no longer decodes to exactly this text, so an edit never silently overwrites a change made outside DiffHacker."
+    },
+    "encoding": {
+      "type": "string",
+      "description": "The encoding name changeset.fileContent reported for this file's working-tree side, so the save round-trips the file's own encoding instead of rewriting it as plain UTF-8. Omitted or unrecognised falls back to UTF-8 without a byte order mark."
+    }
+  }
+}

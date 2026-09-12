@@ -22,8 +22,10 @@ import {
 } from '@/components/ui/alert-dialog';
 
 /**
- * The documentation generator, and the confirmation in front of the only write path in the
- * application.
+ * The documentation generator, and the confirmation in front of the first of the application's
+ * two write paths — the diff editor's own Save is the other, and needs no such confirmation
+ * because it is an ordinary text edit to the one file already open, not a bulk write into a
+ * repository the reviewer has not seen.
  *
  * The generated documents live in DiffHacker. Writing them into the repository is a separate act,
  * and it happens only after a dialog has shown every file and every byte — with a diff for anything

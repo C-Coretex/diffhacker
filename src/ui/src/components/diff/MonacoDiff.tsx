@@ -33,6 +33,16 @@ export interface MonacoDiffProps {
 
   /** Handed the editor so the panel's hunk buttons can drive it. Called again on every rebuild. */
   readonly onReady?: (editor: Monaco.editor.IStandaloneDiffEditor | null) => void;
+
+  /**
+   * Called with the working-tree side's text on every keystroke, so the panel can track whether
+   * there is an edit to save. Not called for the model Monaco creates itself on load — only for a
+   * change the reviewer made — which is what keeps opening a file from reading as an edit of it.
+   */
+  readonly onModifiedChange?: (text: string) => void;
+
+  /** Ctrl/Cmd+S from inside the editor. The panel decides whether there is anything to save. */
+  readonly onSave?: () => void;
 }
 
 /**
@@ -57,10 +67,20 @@ export function MonacoDiff({
   hideUnchanged,
   theme,
   onReady,
+  onModifiedChange,
+  onSave,
 }: MonacoDiffProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<Monaco.editor.IStandaloneDiffEditor | null>(null);
   const decorations = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
+  const modifiedListener = useRef<Monaco.IDisposable | null>(null);
+
+  // Read from a ref rather than closed over, so the command and the listener registered once
+  // below always call whatever the panel most recently passed, without the editor being rebuilt.
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+  const onModifiedChangeRef = useRef(onModifiedChange);
+  onModifiedChangeRef.current = onModifiedChange;
 
   // Created once for the life of the panel. Every prop below reaches it through an update rather than
   // a rebuild: at a megabyte of source, tearing the editor down and building it again is visible.
@@ -69,17 +89,20 @@ export function MonacoDiff({
 
     const created = monaco.editor.createDiffEditor(host.current, {
       automaticLayout: true,
-      readOnly: true,
+      // The committed side stays read-only always — nothing edits git history — but the reviewer
+      // can type directly into the working-tree side and save it (§0.2.12's second write path).
+      readOnly: false,
       originalEditable: false,
       renderSideBySide: true,
       scrollBeyondLastLine: false,
       renderOverviewRuler: true,
-      // §0.2.12 makes the application read-only. The editor is too, and a context menu offering Cut
-      // on a read-only diff of someone's working tree is a promise it should not appear to make.
-      contextmenu: false,
       fontSize: 12,
       lineNumbersMinChars: 4,
     });
+
+    created
+      .getModifiedEditor()
+      .addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => onSaveRef.current?.());
 
     editor.current = created;
     decorations.current = created.getModifiedEditor().createDecorationsCollection([]);
@@ -88,6 +111,8 @@ export function MonacoDiff({
       // The models go with it. Monaco does not dispose models a diff editor was merely showing, and
       // a review that walks three hundred nodes would otherwise leak three hundred pairs.
       const models = created.getModel();
+      modifiedListener.current?.dispose();
+      modifiedListener.current = null;
       created.dispose();
       models?.original.dispose();
       models?.modified.dispose();
@@ -126,6 +151,14 @@ export function MonacoDiff({
     // what is skipped is tokenising a megabyte through a Monarch grammar on the main thread.
     const language = content.degraded ? 'plaintext' : undefined;
 
+    // Disposed before the new pair is created, not after: a save can leave `path`/`previousPath`
+    // unchanged while `content` still gets a new identity (DiffPanel resets its dirty tracking from
+    // it), and the new models below are addressed by the same URIs as the ones just shown. Monaco's
+    // model service refuses to create a second model at a URI that is still registered, so creating
+    // first and disposing the old pair after would throw on exactly that case.
+    previous?.original.dispose();
+    previous?.modified.dispose();
+
     const original = monaco.editor.createModel(
       content.original ?? '',
       language,
@@ -148,8 +181,12 @@ export function MonacoDiff({
 
     instance.setModel({ original, modified });
 
-    previous?.original.dispose();
-    previous?.modified.dispose();
+    // Attached after setModel, so loading the file itself never reads as an edit of it — only a
+    // change the reviewer makes from here on fires the panel's dirty tracking.
+    modifiedListener.current?.dispose();
+    modifiedListener.current = modified.onDidChangeContent(() => {
+      onModifiedChangeRef.current?.(modified.getValue());
+    });
   }, [content, path, previousPath]);
 
   /**

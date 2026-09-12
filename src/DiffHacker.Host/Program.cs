@@ -180,12 +180,15 @@ internal static class Program
         services.AddSingleton<AnalysisFreshnessChecker>();
 
         // Iteration 10's external editors. The locator caches what it found for the life of the
-        // process, so it is a singleton on purpose rather than by habit; the extractor is the one
-        // thing in the application besides the documentation export that writes a file, and it writes
-        // only under AppPaths.DiffCacheDirectory.
+        // process, so it is a singleton on purpose rather than by habit; the extractor writes a
+        // file too, but only under AppPaths.DiffCacheDirectory, never the repository.
         services.AddSingleton<ExternalEditorLocator>();
         services.AddSingleton<HeadBlobExtractor>();
         services.AddSingleton<ExternalEditorLauncher>();
+
+        // §0.2.12's second write path into a repository: saving an edit made directly in the diff
+        // editor. RepositoryWriteTests.Allowed names both this and RepositoryDocumentationWriter.
+        services.AddSingleton<RepositoryWorkingTreeWriter>();
 
         // The notifier is the bridge's outbound-notification plumbing. ToolProgressNotifier
         // carries the toolbox's report_progress out as analysis.progress, and RunEventNotifier

@@ -899,8 +899,9 @@ can edit the document.
 An external diff tool takes two file paths, and the committed side of a change is a git object.
 `HeadBlobExtractor` materialises it under `AppPaths.DiffCacheDirectory` — the application's own data
 directory, never the repository — which is why it is the eighth entry on `RepositoryWriteTests.Allowed`
-and why that entry says what it writes to. §0.2.12 still holds: the documentation export remains the
-only thing that writes into a repository.
+and why that entry says what it writes to. §0.2.12 still holds: this is not one of the two things
+that write into a repository, the documentation export and saving an edit made in the diff editor
+(see "The diff editor's Save is the second write path" below).
 
 The renderer names an editor, a file and a line; it never composes a command. The host decides
 whether that becomes `--diff` or `--goto` from **which sides actually exist**, so an added file (no
@@ -922,6 +923,53 @@ picking a default from a list of one is a worse interface than a button that is 
 One honest limitation, recorded in the extractor's own doc comment: `GetFileContentAsync` returns
 decoded text, so what lands in the cache is UTF-8 whatever the committed bytes were. For a Latin-1
 file the external editor sees the same characters written a different way. The diff is identical.
+
+### The diff editor's Save is the second write path
+
+§0.2.12 was amended, deliberately, to add a second exception to DiffHacker's read-only rule: the
+reviewer can type directly into the diff editor's working-tree side and press Save. This is not the
+LLM editing anything — the toolbox `IGitClient` sits behind stays read-only, and the write goes
+through a wholly separate class, `RepositoryWorkingTreeWriter`, that `IGitClient` never touches. It is
+the same kind of act as opening the file in VS Code and saving it there; DiffHacker just no longer
+requires leaving the app to do it.
+
+The gate is the text the editor started from, not a boolean or a timestamp. `changeset.saveFileContent`
+carries `expectedContent` — the working-tree text as `changeset.fileContent` last handed it to the
+editor — and the write is refused if the file on disk no longer decodes to exactly that text. This
+mirrors `AnalysisFreshnessCalculator`'s own choice to compare content rather than `mtime` (see "Stale
+means the working tree differs, measured by content" in CLAUDE.md): a reverted edit outside DiffHacker
+compares equal again, which a timestamp could not say, and a real external change is caught even if it
+happened within the same second.
+
+Comparing exact text rather than a hash was a correction mid-implementation. The first version sent a
+SHA-256 computed by the renderer via `crypto.subtle`, matching a hash the host computed the same way.
+That was dropped before it shipped: `crypto.subtle` requires a secure context, and there was no
+existing use of it anywhere in the renderer to confirm the `diffhacker://` custom scheme handler
+grants one. Sending the baseline text itself needs no such API on either side, costs an already-local,
+already-user-paced round trip a few extra kilobytes, and is simpler to reason about besides — a real
+mismatch and a false one look identical to a hash comparison, but a text comparison can be understood
+by reading the two strings.
+
+Encoding is round-tripped, not flattened to UTF-8. `changeset.fileContent` already reports which
+encoding it decoded a file with (`utf-8`, `utf-8-bom`, `iso-8859-1`, one of the UTF-16/32 variants);
+the renderer sends that name back on save, and `TextDecoding.Encode` — the write-side mirror of
+`TextDecoding.Decode` — re-attaches the byte order mark where the encoding has one. Without this, the
+first edit to a Latin-1 or UTF-16 file the reviewer made through DiffHacker would silently rewrite it
+as plain UTF-8, which is exactly the kind of quiet corruption `TextDecoding`'s existence elsewhere in
+the codebase exists to avoid.
+
+Losing an edit by navigating away is prevented once, centrally, rather than at every call site. Every
+gesture that changes which file the diff panel shows — the diagram, the container strip, reading-order
+navigation, `j`/`k`, the close button, `Escape` — calls one of three store actions
+(`openDiffFor`/`openContainerDiff`/`closeDiff`). Each now checks `diffDirty` first and, if it is set,
+defers the navigation into `diffPendingNavigation` instead of performing it; the panel renders one
+confirmation dialog bound to that field. Teaching each caller to ask first would have meant finding
+every one of them and would still miss the next one added later.
+
+`RepositoryWriteTests.Allowed` gained one entry for `RepositoryWorkingTreeWriter.cs`, and its test was
+renamed from `Only_the_documentation_export_can_write_into_a_repository` to
+`Only_the_two_approved_paths_can_write_into_a_repository` — the allowlist growing is the point this
+time, not an oversight it exists to catch.
 
 ### "Expand to full width" stops short of full width
 

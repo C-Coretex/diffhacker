@@ -105,4 +105,32 @@ public static class TextDecoding
             return Encoding.Latin1.GetString(bytes);
         }
     }
+
+    /// <summary>
+    /// Reverses <see cref="Decode"/>: turns edited text back into bytes for a named encoding,
+    /// with the byte order mark restored for the encodings that carry one. An unrecognised or
+    /// missing name falls back to plain UTF-8 without a mark, which is always a legal re-encoding
+    /// of any .NET string even when it was not the file's original encoding.
+    /// <para>
+    /// One honest limitation: a character with no representation in the target encoding — an
+    /// emoji typed into a Latin-1 file, say — is written using that encoding's own best-effort
+    /// substitution rather than rejected. The edit is exactly what the reviewer typed; what lands
+    /// on disk is that encoding's answer to a character it cannot represent.
+    /// </para>
+    /// </summary>
+    public static byte[] Encode(string text, string? encoding)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        return encoding switch
+        {
+            Utf8Bom => [.. Utf8BomBytes, .. StrictUtf8.GetBytes(text)],
+            Utf16Le => [.. Utf16LeBomBytes, .. Encoding.Unicode.GetBytes(text)],
+            Utf16Be => [.. Utf16BeBomBytes, .. Encoding.BigEndianUnicode.GetBytes(text)],
+            Utf32Le => [.. Utf32LeBomBytes, .. Encoding.UTF32.GetBytes(text)],
+            Utf32Be => [.. Utf32BeBomBytes, .. Utf32BigEndian.GetBytes(text)],
+            Latin1 => Encoding.Latin1.GetBytes(text),
+            _ => StrictUtf8.GetBytes(text),
+        };
+    }
 }

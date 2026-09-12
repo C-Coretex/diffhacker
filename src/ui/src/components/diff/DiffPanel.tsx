@@ -11,6 +11,7 @@ import {
   MaximizeIcon,
   MinimizeIcon,
   RowsIcon,
+  SaveIcon,
   TriangleAlertIcon,
   UnfoldVerticalIcon,
   XIcon,
@@ -23,11 +24,21 @@ import type {
 } from '@/contracts';
 import { describeError } from '@/i18n/errors';
 import { useT } from '@/i18n/useT';
-import { fileContent } from '@/rpc/methods';
+import { fileContent, saveFileContent } from '@/rpc/methods';
 import { useRpc } from '@/rpc/RpcProvider';
 import { useAppStore } from '@/store/appStore';
 import { useTheme } from '@/theme/useTheme';
 import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { ChangeStats, NodeExplanation } from '@/components/analysis/NodeExplanation';
 import { ContainerStrip } from './ContainerStrip';
 import { describeContent, formatBytes, type DiffContent } from './diffContent';
@@ -89,6 +100,11 @@ export function DiffPanel({ view }: { view: AnalysisView }) {
   const setFullScreen = useAppStore((state) => state.setDiffFullScreen);
   const explanationHeight = useAppStore((state) => state.diffExplanationHeight);
   const setExplanationHeight = useAppStore((state) => state.setDiffExplanationHeight);
+  const dirty = useAppStore((state) => state.diffDirty);
+  const setDirty = useAppStore((state) => state.setDiffDirty);
+  const pendingNavigation = useAppStore((state) => state.diffPendingNavigation);
+  const confirmDiscardNavigation = useAppStore((state) => state.confirmDiscardNavigation);
+  const cancelPendingNavigation = useAppStore((state) => state.cancelPendingNavigation);
 
   const marks = useReviewMarks(view.repositoryPath);
 
@@ -96,8 +112,17 @@ export function DiffPanel({ view }: { view: AnalysisView }) {
   const [content, setContent] = useState<DiffContent | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string>();
   const editor = useRef<Monaco.editor.IStandaloneDiffEditor | null>(null);
   const panel = useRef<HTMLDivElement>(null);
+
+  // The editor's own state, kept outside React so every keystroke does not re-render the panel.
+  // baseline is what a save is refused against on disk (§0.2.12's second write path); modifiedText
+  // is what a save actually sends. Both reset whenever a fresh file loads.
+  const baseline = useRef('');
+  const modifiedText = useRef('');
+  const workingEncoding = useRef<string | undefined>(undefined);
 
   const explanationSplitter = useVerticalSplitter(panel, explanationHeight, setExplanationHeight);
 
@@ -142,6 +167,7 @@ export function DiffPanel({ view }: { view: AnalysisView }) {
 
     setLoading(true);
     setError(undefined);
+    setSaveError(undefined);
 
     const read = (target: string, side: 'head' | 'working_tree'): Promise<FileContentInfo> =>
       fileContent(client, { repositoryPath, path: target, side });
@@ -153,7 +179,17 @@ export function DiffPanel({ view }: { view: AnalysisView }) {
     ])
       .then(([head, working]) => {
         if (cancelled) return;
-        setContent(describeContent(head, working));
+
+        const merged = describeContent(head, working);
+        setContent(merged);
+
+        // A fresh load is never dirty, whatever the previous file's editor state was. The working
+        // tree's own encoding — not fallbackEncoding, which is silent for plain UTF-8 — is what a
+        // save has to round-trip.
+        baseline.current = merged.modified ?? '';
+        modifiedText.current = baseline.current;
+        workingEncoding.current = working.encoding;
+        setDirty(false);
       })
       .catch((caught: unknown) => {
         if (cancelled) return;
@@ -167,7 +203,64 @@ export function DiffPanel({ view }: { view: AnalysisView }) {
     return () => {
       cancelled = true;
     };
-  }, [client, repositoryPath, path, previousPath]);
+  }, [client, repositoryPath, path, previousPath, setDirty]);
+
+  // The editor's own callbacks. Refs rather than state: a keystroke should not re-render the
+  // panel, and the save handler always wants the latest text regardless of when it was defined.
+  const onModifiedChange = useCallback(
+    (text: string) => {
+      modifiedText.current = text;
+      if (!dirty) setDirty(true);
+    },
+    [dirty, setDirty],
+  );
+
+  const handleSave = useCallback(() => {
+    if (!client || !path || !dirty || saving) return;
+
+    setSaving(true);
+    setSaveError(undefined);
+
+    saveFileContent(client, {
+      repositoryPath,
+      path,
+      content: modifiedText.current,
+      expectedContent: baseline.current,
+      encoding: workingEncoding.current,
+    })
+      .then(() => {
+        // The new baseline is what was just sent, not a round trip through the host: the bytes on
+        // disk are TextDecoding.Encode(modifiedText.current, encoding), and decoding those back
+        // would only reproduce the same string this already holds. `content` itself is left alone —
+        // Monaco's own modified model already shows exactly this text, so there is nothing to
+        // re-render and no reason to force MonacoDiff's model-swap effect to run again.
+        baseline.current = modifiedText.current;
+        setDirty(false);
+      })
+      .catch((caught: unknown) => {
+        setSaveError(describeError(caught));
+      })
+      .finally(() => {
+        setSaving(false);
+      });
+  }, [client, path, repositoryPath, dirty, saving, setDirty]);
+
+  // Ctrl/Cmd+S works from inside Monaco through its own command (MonacoDiff), and from anywhere
+  // else in the panel through this — both so the shortcut is not scoped to wherever focus happens
+  // to be, and so the WebView's own save-page handling never gets a chance to fire instead.
+  useEffect(() => {
+    if (!nodeId) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        handleSave();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [nodeId, handleSave]);
 
   const onReady = useCallback((instance: Monaco.editor.IStandaloneDiffEditor | null) => {
     editor.current = instance;
@@ -224,12 +317,15 @@ export function DiffPanel({ view }: { view: AnalysisView }) {
         sideBySide={sideBySide}
         fullScreen={fullScreen}
         hideUnchanged={hideUnchanged}
+        dirty={dirty}
+        saving={saving}
         onToggleLayout={() => setSideBySide((current) => !current)}
         onToggleReviewed={() => marks.mark([node.id], !reviewed)}
         onToggleFullScreen={() => setFullScreen(!fullScreen)}
         onToggleHideUnchanged={() => setHideUnchanged((current) => !current)}
         onGoToChange={goToChange}
         onClose={closeDiff}
+        onSave={handleSave}
         hasDiff={content?.kind === 'text'}
       />
 
@@ -239,6 +335,12 @@ export function DiffPanel({ view }: { view: AnalysisView }) {
       {reviewedError && (
         <p role="alert" className="shrink-0 px-3 py-1.5 text-xs text-destructive">
           {reviewedError}
+        </p>
+      )}
+
+      {saveError && (
+        <p role="alert" className="shrink-0 px-3 py-1.5 text-xs text-destructive" data-testid="save-error">
+          {saveError}
         </p>
       )}
 
@@ -275,6 +377,8 @@ export function DiffPanel({ view }: { view: AnalysisView }) {
                   hideUnchanged={hideUnchanged}
                   theme={theme}
                   onReady={onReady}
+                  onModifiedChange={onModifiedChange}
+                  onSave={handleSave}
                 />
               </div>
             ) : (
@@ -326,6 +430,34 @@ export function DiffPanel({ view }: { view: AnalysisView }) {
           {t('analysis.diff.shortcuts')}
         </p>
       </div>
+
+      {/*
+        The one place an edit can be lost: closing the panel, opening another file, or opening a
+        whole cluster all go through the same guarded store actions (appStore.ts), so this one
+        dialog covers every way of leaving a dirty file rather than each caller asking first.
+      */}
+      <AlertDialog
+        open={pendingNavigation !== undefined}
+        onOpenChange={(next) => !next && cancelPendingNavigation()}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('analysis.diff.discardTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('analysis.diff.discardBody', { path: node.filePath })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('analysis.diff.discardCancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="diff-confirm-discard"
+              onClick={confirmDiscardNavigation}
+            >
+              {t('analysis.diff.discardConfirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
@@ -382,6 +514,8 @@ function Header({
   sideBySide,
   fullScreen,
   hideUnchanged,
+  dirty,
+  saving,
   hasDiff,
   onToggleLayout,
   onToggleReviewed,
@@ -389,6 +523,7 @@ function Header({
   onToggleHideUnchanged,
   onGoToChange,
   onClose,
+  onSave,
 }: {
   view: AnalysisView;
   node: AnalysisNodeInfo;
@@ -398,6 +533,8 @@ function Header({
   sideBySide: boolean;
   fullScreen: boolean;
   hideUnchanged: boolean;
+  dirty: boolean;
+  saving: boolean;
   hasDiff: boolean;
   onToggleLayout(): void;
   onToggleReviewed(): void;
@@ -405,6 +542,7 @@ function Header({
   onToggleHideUnchanged(): void;
   onGoToChange(direction: 'previous' | 'next'): void;
   onClose(): void;
+  onSave(): void;
 }) {
   const t = useT();
 
@@ -414,6 +552,13 @@ function Header({
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <h2 className="truncate text-sm font-semibold" title={node.title}>
             {node.title}
+            {dirty && (
+              <span
+                aria-hidden
+                data-testid="diff-dirty-indicator"
+                className="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"
+              />
+            )}
           </h2>
 
           <p className="break-all font-mono text-[11px] text-muted-foreground">
@@ -427,6 +572,35 @@ function Header({
             )}
           </p>
         </div>
+
+        {/*
+          §0.2.12's second write path, from the editor's own header rather than only from Ctrl/Cmd+S:
+          a reviewer who did not know the shortcut still needs a way to see an edit is unsaved and a
+          button to save it. Disabled with nothing to save, so it never reads as "save failed silently".
+        */}
+        {hasDiff && (
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={!dirty || saving}
+            aria-label={t(saving ? 'analysis.diff.saving' : 'analysis.diff.save')}
+            title={t(saving ? 'analysis.diff.saving' : 'analysis.diff.save')}
+            data-testid="save-edit"
+            data-dirty={dirty ? 'true' : 'false'}
+            className={
+              dirty
+                ? 'flex shrink-0 items-center gap-1 rounded border border-primary bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-60'
+                : 'flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60'
+            }
+          >
+            {saving ? (
+              <Loader2Icon className="size-3.5 animate-spin" aria-hidden />
+            ) : (
+              <SaveIcon className="size-3.5" aria-hidden />
+            )}
+            {t(saving ? 'analysis.diff.saving' : 'analysis.diff.save')}
+          </button>
+        )}
 
         {/*
           Full screen, and the way back. The splitter's travel stops short of the left edge because

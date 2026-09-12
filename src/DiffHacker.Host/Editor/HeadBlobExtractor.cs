@@ -9,8 +9,8 @@ namespace DiffHacker.Host.Editor;
 /// An external diff tool takes two paths, and the <c>HEAD</c> side of a change is a git object, not a
 /// file. Something has to materialise it. This writes it under
 /// <see cref="AppPaths.DiffCacheDirectory"/> — the application's own data directory, never the
-/// repository, which is what keeps §0.2.12 true: DiffHacker still writes into a repository in exactly
-/// one place, and that place is the documentation export.
+/// repository, which is what keeps §0.2.12 true: this is not one of the two places DiffHacker
+/// writes into a repository, the documentation export and <see cref="RepositoryWorkingTreeWriter"/>.
 /// </para>
 /// <para>
 /// The file is named for the commit it came from, so the same file at the same commit is written once
