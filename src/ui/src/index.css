@@ -200,3 +200,16 @@
   background: color-mix(in srgb, var(--primary) 14%, transparent);
   box-shadow: inset 3px 0 0 0 var(--primary);
 }
+
+/*
+  @xyflow/react's own stylesheet puts `cursor: grab`/`grabbing` on the pane while panOnDrag is on
+  (the diagram's default) and an explicit `cursor: default` on every node. On some Windows setups
+  Chromium's built-in hand glyph fails to rasterize under GPU compositing and disappears entirely —
+  the pointer goes invisible over the empty canvas but stays visible over every box, which is exactly
+  that split. `!important`: `@xyflow/react/dist/style.css` is imported from `AnalysisGraph.tsx`, so it
+  can load after this file and would otherwise win on equal specificity.
+*/
+.react-flow__pane.draggable,
+.react-flow__pane.dragging {
+  cursor: default !important;
+}
