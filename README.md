@@ -1,26 +1,37 @@
 # DiffHacker
 
-**Review large Git changes as a map, not an alphabetical file list.**
-
-DiffHacker is a desktop app that takes the uncommitted change in a local repository and has an LLM
-explain it as a diagram: which files belong together, where to start reading, how each part leads
-to the next, and what could go wrong.
-
 > ***This project is a test - coding fully delegated to the LLM agent.***
 
-![A change drawn as clusters of related files, with the summary and risks above it](src/ui/src/help/screenshots/09-summary-and-risks.png)
+**Review large Git changes as a map, not an alphabetical file list.**
+
+_DiffHacker is a desktop app that takes the uncommitted change in a local repository and has an LLM
+explain it as a diagram: which files belong together, where to start reading, how each part leads
+to the next, and what could go wrong._
+
+When delegating work to an LLM, one can easily lose overall codebase understanding. Personally, I like to be in control of code I ship, so I read every file that was changed before shipping the change.
+The problem with such an approach appears when many files are changed. Regular GIT clients show the files as list of alphabetically sorted entries.
+However, to properly understand the changes, I need to keep in mind all code dependencies. If an interface was changed, I either need to go straight to the implementation file, which might not be the next in the list, or I have to remember that the interface was changed while I'm reading other files, until I open the implementation file.
+
+There are tools that link changed files by dependency. This helps substantially; now instead of reading files in alphabetical order I can read real dependency graphs.
+However, this helps only with direct dependencies. What we do in our heads is conceptually grouping changes into clusters. Even if there is no direct code dependency, changes could be grouped into "logical cases", inside of which there could be multiple changes from multiple projects.
+
+Why not utilize what LLMs do best: gathering context. That's why I've built this app - to help software engineers like myself to maintain knowledge about the codebase more easily. 
+
+### Changed file list:
+<img height="300" alt="image" src="https://github.com/user-attachments/assets/a26ce52f-ca8c-46a3-8c37-75b1288abc1d" />
+
+### DiffHacker - diagram by clusters:
+<img height="400" alt="image" src="https://github.com/user-attachments/assets/35acd5e3-055b-4380-b78c-11e049c6b91a" />
+
+### DiffHacker - each node contains a directed graph of changed files:
+<img height="500" alt="image" src="https://github.com/user-attachments/assets/ca88cadc-968f-4001-8e0f-4875f9183950" />
+
+
+### DiffHacker - every node and edge has its description and risk assessment:
+<img height="800" alt="image" src="https://github.com/user-attachments/assets/57612b76-65a6-42de-840a-d3f1e62c385d" />
+
 
 ---
-
-## Why
-
-An AI agent just changed 300 files. Your review tool lists them alphabetically, so you open
-`AccountController.cs` first because `A` comes first, not because it matters. Then you spend an hour
-rebuilding the shape of the change in your head: what drove what, which files are the point and
-which are fallout, what is safe to skim and what deserves real attention.
-
-That structure exists, but you can't see it in a file list. DiffHacker rebuilds it for you, before
-you read a line of code.
 
 ## What it does
 
