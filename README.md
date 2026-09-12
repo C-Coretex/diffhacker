@@ -15,6 +15,8 @@ To use the app:
 
 _[User guide](docs/user-guide.md)_
 
+<img width="1916" height="831" alt="Animation" src="https://github.com/user-attachments/assets/79ca5ca2-2931-419d-ac27-e41893977397" />
+
 ---
 When delegating work to an LLM, one can easily lose overall codebase understanding. 
 
